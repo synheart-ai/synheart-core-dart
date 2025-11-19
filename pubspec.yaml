@@ -1,5 +1,5 @@
 name: hsi_flutter
-description: Human State Interface (HSI) - Synheart's unified pipeline for understanding human internal state in real time.
+description: Synheart Core SDK - The unified SDK for collecting biosignals, processing human state on-device, generating focus/emotion signals, and integrating with Syni. Includes HSI Runtime, Wear, Phone, Behavior, Consent, Cloud Connector, and Syni Hooks modules.
 version: 1.0.0+1
 publish_to: 'none'
 
@@ -16,18 +16,27 @@ dependencies:
   # synheart_focus:
   #   path: ../synheart_focus
 
+  # Synheart Wear SDK - Required for wearable data collection
+  # See: https://pub.dev/packages/synheart_wear
+  synheart_wear: ^0.1.2
+
   # Optional integrations (users can add these to their own pubspec.yaml):
-  # synheart_wear: ^0.1.2  # For real wearable data
   # synheart_phone: ^0.1.0 # For behavioral signals
   # synheart_context: ^0.1.0 # For context signals
 
   # Core dependencies
   rxdart: ^0.28.0
   collection: ^1.18.0
-  
+
+  # Cryptography for HMAC verification
+  crypto: ^3.0.3
+
+  # Secure storage for consent and sensitive data
+  flutter_secure_storage: ^9.0.0
+
   # Optional: for cloud sync
   http: ^1.1.0
-  
+
   # Optional: for JSON serialization
   json_annotation: ^4.8.1
 

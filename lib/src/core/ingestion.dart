@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:rxdart/rxdart.dart';
 import 'data_sources.dart';
+import '../modules/interfaces/feature_providers.dart';
 
 /// Raw signal data from various sources
 class SignalData {
@@ -65,13 +66,7 @@ class MotionData {
   });
 }
 
-/// Sleep stage information
-enum SleepStage {
-  awake,
-  light,
-  deep,
-  rem,
-}
+// SleepStage is defined in feature_providers.dart - imported above
 
 /// Behavioral signals from Phone SDK
 class BehavioralSignals {

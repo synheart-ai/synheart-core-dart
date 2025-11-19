@@ -47,3 +47,11 @@ app.*.map.json
 *.g.dart
 *.freezed.dart
 
+docs/implementation-roadmap.md
+docs/phase-1-completion-summary.md
+docs/phase-2-completion-summary.md
+docs/BRANDING_UPDATE.md
+docs/LIBRARY_CONSOLIDATION.md
+docs/ALIGNMENT_CHECK.md
+docs/SYNHEART_WEAR_INTEGRATION.md
+docs/*

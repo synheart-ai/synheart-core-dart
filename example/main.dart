@@ -41,10 +41,13 @@ class _HSIExamplePageState extends State<HSIExamplePage> {
 
   Future<void> _initializeHSI() async {
     try {
-      // Configure HSI with app key
-      await _hsi.configure(appKey: 'YOUR_APP_KEY_HERE');
+      // Configure Core SDK with app key and user ID
+      await _hsi.configure(
+        appKey: 'YOUR_APP_KEY_HERE',
+        userId: 'example_user_${DateTime.now().millisecondsSinceEpoch}',
+      );
 
-      // Listen to HSV updates
+      // Listen to HSI state updates
       _hsi.onStateUpdate.listen((hsv) {
         setState(() {
           _currentState = hsv;

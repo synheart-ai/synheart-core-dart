@@ -1,0 +1,12 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📚 Documentation
+    url: https://github.com/synheart/synheart-core-flutter/tree/main/docs
+    about: Check our documentation for answers
+  - name: 💬 Discussions
+    url: https://github.com/synheart/synheart-core-flutter/discussions
+    about: Ask questions and discuss ideas
+  - name: 📋 Task List
+    url: https://github.com/synheart/synheart-core-flutter/blob/main/TASKS.md
+    about: Browse available tasks to work on
+

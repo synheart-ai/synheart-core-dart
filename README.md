@@ -1,122 +1,119 @@
-# Human State Interface (HSI) - Flutter
+# Synheart Core SDK - Flutter
 
-**HSI** is Synheart's unified, on-device pipeline for understanding human internal state in real time.
+**Synheart Core SDK** is the single, unified integration point for developers who want to collect HSI-compatible data, process human state on-device, generate focus/emotion signals, and integrate with Syni.
 
 ## Overview
 
-HSI:
-- Ingests **biosignals**, **behavioral signals**, and **context signals**
-- Cleans, normalizes, and fuses them into a **base state representation**
-- Exposes this as a **Human State Vector (HSV)** stream
-- Feeds higher-level models:
-  - **Synheart Emotion (Emotion Engine)**
-  - **Synheart Focus (Focus Engine)**
-  - **Syni (LLM layer)**
+The Synheart Core SDK consolidates all Synheart signal channels into one SDK:
+
+- **Wear Module** → Biosignals (HR, HRV, sleep, motion)
+- **Phone Module** → Motion + context signals
+- **Behavior Module** → Digital interaction patterns
+- **HSI Runtime** → Signal fusion + state computation
+- **Consent Module** → User permission management
+- **Cloud Connector** → Secure HSI snapshot uploads
+- **Syni Hooks** → LLM conditioning
 
 **Key principle:**
-> HSI = how we *measure and represent*  
-> Emotion & Focus = models that sit *on top*
+> One SDK, many modules, unified human-state model
 
 ## Architecture
 
-The stack is structured in **three model layers** plus the LLM layer:
+The Core SDK consists of **7 core modules** working together:
 
-1. **HSI Core (State Engine)** - Ingestion, processing, fusion
-2. **Emotion Engine (Synheart Emotion)** - Model head for emotion detection
-3. **Focus Engine (Synheart Focus)** - Model head for focus detection
-4. **Syni LLM Layer** - Consumes final HSV for human-aware AI
+1. **Capabilities Module** - Feature gating (core/extended/research)
+2. **Consent Module** - User permission management
+3. **Wear Module** - Biosignal collection from wearables
+4. **Phone Module** - Device motion and context signals
+5. **Behavior Module** - User-device interaction patterns
+6. **HSI Runtime** - Signal fusion and state computation (produces Human State Vector)
+7. **Cloud Connector** - Secure HSI snapshot uploads
+
+The **HSI Runtime** module:
+- Ingests signals from Wear, Phone, and Behavior modules
+- Fuses them into a unified **Human State Vector (HSV)**
+- Feeds higher-level models (Emotion Engine, Focus Engine)
+- Powers Syni's LLM layer for human-aware AI
 
 ## Usage
 
-### Basic Usage (Mock Data)
+### Basic Usage
 
-HSI works out of the box with mock biosignal data for testing and development:
+The Core SDK works out of the box with mock data for testing and development:
 
 ```dart
 import 'package:hsi_flutter/hsi_flutter.dart';
 
-// Initialize HSI with mock data
-final hsi = HSI.shared;
-await hsi.configure(appKey: 'YOUR_APP_KEY');
-await hsi.start();
+// Initialize the Core SDK
+// Note: Class is named HSI for backward compatibility, but represents the full Core SDK
+final synheart = HSI.shared;
+await synheart.configure(
+  appKey: 'YOUR_APP_KEY',
+  userId: 'user123',
+);
 
-// Listen to HSV updates
-hsi.onStateUpdate.listen((hsv) {
-  print('Stress: ${hsv.emotion.stress}');
-  print('Focus: ${hsv.focus.score}');
-  print('Heart Rate: ${hsv.meta.hsiEmbedding[0]}');
+// Start the SDK
+await synheart.start();
+
+// Listen to HSI state updates
+synheart.onStateUpdate.listen((state) {
+  print('Focus Score: ${state.focus.score}');
+  print('Stress Level: ${state.emotion.stress}');
+  print('Behavior Distraction: ${state.behavior.distractionScore}');
 });
 
-// Optional: Enable cloud sync (aggregated HSV only)
-await hsi.enableCloudSync();
+// Optional: Enable cloud sync (requires consent)
+await synheart.enableCloudUploads();
 ```
 
-### Advanced Usage (Real Wearable Data)
+### Module Configuration
 
-To integrate with real wearable devices, add the optional synheart_wear package:
-
-**1. Add synheart_wear to your pubspec.yaml:**
-
-```yaml
-dependencies:
-  hsi_flutter:
-    path: ../hsi-flutter
-  synheart_wear: ^0.1.2  # Optional - for real wearable data
-```
-
-**2. Create a custom data source adapter:**
+Configure which modules to enable:
 
 ```dart
-import 'package:hsi_flutter/hsi_flutter.dart';
-import 'package:synheart_wear/synheart_wear.dart' as wear;
-
-// Create adapter (see lib/src/integrations/synheart_wear_adapter.dart for full implementation)
-class SynheartWearDataSource implements BiosignalDataSource {
-  // Implementation bridges synheart_wear to HSI...
-}
-
-// Configure HSI with real wearable data
-final wearAdapter = SynheartWearDataSource();
-await hsi.configure(
-  appKey: 'YOUR_APP_KEY',
-  biosignalSource: wearAdapter,  // Real wearable data
+final config = SynheartConfig(
+  enableWearModule: true,
+  enablePhoneModule: true,
+  enableBehaviorModule: true,
+  enableCloudSync: false,  // Enable after user consent
+  logLevel: LogLevel.info,
 );
-await hsi.start();
+
+final synheart = HSI.shared;
+await synheart.configure(
+  appKey: 'YOUR_APP_KEY',
+  userId: 'user123',
+  config: config,
+);
 ```
 
-### Custom Data Sources
+### Consent Management
 
-You can also implement your own data sources:
+The SDK requires user consent for data collection:
 
 ```dart
-class MyCustomBiosignalSource implements BiosignalDataSource {
-  @override
-  Future<void> initialize() async {
-    // Your initialization logic
-  }
-
-  @override
-  Stream<Biosignals> get biosignalStream {
-    // Your custom biosignal stream
-  }
-
-  @override
-  Future<void> dispose() async {
-    // Cleanup
-  }
-}
-
-await hsi.configure(
-  appKey: 'YOUR_APP_KEY',
-  biosignalSource: MyCustomBiosignalSource(),
+// Request consent from user
+final consent = ConsentSnapshot(
+  biosignals: true,
+  behavior: true,
+  motion: true,
+  cloudUpload: false,  // User must explicitly opt-in
+  syni: false,
 );
+
+final synheart = HSI.shared;
+await synheart.updateConsent(consent);
 ```
 
 ## Prerequisites
 
+### Wearable Data Collection
+
+The Core SDK uses the [synheart_wear](https://pub.dev/packages/synheart_wear) package for wearable data collection. This package handles all device integrations (Apple Watch, Fitbit, Garmin, etc.) and provides a unified API.
+
 ### iOS - HealthKit Permissions
 
-Add the following to your `Info.plist`:
+The `synheart_wear` package handles HealthKit permissions automatically. Add the following to your `Info.plist`:
 
 ```xml
 <key>NSHealthShareUsageDescription</key>
@@ -127,12 +124,21 @@ Add the following to your `Info.plist`:
 
 ### Android - Health Connect
 
-Add permissions to your `AndroidManifest.xml`:
+The `synheart_wear` package handles Health Connect permissions automatically. Add permissions to your `AndroidManifest.xml`:
 
 ```xml
 <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
 <uses-permission android:name="android.permission.health.READ_HEART_RATE"/>
 ```
+
+### Supported Devices
+
+The Core SDK supports all devices that [synheart_wear](https://pub.dev/packages/synheart_wear) supports:
+- ✅ **Apple Watch** (via HealthKit)
+- 🔄 **Fitbit** (via REST API - In Development)
+- 📋 **Garmin** (Planned)
+- 📋 **Whoop** (Planned)
+- 📋 **Samsung Watch** (Planned)
 
 ## Privacy & Security
 
@@ -141,11 +147,74 @@ Add permissions to your `AndroidManifest.xml`:
 - Cloud sync uses **aggregated HSV** only
 - HSI is strictly **non-medical**; no diagnoses or clinical labels
 
-## License
+## 📚 Documentation
+
+- **[Product Requirements](docs/core-sdk-prd.md)** - Complete PRD for Synheart Core SDK
+- **[Module Specifications](docs/core-sdk-module.md)** - Technical module specifications
+- **[Internal Architecture](docs/internal-module.md)** - Internal module documentation
+- **[Implementation Roadmap](docs/implementation-roadmap.md)** - Roadmap to v1.0
+- **[Native Implementations](docs/NATIVE_IMPLEMENTATIONS.md)** - iOS & Android implementations
+- **[Native Mirroring Status](docs/native-module-mirror-status.md)** - Cross-platform status
+- **[Synheart Wear Integration](docs/SYNHEART_WEAR_INTEGRATION.md)** - Wearable data integration
+
+## 👥 Contributing
+
+We welcome contributions! Here's how to get started:
+
+1. **Read the guides:**
+   - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
+   - [DEVELOPMENT.md](DEVELOPMENT.md) - Development setup guide
+   - [TASKS.md](TASKS.md) - Available tasks to work on
+
+2. **Pick a task:**
+   - Check [TASKS.md](TASKS.md) for available tasks
+   - Look for tasks marked `[ ]` (available)
+   - Comment on the task or create an issue to claim it
+
+3. **Make your changes:**
+   - Follow our [coding standards](CONTRIBUTING.md#coding-standards)
+   - Add tests for your changes
+   - Update documentation
+
+4. **Submit a Pull Request:**
+   - Follow the [PR checklist](CONTRIBUTING.md#pull-request-checklist)
+   - Reference the task or issue you're addressing
+
+## 🎯 Project Status
+
+**Current Version:** Pre-v1.0 (Development)
+
+**Target Release:** v1.0 (March 2025)
+
+**Progress:** See [TASKS.md](TASKS.md) for current task status
+
+## 📋 Module Overview
+
+The Synheart Core SDK consists of 7 core modules:
+
+1. **Capabilities Module** - Feature gating (core/extended/research)
+2. **Consent Module** - User permission management
+3. **Wear Module** - Biosignal collection from wearables
+4. **Phone Module** - Device motion and context signals
+5. **Behavior Module** - User-device interaction patterns
+6. **HSI Runtime** - Signal fusion and state computation
+7. **Cloud Connector** - Secure HSI snapshot uploads
+
+See [docs/core-sdk-module.md](docs/core-sdk-module.md) for detailed specifications.
+
+## 🔒 Privacy & Security
+
+- All processing is **on-device** by default
+- No raw biosignals leave the device without explicit consent
+- Cloud sync uses **aggregated HSV** only
+- HSI is strictly **non-medical**; no diagnoses or clinical labels
+- Zero raw data policy enforced throughout
+
+## 📄 License
 
 Proprietary - Synheart
 
-## Author
+## 👤 Author
 
 Israel Goytom
 
