@@ -1,3 +1,5 @@
+import '../phone/phone_collectors.dart' show ScreenState;
+
 /// Window types for time-based aggregation
 enum WindowType {
   /// 30-second window
@@ -65,6 +67,24 @@ class WearWindowFeatures {
   });
 }
 
+/// Activity classification codes
+enum ActivityCode {
+  /// Device is stationary
+  stationary,
+
+  /// User is walking
+  walking,
+
+  /// User is running
+  running,
+
+  /// User is in vehicle
+  inVehicle,
+
+  /// Unknown activity
+  unknown,
+}
+
 /// Phone module feature provider
 abstract class PhoneFeatureProvider {
   /// Get phone features for a specific window
@@ -76,6 +96,18 @@ class PhoneWindowFeatures {
   /// Motion level (0.0 - 1.0)
   final double motionLevel;
 
+  /// Motion vector [x, y, z] from accelerometer
+  final List<double> motionVector;
+
+  /// Gyroscope vector [gx, gy, gz] from gyroscope
+  final List<double> gyroscopeVector;
+
+  /// Activity classification code
+  final ActivityCode activityCode;
+
+  /// Screen state (on/off/locked/unlocked) - most recent state in window
+  final ScreenState? screenState;
+
   /// App switch rate (normalized)
   final double appSwitchRate;
 
@@ -85,12 +117,57 @@ class PhoneWindowFeatures {
   /// Notification rate (per minute)
   final double notificationRate;
 
+  /// Idle ratio (0.0 - 1.0) - proportion of time device was idle
+  final double idleRatio;
+
+  /// Detailed app context (Extended/Research only)
+  final Map<String, dynamic>? appContext;
+
+  /// Raw notification structure (Research only)
+  final List<Map<String, dynamic>>? rawNotifications;
+
   const PhoneWindowFeatures({
     required this.motionLevel,
+    required this.motionVector,
+    required this.gyroscopeVector,
+    required this.activityCode,
+    this.screenState,
     required this.appSwitchRate,
     required this.screenOnRatio,
     required this.notificationRate,
+    required this.idleRatio,
+    this.appContext,
+    this.rawNotifications,
   });
+
+  /// Create a copy with updated values
+  PhoneWindowFeatures copyWith({
+    double? motionLevel,
+    List<double>? motionVector,
+    List<double>? gyroscopeVector,
+    ActivityCode? activityCode,
+    ScreenState? screenState,
+    double? appSwitchRate,
+    double? screenOnRatio,
+    double? notificationRate,
+    double? idleRatio,
+    Map<String, dynamic>? appContext,
+    List<Map<String, dynamic>>? rawNotifications,
+  }) {
+    return PhoneWindowFeatures(
+      motionLevel: motionLevel ?? this.motionLevel,
+      motionVector: motionVector ?? this.motionVector,
+      gyroscopeVector: gyroscopeVector ?? this.gyroscopeVector,
+      activityCode: activityCode ?? this.activityCode,
+      screenState: screenState ?? this.screenState,
+      appSwitchRate: appSwitchRate ?? this.appSwitchRate,
+      screenOnRatio: screenOnRatio ?? this.screenOnRatio,
+      notificationRate: notificationRate ?? this.notificationRate,
+      idleRatio: idleRatio ?? this.idleRatio,
+      appContext: appContext ?? this.appContext,
+      rawNotifications: rawNotifications ?? this.rawNotifications,
+    );
+  }
 }
 
 /// Behavior module feature provider

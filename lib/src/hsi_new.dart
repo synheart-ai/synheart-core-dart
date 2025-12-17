@@ -52,7 +52,9 @@ class HSI {
   // State
   bool _isConfigured = false;
   bool _isRunning = false;
+  // ignore: unused_field
   String? _userId;
+  // ignore: unused_field
   SynheartConfig? _config;
 
   // Final HSV stream
@@ -87,7 +89,7 @@ class HSI {
     try {
       // 1. Authenticate & get capabilities
       print('[HSI] Authenticating...');
-      final token = await _authService.authenticate(
+      await _authService.authenticate(
         appKey: appKey,
         userId: userId,
       );
@@ -95,10 +97,7 @@ class HSI {
       // 2. Initialize capability module
       print('[HSI] Initializing capability module...');
       _capabilityModule = CapabilityModule();
-      await _capabilityModule!.loadFromToken(
-        token,
-        'mock_secret', // TODO: Get real secret from config
-      );
+      await _capabilityModule!.loadDefaults();
 
       // 3. Initialize consent module
       print('[HSI] Initializing consent module...');
@@ -123,9 +122,12 @@ class HSI {
         consent: _consentModule!,
       );
 
-      _moduleManager.registerModule(_wearModule!, dependsOn: ['capabilities', 'consent']);
-      _moduleManager.registerModule(_phoneModule!, dependsOn: ['capabilities', 'consent']);
-      _moduleManager.registerModule(_behaviorModule!, dependsOn: ['capabilities', 'consent']);
+      _moduleManager
+          .registerModule(_wearModule!, dependsOn: ['capabilities', 'consent']);
+      _moduleManager.registerModule(_phoneModule!,
+          dependsOn: ['capabilities', 'consent']);
+      _moduleManager.registerModule(_behaviorModule!,
+          dependsOn: ['capabilities', 'consent']);
 
       // 6. Initialize HSI Runtime
       print('[HSI] Initializing HSI Runtime...');
@@ -218,6 +220,9 @@ class HSI {
 
   /// Get behavior module for recording events
   BehaviorModule? get behaviorModule => _behaviorModule;
+
+  /// Get phone module for direct access
+  PhoneModule? get phoneModule => _phoneModule;
 
   /// Get current consent snapshot
   ConsentSnapshot? get currentConsent {

@@ -60,11 +60,19 @@ class FusionEngineV2 {
     // Phone features (context)
     if (features.phone != null) {
       vector.add(features.phone!.motionLevel);
+      // Add motion vector components
+      vector.addAll(features.phone!.motionVector);
+      // Add gyroscope vector components
+      vector.addAll(features.phone!.gyroscopeVector);
+      // Add activity code as numeric value
+      vector.add(features.phone!.activityCode.index.toDouble());
       vector.add(features.phone!.screenOnRatio);
       vector.add(features.phone!.appSwitchRate);
       vector.add(features.phone!.notificationRate);
+      vector.add(features.phone!.idleRatio);
     } else {
-      vector.addAll([0.0, 0.0, 0.0, 0.0]);
+      vector
+          .addAll([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
     }
 
     // Behavior features

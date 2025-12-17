@@ -22,6 +22,7 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
   final ConsentProvider _consent;
 
   final List<StreamSubscription<WearSample>> _subscriptions = [];
+  final Set<WearSourceHandler> _initializedSources = {};
 
   WearModule({
     required CapabilityProvider capabilities,
@@ -89,9 +90,11 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
       if (source.isAvailable) {
         try {
           await source.initialize();
+          _initializedSources.add(source);
           print('[WearModule] Initialized ${source.sourceType.name} source');
         } catch (e) {
-          print('[WearModule] Failed to initialize ${source.sourceType.name}: $e');
+          print(
+              '[WearModule] Failed to initialize ${source.sourceType.name}: $e');
         }
       }
     }
@@ -101,9 +104,9 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
   Future<void> onStart() async {
     print('[WearModule] Starting wear data collection...');
 
-    // Subscribe to each source
-    for (final source in _sources) {
-      if (source.isAvailable) {
+    // Subscribe to each successfully initialized source
+    for (final source in _initializedSources) {
+      try {
         final subscription = source.sampleStream.listen(
           (sample) {
             // Add to cache
@@ -115,6 +118,8 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
         );
 
         _subscriptions.add(subscription);
+      } catch (e) {
+        print('[WearModule] Failed to start ${source.sourceType.name}: $e');
       }
     }
 

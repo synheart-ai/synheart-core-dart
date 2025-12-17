@@ -40,6 +40,15 @@ dependencies:
   # Optional: for JSON serialization
   json_annotation: ^4.8.1
 
+  # Sensors for motion data (accelerometer + gyroscope)
+  sensors_plus: ^4.0.2
+  
+  # Platform info for app tracking (version matches synheart_wear requirement)
+  device_info_plus: ^12.2.0
+  
+  # Screen state tracking
+  wakelock_plus: ^1.2.8
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

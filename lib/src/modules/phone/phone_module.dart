@@ -56,18 +56,51 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
         return null;
 
       case CapabilityLevel.core:
-        // Core: Motion and screen only
+        // Core: Motion, screen, and hashed app switching
+        // Notification metadata: limited (rate only, no metadata)
         return PhoneWindowFeatures(
           motionLevel: features.motionLevel,
+          motionVector: features.motionVector,
+          gyroscopeVector: features.gyroscopeVector,
+          activityCode: features.activityCode,
+          screenState: features.screenState,
           screenOnRatio: features.screenOnRatio,
-          appSwitchRate: 0.0, // No app switching at core level
-          notificationRate: 0.0, // No notifications at core level
+          appSwitchRate:
+              features.appSwitchRate, // Enable at core level (hashed)
+          notificationRate: features.notificationRate, // Limited: rate only
+          idleRatio: features.idleRatio,
         );
 
       case CapabilityLevel.extended:
+        // Extended: Add detailed app context and notification metadata
+        return PhoneWindowFeatures(
+          motionLevel: features.motionLevel,
+          motionVector: features.motionVector,
+          gyroscopeVector: features.gyroscopeVector,
+          activityCode: features.activityCode,
+          screenState: features.screenState,
+          screenOnRatio: features.screenOnRatio,
+          appSwitchRate: features.appSwitchRate,
+          notificationRate: features.notificationRate,
+          idleRatio: features.idleRatio,
+          appContext: _appTracker.getAppContext(),
+        );
+
       case CapabilityLevel.research:
-        // Extended/Research: Full access
-        return features;
+        // Research: Full access including raw notification structure
+        return PhoneWindowFeatures(
+          motionLevel: features.motionLevel,
+          motionVector: features.motionVector,
+          gyroscopeVector: features.gyroscopeVector,
+          activityCode: features.activityCode,
+          screenState: features.screenState,
+          screenOnRatio: features.screenOnRatio,
+          appSwitchRate: features.appSwitchRate,
+          notificationRate: features.notificationRate,
+          idleRatio: features.idleRatio,
+          appContext: _appTracker.getAppContext(),
+          rawNotifications: _notificationTracker.getRawNotifications(),
+        );
     }
   }
 
@@ -86,7 +119,11 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
     _subscriptions.add(
       _motionCollector.motionStream.listen(
         (motion) => _cache.addMotionData(motion),
-        onError: (e) => print('[PhoneModule] Motion error: $e'),
+        onError: (e) {
+          print('[PhoneModule] Motion error: $e');
+          // Don't cancel - sensors might recover
+        },
+        cancelOnError: false, // Keep stream open even on errors
       ),
     );
 
@@ -95,30 +132,59 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
     _subscriptions.add(
       _screenTracker.screenStream.listen(
         (state) => _cache.addScreenState(state, DateTime.now()),
-        onError: (e) => print('[PhoneModule] Screen state error: $e'),
+        onError: (e) {
+          print('[PhoneModule] Screen state error: $e');
+          // Don't cancel - platform channel might recover
+        },
+        cancelOnError: false, // Keep stream open even on errors
       ),
     );
 
-    // Start app tracking (if capability allows)
-    if (_capabilities.capability(Module.phone).index >= CapabilityLevel.extended.index) {
-      await _appTracker.start();
-      _subscriptions.add(
-        _appTracker.appSwitchStream.listen(
-          (_) => _cache.addAppSwitch(DateTime.now()),
-          onError: (e) => print('[PhoneModule] App tracking error: $e'),
-        ),
-      );
+    // Start app tracking (available at core level and above)
+    final phoneCapability = _capabilities.capability(Module.phone);
+    if (phoneCapability.index >= CapabilityLevel.core.index) {
+      try {
+        await _appTracker.start();
+        _subscriptions.add(
+          _appTracker.appSwitchStream.listen(
+            (appId) {
+              print('[PhoneModule] ✅ App switch detected: $appId');
+              _cache.addAppSwitch(DateTime.now());
+              print('[PhoneModule] App switch added to cache');
+            },
+            onError: (e) {
+              print('[PhoneModule] App tracking error: $e');
+              // Don't rethrow - stream might recover if permission is granted later
+            },
+            cancelOnError: false,
+          ),
+        );
+      } catch (e) {
+        print('[PhoneModule] Failed to start app tracking: $e');
+        // Continue - might work after permission is granted
+      }
     }
 
-    // Start notification tracking (if capability allows)
-    if (_capabilities.capability(Module.phone).index >= CapabilityLevel.extended.index) {
-      await _notificationTracker.start();
-      _subscriptions.add(
-        _notificationTracker.notificationStream.listen(
-          (event) => _cache.addNotification(event),
-          onError: (e) => print('[PhoneModule] Notification error: $e'),
-        ),
-      );
+    // Start notification tracking (Core: limited/rate only, Extended/Research: full metadata)
+    // According to docs: Core = "limited" (rate only), Extended/Research = full metadata
+    if (phoneCapability.index >= CapabilityLevel.core.index) {
+      try {
+        await _notificationTracker.start();
+
+        _subscriptions.add(
+          _notificationTracker.notificationStream.listen(
+            (event) {
+              _cache.addNotification(event);
+            },
+            onError: (e) {
+              // Don't rethrow - stream might recover if permission is granted later
+            },
+            cancelOnError: false,
+          ),
+        );
+      } catch (e) {
+        // Continue - might work after permission is granted
+      }
     }
 
     print('[PhoneModule] Started ${_subscriptions.length} collectors');

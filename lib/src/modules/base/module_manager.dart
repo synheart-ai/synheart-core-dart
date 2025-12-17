@@ -64,7 +64,12 @@ class ModuleManager {
     for (final moduleId in startOrder) {
       final module = _modules[moduleId];
       if (module != null && module.status == ModuleStatus.initialized) {
-        await module.start();
+        try {
+          await module.start();
+        } catch (e) {
+          // Log error but continue starting other modules
+          print('Error starting module $moduleId: $e');
+        }
       }
     }
   }
