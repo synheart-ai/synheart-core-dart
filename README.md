@@ -212,7 +212,7 @@ See [docs/core-sdk-module.md](docs/core-sdk-module.md) for detailed specificatio
 
 ## 📄 License
 
-Proprietary - Synheart
+Apache 2.0 License
 
 ## 👤 Author
 
