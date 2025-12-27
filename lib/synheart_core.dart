@@ -12,10 +12,13 @@
 /// - Behavior Module - User interaction patterns
 /// - HSI Runtime - Signal fusion and state computation
 /// - Cloud Connector - Secure HSI snapshot uploads
-library hsi_flutter;
+library synheart_core;
 
-// Core SDK Entry Point (Module-based Architecture)
-export 'src/hsi_new.dart';
+// Core SDK Entry Point (PRD-compliant Architecture)
+export 'src/synheart.dart';
+
+// Legacy HSI class (for backward compatibility - will be deprecated)
+export 'src/hsi_new.dart' show HSI;
 
 // Configuration
 export 'src/config/synheart_config.dart';

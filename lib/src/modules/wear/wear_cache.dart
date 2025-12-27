@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import '../interfaces/feature_providers.dart';
 import 'wear_source_handler.dart';
 
@@ -72,8 +74,14 @@ class WearCache {
         .map((s) => s.hr!)
         .toList();
 
-    // Extract HRV values
-    final hrvValues = samples
+    // Flatten RR intervals across the window (best source of HRV features)
+    final rrIntervals = samples
+        .where((s) => s.rrIntervals != null && s.rrIntervals!.isNotEmpty)
+        .expand((s) => s.rrIntervals!)
+        .toList();
+
+    // Fallback HRV values (may be vendor-provided RMSSD or SDNN; treat as best-effort)
+    final hrvFallbackValues = samples
         .where((s) => s.hrvRmssd != null)
         .map((s) => s.hrvRmssd!)
         .toList();
@@ -91,10 +99,17 @@ class WearCache {
         .toList();
 
     // Get most recent sleep stage
-    final sleepStage = samples
+    final sleepStages = samples
         .where((s) => s.sleepStage != null)
         .map((s) => s.sleepStage!)
-        .lastOrNull;
+        .toList();
+    final sleepStage = sleepStages.isNotEmpty ? sleepStages.last : null;
+
+    // Compute RR-derived HRV metrics if available
+    final rrMean = rrIntervals.isNotEmpty ? _mean(rrIntervals) : null;
+    final rrSdnn = rrIntervals.length >= 2 ? _sdnn(rrIntervals) : null;
+    final rrRmssd = rrIntervals.length >= 2 ? _rmssd(rrIntervals) : null;
+    final rrPnn50 = rrIntervals.length >= 2 ? _pnn50(rrIntervals) : null;
 
     return WearWindowFeatures(
       windowDuration: _getWindowDuration(windowType),
@@ -107,9 +122,15 @@ class WearCache {
       hrMax: hrValues.isNotEmpty
           ? hrValues.reduce((a, b) => a > b ? a : b)
           : null,
-      hrvRmssd: hrvValues.isNotEmpty
-          ? hrvValues.reduce((a, b) => a + b) / hrvValues.length
-          : null,
+      // Prefer RR-derived RMSSD; fallback to vendor-provided value
+      hrvRmssd: rrRmssd ??
+          (hrvFallbackValues.isNotEmpty
+              ? hrvFallbackValues.reduce((a, b) => a + b) /
+                  hrvFallbackValues.length
+              : null),
+      hrvSdnn: rrSdnn,
+      pnn50: rrPnn50,
+      meanRrMs: rrMean,
       motionIndex: motionValues.isNotEmpty
           ? motionValues.reduce((a, b) => a + b) / motionValues.length
           : null,
@@ -118,6 +139,38 @@ class WearCache {
           ? respValues.reduce((a, b) => a + b) / respValues.length
           : null,
     );
+  }
+
+  double _mean(List<double> xs) =>
+      xs.reduce((a, b) => a + b) / xs.length;
+
+  double _sdnn(List<double> rrIntervalsMs) {
+    final mean = _mean(rrIntervalsMs);
+    var sumSq = 0.0;
+    for (final x in rrIntervalsMs) {
+      final d = x - mean;
+      sumSq += d * d;
+    }
+    return sqrt(sumSq / rrIntervalsMs.length);
+  }
+
+  double _rmssd(List<double> rrIntervalsMs) {
+    var sumSq = 0.0;
+    for (var i = 1; i < rrIntervalsMs.length; i++) {
+      final d = rrIntervalsMs[i] - rrIntervalsMs[i - 1];
+      sumSq += d * d;
+    }
+    return sqrt(sumSq / (rrIntervalsMs.length - 1));
+  }
+
+  double _pnn50(List<double> rrIntervalsMs) {
+    var count = 0;
+    for (var i = 1; i < rrIntervalsMs.length; i++) {
+      if ((rrIntervalsMs[i] - rrIntervalsMs[i - 1]).abs() > 50.0) {
+        count++;
+      }
+    }
+    return (count / (rrIntervalsMs.length - 1)) * 100.0;
   }
 
   /// Get duration for a window type

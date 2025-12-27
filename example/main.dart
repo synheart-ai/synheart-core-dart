@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hsi_flutter/hsi_flutter.dart';
+import 'package:synheart_core/synheart_core.dart';
 
 void main() {
   runApp(const MyApp());
@@ -92,7 +92,9 @@ class _HSIExamplePageState extends State<HSIExamplePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    // Use automatic behavior capture if synheart_behavior is initialized
+    final synheartBehavior = _hsi.behaviorModule?.synheartBehavior;
+    final scaffold = Scaffold(
       appBar: AppBar(
         title: const Text('HSI Flutter Example'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -138,6 +140,12 @@ class _HSIExamplePageState extends State<HSIExamplePage> {
         ),
       ),
     );
+
+    // Wrap with synheart_behavior's gesture detector for automatic capture
+    if (synheartBehavior != null && _isRunning) {
+      return synheartBehavior.wrapWithGestureDetector(scaffold);
+    }
+    return scaffold;
   }
 
   Widget _buildSection(String title, List<Widget> children) {

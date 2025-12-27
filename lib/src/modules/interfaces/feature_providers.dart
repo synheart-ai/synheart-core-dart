@@ -44,6 +44,21 @@ class WearWindowFeatures {
   /// Heart rate variability - RMSSD (ms)
   final double? hrvRmssd;
 
+  /// Heart rate variability - SDNN (ms)
+  ///
+  /// Optional. Populated only when RR intervals are available.
+  final double? hrvSdnn;
+
+  /// pNN50 (%)
+  ///
+  /// Optional. Populated only when RR intervals are available.
+  final double? pnn50;
+
+  /// Mean RR interval (ms)
+  ///
+  /// Optional. Populated only when RR intervals are available.
+  final double? meanRrMs;
+
   /// Motion index (0.0 - 1.0)
   final double? motionIndex;
 
@@ -59,6 +74,9 @@ class WearWindowFeatures {
     this.hrMin,
     this.hrMax,
     this.hrvRmssd,
+    this.hrvSdnn,
+    this.pnn50,
+    this.meanRrMs,
     this.motionIndex,
     this.sleepStage,
     this.respRate,

@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:synheart_behavior/synheart_behavior.dart' as sb;
 import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
@@ -10,7 +12,7 @@ import 'feature_extractor.dart';
 
 /// Behavior Module
 ///
-/// Captures user-device interaction patterns.
+/// Captures user-device interaction patterns using synheart_behavior package.
 /// Provides window-based behavioral features to HSI Runtime.
 class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvider {
   @override
@@ -24,7 +26,9 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
   final ConsentProvider _consent;
 
   StreamSubscription<BehaviorEvent>? _eventSubscription;
+  StreamSubscription? _synheartBehaviorSubscription;
   Timer? _cleanupTimer;
+  sb.SynheartBehavior? _synheartBehavior;
 
   BehaviorModule({
     required CapabilityProvider capabilities,
@@ -32,8 +36,20 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
   })  : _capabilities = capabilities,
         _consent = consent;
 
-  /// Get the event stream for recording events
+  /// Get the event stream for recording events (for manual instrumentation)
   BehaviorEventStream get eventStream => _eventStream;
+
+  /// Get the synheart_behavior instance for wrapping your app
+  ///
+  /// Usage:
+  /// ```dart
+  /// Widget build(BuildContext context) {
+  ///   return hsi.behaviorModule!.synheartBehavior!.wrapWithGestureDetector(
+  ///     MaterialApp(...)
+  ///   );
+  /// }
+  /// ```
+  sb.SynheartBehavior? get synheartBehavior => _synheartBehavior;
 
   @override
   BehaviorWindowFeatures? features(WindowType window) {
@@ -82,14 +98,28 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
   @override
   Future<void> onInitialize() async {
     print('[BehaviorModule] Initializing behavior tracking...');
-    // Nothing to initialize
+
+    // Initialize synheart_behavior package for automatic event capture
+    try {
+      _synheartBehavior = await sb.SynheartBehavior.initialize(
+        config: const sb.BehaviorConfig(
+          enableInputSignals: true,
+          enableAttentionSignals: true,
+          enableMotionLite: false,
+        ),
+      );
+      print('[BehaviorModule] synheart_behavior initialized successfully');
+    } catch (e) {
+      print('[BehaviorModule] Failed to initialize synheart_behavior: $e');
+      // Continue without automatic capture - fallback to manual instrumentation
+    }
   }
 
   @override
   Future<void> onStart() async {
     print('[BehaviorModule] Starting behavior tracking...');
 
-    // Subscribe to event stream
+    // Subscribe to manual event stream
     _eventSubscription = _eventStream.events.listen(
       (event) {
         // Check consent before adding event
@@ -100,12 +130,61 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
       onError: (e) => print('[BehaviorModule] Event stream error: $e'),
     );
 
+    // Subscribe to synheart_behavior automatic events
+    if (_synheartBehavior != null) {
+      _synheartBehaviorSubscription = _synheartBehavior!.onEvent.listen(
+        (event) {
+          // Check consent before adding event
+          if (_consent.current().behavior) {
+            // Convert synheart_behavior event to internal BehaviorEvent
+            final behaviorEvent = _convertSynheartEvent(event);
+            if (behaviorEvent != null) {
+              _aggregator.addEvent(behaviorEvent);
+            }
+          }
+        },
+        onError: (e) => print('[BehaviorModule] synheart_behavior event error: $e'),
+      );
+      print('[BehaviorModule] Subscribed to synheart_behavior events');
+    }
+
     // Start cleanup timer (every minute)
     _cleanupTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       _aggregator.cleanOldWindows();
     });
 
     print('[BehaviorModule] Behavior tracking started');
+  }
+
+  /// Convert synheart_behavior event to internal BehaviorEvent format
+  BehaviorEvent? _convertSynheartEvent(dynamic event) {
+    // Map synheart_behavior events to internal event types
+    final eventType = event.eventType as String?;
+    if (eventType == null) return null;
+
+    switch (eventType.toLowerCase()) {
+      case 'tap':
+      case 'touch':
+        return BehaviorEvent.tap(Offset.zero);
+      case 'scroll':
+        final delta = event.metrics?['scrollDelta'] as double? ?? 0.0;
+        return BehaviorEvent.scroll(delta);
+      case 'keydown':
+      case 'key_down':
+        return BehaviorEvent.keyDown();
+      case 'keyup':
+      case 'key_up':
+        return BehaviorEvent.keyUp();
+      case 'app_switch':
+      case 'appswitch':
+        return BehaviorEvent.appSwitch();
+      case 'notification_received':
+        return BehaviorEvent.notificationReceived();
+      case 'notification_opened':
+        return BehaviorEvent.notificationOpened();
+      default:
+        return null;
+    }
   }
 
   @override
@@ -115,6 +194,9 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
     await _eventSubscription?.cancel();
     _eventSubscription = null;
 
+    await _synheartBehaviorSubscription?.cancel();
+    _synheartBehaviorSubscription = null;
+
     _cleanupTimer?.cancel();
     _cleanupTimer = null;
   }
@@ -123,5 +205,6 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
   Future<void> onDispose() async {
     print('[BehaviorModule] Disposing behavior module...');
     await _eventStream.dispose();
+    _synheartBehavior = null;
   }
 }

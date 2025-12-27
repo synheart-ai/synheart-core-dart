@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hsi_flutter/hsi_flutter.dart';
+import 'package:synheart_core/synheart_core.dart';
 
 /// Phase 2 Complete Pipeline Test
 ///
@@ -161,72 +161,82 @@ class _FullPipelinePageState extends State<FullPipelinePage> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        // Record tap events for behavior module
-        if (_isRunning) {
-          _hsi.behaviorModule?.eventStream.recordTap(Offset.zero);
-        }
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('HSI Phase 2 - Full Pipeline'),
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Status
-              _buildStatusCard(),
-              const SizedBox(height: 16),
+    // Use automatic behavior capture if synheart_behavior is initialized
+    final synheartBehavior = _hsi.behaviorModule?.synheartBehavior;
+    final scaffold = Scaffold(
+      appBar: AppBar(
+        title: const Text('HSI Phase 2 - Full Pipeline'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Status
+            _buildStatusCard(),
+            const SizedBox(height: 16),
 
-              // Controls
-              if (!_isConfigured)
-                ElevatedButton(
-                  onPressed: _configure,
-                  child: const Text('Configure HSI'),
+            // Controls
+            if (!_isConfigured)
+              ElevatedButton(
+                onPressed: _configure,
+                child: const Text('Configure HSI'),
+              ),
+
+            if (_isConfigured && !_isRunning)
+              ElevatedButton(
+                onPressed: _start,
+                child: const Text('Start HSI Pipeline'),
+              ),
+
+            if (_isRunning)
+              ElevatedButton(
+                onPressed: _stop,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
                 ),
+                child: const Text('Stop HSI'),
+              ),
 
-              if (_isConfigured && !_isRunning)
-                ElevatedButton(
-                  onPressed: _start,
-                  child: const Text('Start HSI Pipeline'),
+            const SizedBox(height: 16),
+
+            // Module statuses
+            if (_moduleStatuses != null) _buildModuleStatusesCard(),
+
+            const SizedBox(height: 16),
+
+            // Current state (HSV)
+            if (_currentState != null) ...[
+              _buildStateCard(),
+            ] else if (_isRunning)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Center(child: Text('Waiting for first HSV update...')),
                 ),
-
-              if (_isRunning)
-                ElevatedButton(
-                  onPressed: _stop,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Stop HSI'),
-                ),
-
-              const SizedBox(height: 16),
-
-              // Module statuses
-              if (_moduleStatuses != null) _buildModuleStatusesCard(),
-
-              const SizedBox(height: 16),
-
-              // Current state (HSV)
-              if (_currentState != null) ...[
-                _buildStateCard(),
-              ] else if (_isRunning)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Center(child: Text('Waiting for first HSV update...')),
-                  ),
-                ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );
+
+    // Wrap with synheart_behavior's gesture detector for automatic capture
+    // Falls back to manual instrumentation if not available
+    if (synheartBehavior != null && _isRunning) {
+      return synheartBehavior.wrapWithGestureDetector(scaffold);
+    } else {
+      // Fallback: Manual tap recording for demonstration
+      return GestureDetector(
+        onTap: () {
+          if (_isRunning) {
+            _hsi.behaviorModule?.eventStream.recordTap(Offset.zero);
+          }
+        },
+        child: scaffold,
+      );
+    }
   }
 
   Widget _buildStatusCard() {
@@ -277,7 +287,7 @@ class _FullPipelinePageState extends State<FullPipelinePage> {
                   ],
                 ),
               );
-            }).toList(),
+            }),
           ],
         ),
       ),

@@ -43,15 +43,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Generated files
-*.g.dart
-*.freezed.dart
+# Claude Code
+.claude/
 
-docs/implementation-roadmap.md
-docs/phase-1-completion-summary.md
-docs/phase-2-completion-summary.md
-docs/BRANDING_UPDATE.md
-docs/LIBRARY_CONSOLIDATION.md
-docs/ALIGNMENT_CHECK.md
-docs/SYNHEART_WEAR_INTEGRATION.md
-docs/*
+# Generated files (commented out - we publish these for pub.dev)
+# *.g.dart
+# *.freezed.dart

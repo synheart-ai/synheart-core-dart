@@ -3,75 +3,54 @@ import 'package:rxdart/rxdart.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/feature_providers.dart';
 import '../../models/hsv.dart';
-import '../../heads/emotion_head.dart';
-import '../../heads/focus_head.dart';
 import 'window_scheduler.dart';
 import 'channel_collector.dart';
-import 'fusion_engine_v2.dart';
+import 'fusion_engine.dart';
 
 /// HSI Runtime Module
 ///
 /// Orchestrates the HSI pipeline:
 /// 1. Schedules windows (30s, 5m, 1h, 24h)
 /// 2. Collects features from Wear, Phone, Behavior
-/// 3. Fuses features into base HSV
-/// 4. Runs Emotion and Focus heads
-/// 5. Publishes final HSV
+/// 3. Fuses features into HSI (state axes, indices, embeddings)
+/// 4. Publishes HSI updates
+///
+/// IMPORTANT: This module does NOT include emotion or focus interpretation.
+/// Those are optional downstream modules that consume HSI output.
 class HSIRuntimeModule extends BaseSynheartModule {
   @override
   String get moduleId => 'hsi_runtime';
 
   final ChannelCollector _collector;
-  final FusionEngineV2 _fusion = FusionEngineV2();
-  final EmotionHead _emotionHead = EmotionHead();
-  final FocusHead _focusHead = FocusHead();
+  final FusionEngine _fusion = FusionEngine();
 
   WindowScheduler? _scheduler;
 
-  final BehaviorSubject<HumanStateVector> _baseHsvStream =
+  final BehaviorSubject<HumanStateVector> _hsiStream =
       BehaviorSubject<HumanStateVector>();
-  final BehaviorSubject<HumanStateVector> _finalHsvStream =
-      BehaviorSubject<HumanStateVector>();
-
-  StreamSubscription<HumanStateVector>? _emotionSubscription;
-  StreamSubscription<HumanStateVector>? _focusSubscription;
 
   HSIRuntimeModule({
     required ChannelCollector collector,
   }) : _collector = collector;
 
-  /// Stream of base HSV (before emotion/focus)
-  Stream<HumanStateVector> get baseHsvStream => _baseHsvStream.stream;
+  /// Stream of HSI updates (state representation only)
+  ///
+  /// HSI contains:
+  /// - State axes (affect, engagement, activity, context)
+  /// - State indices (arousalIndex, engagementStability, etc.)
+  /// - 64D state embedding
+  ///
+  /// HSI does NOT contain interpretation (emotion, focus).
+  Stream<HumanStateVector> get hsiStream => _hsiStream.stream;
 
-  /// Stream of final HSV (with emotion and focus)
-  Stream<HumanStateVector> get finalHsvStream => _finalHsvStream.stream;
-
-  /// Get current state
+  /// Get current HSI state
   HumanStateVector? get currentState =>
-      _finalHsvStream.hasValue ? _finalHsvStream.value : null;
+      _hsiStream.hasValue ? _hsiStream.value : null;
 
   @override
   Future<void> onInitialize() async {
     print('[HSIRuntime] Initializing HSI Runtime...');
-
-    // Initialize emotion and focus heads
-    _emotionHead.start(_baseHsvStream.stream);
-    _focusHead.start(_emotionHead.emotionStream);
-
-    // Subscribe to focus stream for final HSV
-    _emotionSubscription = _emotionHead.emotionStream.listen(
-      (hsv) {
-        // Pass through for debugging
-      },
-      onError: (e) => print('[HSIRuntime] Emotion stream error: $e'),
-    );
-
-    _focusSubscription = _focusHead.focusStream.listen(
-      (finalHsv) {
-        _finalHsvStream.add(finalHsv);
-      },
-      onError: (e) => print('[HSIRuntime] Focus stream error: $e'),
-    );
+    // No emotion/focus heads here - they're optional modules
   }
 
   @override
@@ -104,17 +83,10 @@ class HSIRuntimeModule extends BaseSynheartModule {
   Future<void> onDispose() async {
     print('[HSIRuntime] Disposing HSI Runtime...');
 
-    await _emotionSubscription?.cancel();
-    await _focusSubscription?.cancel();
-
-    await _emotionHead.dispose();
-    await _focusHead.dispose();
-
-    await _baseHsvStream.close();
-    await _finalHsvStream.close();
+    await _hsiStream.close();
   }
 
-  /// Compute state for a window
+  /// Compute HSI state for a window
   Future<void> _computeState(WindowType window) async {
     try {
       // Collect features from all modules
@@ -125,19 +97,19 @@ class HSIRuntimeModule extends BaseSynheartModule {
         return;
       }
 
-      // Fuse into base HSV
-      final baseHsv = await _fusion.fuse(
+      // Fuse into HSI (state representation)
+      final hsi = await _fusion.fuse(
         features,
         window,
         timestamp: DateTime.now().millisecondsSinceEpoch,
       );
 
-      // Emit base HSV (will flow through emotion -> focus heads)
-      _baseHsvStream.add(baseHsv);
+      // Emit HSI (state representation only, no interpretation)
+      _hsiStream.add(hsi);
 
-      print('[HSIRuntime] Computed state for $window');
+      print('[HSIRuntime] Computed HSI for $window');
     } catch (e, stack) {
-      print('[HSIRuntime] Error computing state: $e');
+      print('[HSIRuntime] Error computing HSI: $e');
       print(stack);
     }
   }

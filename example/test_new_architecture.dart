@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hsi_flutter/hsi_flutter.dart';
+import 'package:synheart_core/synheart_core.dart';
 
 /// Test app for new module architecture
 void main() {
@@ -195,7 +195,9 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    // Use automatic behavior capture if synheart_behavior is initialized
+    final synheartBehavior = _hsi.behaviorModule?.synheartBehavior;
+    final scaffold = Scaffold(
       appBar: AppBar(
         title: const Text('HSI New Architecture Test'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -275,7 +277,7 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
                             ],
                           ),
                         );
-                      }).toList(),
+                      }),
                     ],
                   ),
                 ),
@@ -330,6 +332,12 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
         ),
       ),
     );
+
+    // Wrap with synheart_behavior's gesture detector for automatic capture
+    if (synheartBehavior != null && _isRunning) {
+      return synheartBehavior.wrapWithGestureDetector(scaffold);
+    }
+    return scaffold;
   }
 
   Widget _buildConsentSwitch(String label, ConsentType type, bool value) {

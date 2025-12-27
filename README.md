@@ -1,6 +1,23 @@
 # Synheart Core SDK - Flutter
 
+[![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
+[![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.22.0-blue.svg)](https://flutter.dev)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
+
 **Synheart Core SDK** is the single, unified integration point for developers who want to collect HSI-compatible data, process human state on-device, generate focus/emotion signals, and integrate with Syni.
+
+> **📦 SDK Implementations**: This is the Flutter/Dart implementation. For documentation and other platforms, see the repositories below.
+
+## 📦 Repository Structure
+
+The Synheart Core SDK is organized across multiple repositories:
+
+| Repository | Purpose |
+|------------|---------|
+| **[synheart-core](https://github.com/synheart-ai/synheart-core)** | Main repository (source of truth for documentation) |
+| **[synheart-core-dart](https://github.com/synheart-ai/synheart-core-dart)** | Flutter/Dart implementation (this repository) |
+| **[synheart-core-kotlin](https://github.com/synheart-ai/synheart-core-kotlin)** | Android/Kotlin implementation |
+| **[synheart-core-swift](https://github.com/synheart-ai/synheart-core-swift)** | iOS/Swift implementation |
 
 ## Overview
 
@@ -19,90 +36,109 @@ The Synheart Core SDK consolidates all Synheart signal channels into one SDK:
 
 ## Architecture
 
-The Core SDK consists of **7 core modules** working together:
+### Core Principle
+
+> **HSI represents human state.**
+>
+> **Interpretation is downstream and optional.**
+
+The Core SDK strictly separates:
+- **Representation (HSI)** - State axes, indices, embeddings
+- **Interpretation (Focus, Emotion)** - Optional, explicit modules
+- **Application logic** - Your app
+
+### Core Modules
 
 1. **Capabilities Module** - Feature gating (core/extended/research)
 2. **Consent Module** - User permission management
 3. **Wear Module** - Biosignal collection from wearables
 4. **Phone Module** - Device motion and context signals
 5. **Behavior Module** - User-device interaction patterns
-6. **HSI Runtime** - Signal fusion and state computation (produces Human State Vector)
+6. **HSI Runtime** - Signal fusion and state representation
 7. **Cloud Connector** - Secure HSI snapshot uploads
 
-The **HSI Runtime** module:
-- Ingests signals from Wear, Phone, and Behavior modules
-- Fuses them into a unified **Human State Vector (HSV)**
-- Feeds higher-level models (Emotion Engine, Focus Engine)
-- Powers Syni's LLM layer for human-aware AI
+### Optional Interpretation Modules
+
+- **Synheart Focus** - Focus/engagement estimation (optional, explicit enable)
+- **Synheart Emotion** - Affect modeling (optional, explicit enable)
+
+### Data Flow
+
+```
+Wear, Phone, Behavior Modules
+    ↓
+HSI Runtime
+    ↓
+HSI (State Representation)
+    ↓
+Optional: Focus Module → Focus Estimates
+Optional: Emotion Module → Emotion Estimates
+```
 
 ## Usage
 
 ### Basic Usage
 
-The Core SDK works out of the box with mock data for testing and development:
+The Core SDK provides HSI (Human State Interface) as the core state representation, with optional interpretation modules for Focus and Emotion:
 
 ```dart
-import 'package:hsi_flutter/hsi_flutter.dart';
+import 'package:synheart_core/synheart_core.dart';
 
 // Initialize the Core SDK
-// Note: Class is named HSI for backward compatibility, but represents the full Core SDK
-final synheart = HSI.shared;
-await synheart.configure(
-  appKey: 'YOUR_APP_KEY',
-  userId: 'user123',
+await Synheart.initialize(
+  userId: 'anon_user_123',
+  config: SynheartConfig(
+    enableWear: true,
+    enablePhone: true,
+    enableBehavior: true,
+  ),
 );
 
-// Start the SDK
-await synheart.start();
+// Subscribe to HSI updates (core state representation)
+Synheart.onHSIUpdate.listen((hsi) {
+  print('Arousal Index: ${hsi.affect.arousalIndex}');
+  print('Engagement Stability: ${hsi.engagement.engagementStability}');
+});
 
-// Listen to HSI state updates
-synheart.onStateUpdate.listen((state) {
-  print('Focus Score: ${state.focus.score}');
-  print('Stress Level: ${state.emotion.stress}');
-  print('Behavior Distraction: ${state.behavior.distractionScore}');
+// Optional: Enable interpretation modules
+await Synheart.enableFocus();
+Synheart.onFocusUpdate.listen((focus) {
+  print('Focus Score: ${focus.estimate.score}');
+});
+
+await Synheart.enableEmotion();
+Synheart.onEmotionUpdate.listen((emotion) {
+  print('Stress Index: ${emotion.stressIndex}');
 });
 
 // Optional: Enable cloud sync (requires consent)
-await synheart.enableCloudUploads();
-```
-
-### Module Configuration
-
-Configure which modules to enable:
-
-```dart
-final config = SynheartConfig(
-  enableWearModule: true,
-  enablePhoneModule: true,
-  enableBehaviorModule: true,
-  enableCloudSync: false,  // Enable after user consent
-  logLevel: LogLevel.info,
-);
-
-final synheart = HSI.shared;
-await synheart.configure(
-  appKey: 'YOUR_APP_KEY',
-  userId: 'user123',
-  config: config,
-);
+await Synheart.enableCloud();
 ```
 
 ### Consent Management
 
-The SDK requires user consent for data collection:
+The SDK requires explicit user consent for data collection:
 
 ```dart
-// Request consent from user
-final consent = ConsentSnapshot(
+// Grant consent for specific data types
+await Synheart.grantConsent('biosignals');
+await Synheart.grantConsent('behavior');
+await Synheart.grantConsent('phoneContext');
+
+// Check consent status
+bool hasConsent = await Synheart.hasConsent('biosignals');
+
+// Revoke consent
+await Synheart.revokeConsent('biosignals');
+
+// Alternatively, update all consents at once
+await Synheart.updateConsent(ConsentSnapshot(
   biosignals: true,
   behavior: true,
   motion: true,
   cloudUpload: false,  // User must explicitly opt-in
   syni: false,
-);
-
-final synheart = HSI.shared;
-await synheart.updateConsent(consent);
+));
 ```
 
 ## Prerequisites
@@ -133,12 +169,7 @@ The `synheart_wear` package handles Health Connect permissions automatically. Ad
 
 ### Supported Devices
 
-The Core SDK supports all devices that [synheart_wear](https://pub.dev/packages/synheart_wear) supports:
-- ✅ **Apple Watch** (via HealthKit)
-- 🔄 **Fitbit** (via REST API - In Development)
-- 📋 **Garmin** (Planned)
-- 📋 **Whoop** (Planned)
-- 📋 **Samsung Watch** (Planned)
+The Core SDK supports all devices that [synheart_wear](https://pub.dev/packages/synheart_wear) supports.
 
 ## Privacy & Security
 
@@ -149,13 +180,16 @@ The Core SDK supports all devices that [synheart_wear](https://pub.dev/packages/
 
 ## 📚 Documentation
 
-- **[Product Requirements](docs/core-sdk-prd.md)** - Complete PRD for Synheart Core SDK
-- **[Module Specifications](docs/core-sdk-module.md)** - Technical module specifications
-- **[Internal Architecture](docs/internal-module.md)** - Internal module documentation
-- **[Implementation Roadmap](docs/implementation-roadmap.md)** - Roadmap to v1.0
-- **[Native Implementations](docs/NATIVE_IMPLEMENTATIONS.md)** - iOS & Android implementations
-- **[Native Mirroring Status](docs/native-module-mirror-status.md)** - Cross-platform status
-- **[Synheart Wear Integration](docs/SYNHEART_WEAR_INTEGRATION.md)** - Wearable data integration
+For complete documentation, see the [main Synheart Core repository](https://github.com/synheart-ai/synheart-core):
+
+- **[HSI Specification](https://github.com/synheart-ai/synheart-core/blob/main/docs/HSI_SPECIFICATION.md)** - State axes, indices, and embeddings
+- **[Consent System](https://github.com/synheart-ai/synheart-core/blob/main/docs/CONSENT_SYSTEM.md)** - Permission model and enforcement
+- **[Cloud Protocol](https://github.com/synheart-ai/synheart-core/blob/main/docs/CLOUD_PROTOCOL.md)** - Secure ingestion protocol
+
+### Dart-Specific Documentation
+
+- **[ARCHITECTURE](doc/ARCHITECTURE.md)** - Dart implementation architecture
+- **[HSV Technical Spec](doc/hsv-tech-spec.md)** - HSV data structure details
 
 ## 👥 Contributing
 
@@ -163,30 +197,8 @@ We welcome contributions! Here's how to get started:
 
 1. **Read the guides:**
    - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
-   - [DEVELOPMENT.md](DEVELOPMENT.md) - Development setup guide
-   - [TASKS.md](TASKS.md) - Available tasks to work on
+ 
 
-2. **Pick a task:**
-   - Check [TASKS.md](TASKS.md) for available tasks
-   - Look for tasks marked `[ ]` (available)
-   - Comment on the task or create an issue to claim it
-
-3. **Make your changes:**
-   - Follow our [coding standards](CONTRIBUTING.md#coding-standards)
-   - Add tests for your changes
-   - Update documentation
-
-4. **Submit a Pull Request:**
-   - Follow the [PR checklist](CONTRIBUTING.md#pull-request-checklist)
-   - Reference the task or issue you're addressing
-
-## 🎯 Project Status
-
-**Current Version:** Pre-v1.0 (Development)
-
-**Target Release:** v1.0 (March 2025)
-
-**Progress:** See [TASKS.md](TASKS.md) for current task status
 
 ## 📋 Module Overview
 
@@ -200,7 +212,7 @@ The Synheart Core SDK consists of 7 core modules:
 6. **HSI Runtime** - Signal fusion and state computation
 7. **Cloud Connector** - Secure HSI snapshot uploads
 
-See [docs/core-sdk-module.md](docs/core-sdk-module.md) for detailed specifications.
+See [ARCHITECTURE](doc/ARCHITECTURE.md) for detailed implementation specifications.
 
 ## 🔒 Privacy & Security
 
@@ -212,9 +224,17 @@ See [docs/core-sdk-module.md](docs/core-sdk-module.md) for detailed specificatio
 
 ## 📄 License
 
-Proprietary - Synheart
+Apache 2.0 License - see [LICENSE](LICENSE) for details.
+
+Copyright 2025 Synheart AI Inc.
 
 ## 👤 Author
 
-Israel Goytom
+Synheart Teeam <3 
+
+## Patent Pending Notice
+
+This project is provided under an open-source license. Certain underlying systems, methods, and architectures described or implemented herein may be covered by one or more pending patent applications.
+
+Nothing in this repository grants any license, express or implied, to any patents or patent applications, except as provided by the applicable open-source license.
 

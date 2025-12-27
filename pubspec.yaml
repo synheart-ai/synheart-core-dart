@@ -1,28 +1,38 @@
-name: hsi_flutter
-description: Synheart Core SDK - The unified SDK for collecting biosignals, processing human state on-device, generating focus/emotion signals, and integrating with Syni. Includes HSI Runtime, Wear, Phone, Behavior, Consent, Cloud Connector, and Syni Hooks modules.
-version: 1.0.0+1
-publish_to: 'none'
+name: synheart_core
+description: Synheart Core SDK - The unified SDK for HSI-compatible data collection, on-device state representation, optional interpretation modules (Focus, Emotion), and Syni integration. Includes HSI Runtime, Wear, Phone, Behavior, Consent, Cloud Connector, and Syni Hooks modules.
+version: 0.0.1
+homepage: https://github.com/synheart-ai/synheart-core-dart
+repository: https://github.com/synheart-ai/synheart-core-dart
+issue_tracker: https://github.com/synheart-ai/synheart-core-dart/issues
+documentation: https://github.com/synheart-ai/synheart-core
+topics:
+  - health
+  - wearables
+  - biosignals
+  - hsi
+  - behavior
+
+
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.8.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
 
-  # Synheart model heads (under development - using mock data)
-  # synheart_emotion:
-  #   path: ../synheart_emotion
-  # synheart_focus:
-  #   path: ../synheart_focus
+  # Synheart interpretation SDKs (external)
+  synheart_emotion: ^0.2.2
+  synheart_focus: ^0.0.1
 
   # Synheart Wear SDK - Required for wearable data collection
   # See: https://pub.dev/packages/synheart_wear
   synheart_wear: ^0.1.2
 
-  # Optional integrations (users can add these to their own pubspec.yaml):
-  # synheart_phone: ^0.1.0 # For behavioral signals
-  # synheart_context: ^0.1.0 # For context signals
+  # Synheart Behavior SDK - For automatic behavioral signal capture
+  # See: https://pub.dev/packages/synheart_behavior
+  synheart_behavior: ^0.0.1
+
 
   # Core dependencies
   rxdart: ^0.28.0
@@ -38,7 +48,7 @@ dependencies:
   http: ^1.1.0
 
   # Optional: for JSON serialization
-  json_annotation: ^4.8.1
+  json_annotation: ^4.9.0
 
 dev_dependencies:
   flutter_test:

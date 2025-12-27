@@ -156,7 +156,7 @@ class HSI {
       _consentModule!.addListener(_onConsentChanged);
 
       // 9. Subscribe to final HSV stream
-      _hsiRuntimeModule!.finalHsvStream.listen(
+      _hsiRuntimeModule!.hsiStream.listen(
         (hsv) => _finalHsvStream.add(hsv),
         onError: (e) => print('[HSI] HSV stream error: $e'),
       );

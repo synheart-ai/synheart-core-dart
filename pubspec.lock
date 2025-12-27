@@ -238,6 +238,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.2"
+  flutter_onnxruntime:
+    dependency: transitive
+    description:
+      name: flutter_onnxruntime
+      sha256: "8e1517462cc829d4cafc49702bf11d8a3946be608ca5907d37bf713eb6490231"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.6.1"
   flutter_secure_storage:
     dependency: "direct main"
     description:
@@ -653,6 +661,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  synheart_behavior:
+    dependency: "direct main"
+    description:
+      name: synheart_behavior
+      sha256: "16fb322d9776ed1d1252c34c9f7d4df2e691eaf9e436d0d269b8440ac39c26fa"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.1"
+  synheart_emotion:
+    dependency: "direct main"
+    description:
+      name: synheart_emotion
+      sha256: "8881b7f4f615465d60cc7a29c129bcc28611192523eb6600bb801c46c0d0d306"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.2"
+  synheart_focus:
+    dependency: "direct main"
+    description:
+      name: synheart_focus
+      sha256: c83548b34df82043f8583dc0d9c7fc1939143edf521b32fe940a044c833926cc
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.1"
   synheart_wear:
     dependency: "direct main"
     description:

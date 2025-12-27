@@ -4,10 +4,10 @@ import '../../models/context.dart';
 import '../interfaces/feature_providers.dart';
 import 'channel_collector.dart';
 
-/// Fusion Engine V2
+/// Fusion Engine
 ///
 /// Combines features from all modules into a base HSV
-class FusionEngineV2 {
+class FusionEngine {
   /// Fuse collected features into base HSV
   Future<HumanStateVector> fuse(
     CollectedFeatures features,
@@ -51,10 +51,13 @@ class FusionEngineV2 {
     if (features.wear != null) {
       vector.add(features.wear!.hrAverage ?? 0.0);
       vector.add(features.wear!.hrvRmssd ?? 0.0);
+      vector.add(features.wear!.hrvSdnn ?? 0.0);
+      vector.add(features.wear!.pnn50 ?? 0.0);
+      vector.add(features.wear!.meanRrMs ?? 0.0);
       vector.add(features.wear!.motionIndex ?? 0.0);
       vector.add(features.wear!.respRate ?? 0.0);
     } else {
-      vector.addAll([0.0, 0.0, 0.0, 0.0]);
+      vector.addAll([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
     }
 
     // Phone features (context)
