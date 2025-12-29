@@ -58,7 +58,7 @@ class FocusHead {
   }
 
   sf.HSIData _toHSIData(HumanStateVector hsv) {
-    final emb = hsv.meta.hsiEmbedding;
+    final emb = hsv.meta.embedding.vector;
 
     // FusionEngine embeds biosignals first.
     final hr = emb.isNotEmpty ? emb[0] : 0.0;

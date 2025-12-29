@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:synheart_behavior/synheart_behavior.dart' as sb;
+import '../../core/logger.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
@@ -97,7 +98,7 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
 
   @override
   Future<void> onInitialize() async {
-    print('[BehaviorModule] Initializing behavior tracking...');
+    SynheartLogger.log('[BehaviorModule] Initializing behavior tracking...');
 
     // Initialize synheart_behavior package for automatic event capture
     try {
@@ -108,16 +109,19 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
           enableMotionLite: false,
         ),
       );
-      print('[BehaviorModule] synheart_behavior initialized successfully');
+      SynheartLogger.log('[BehaviorModule] synheart_behavior initialized successfully');
     } catch (e) {
-      print('[BehaviorModule] Failed to initialize synheart_behavior: $e');
+      SynheartLogger.log(
+        '[BehaviorModule] Failed to initialize synheart_behavior: $e',
+        error: e,
+      );
       // Continue without automatic capture - fallback to manual instrumentation
     }
   }
 
   @override
   Future<void> onStart() async {
-    print('[BehaviorModule] Starting behavior tracking...');
+    SynheartLogger.log('[BehaviorModule] Starting behavior tracking...');
 
     // Subscribe to manual event stream
     _eventSubscription = _eventStream.events.listen(
@@ -127,7 +131,11 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
           _aggregator.addEvent(event);
         }
       },
-      onError: (e) => print('[BehaviorModule] Event stream error: $e'),
+      onError: (e, st) => SynheartLogger.log(
+        '[BehaviorModule] Event stream error: $e',
+        error: e,
+        stackTrace: st,
+      ),
     );
 
     // Subscribe to synheart_behavior automatic events
@@ -143,9 +151,13 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
             }
           }
         },
-        onError: (e) => print('[BehaviorModule] synheart_behavior event error: $e'),
+        onError: (e, st) => SynheartLogger.log(
+          '[BehaviorModule] synheart_behavior event error: $e',
+          error: e,
+          stackTrace: st,
+        ),
       );
-      print('[BehaviorModule] Subscribed to synheart_behavior events');
+      SynheartLogger.log('[BehaviorModule] Subscribed to synheart_behavior events');
     }
 
     // Start cleanup timer (every minute)
@@ -153,7 +165,7 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
       _aggregator.cleanOldWindows();
     });
 
-    print('[BehaviorModule] Behavior tracking started');
+    SynheartLogger.log('[BehaviorModule] Behavior tracking started');
   }
 
   /// Convert synheart_behavior event to internal BehaviorEvent format
@@ -189,7 +201,7 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
 
   @override
   Future<void> onStop() async {
-    print('[BehaviorModule] Stopping behavior tracking...');
+    SynheartLogger.log('[BehaviorModule] Stopping behavior tracking...');
 
     await _eventSubscription?.cancel();
     _eventSubscription = null;
@@ -203,7 +215,7 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
 
   @override
   Future<void> onDispose() async {
-    print('[BehaviorModule] Disposing behavior module...');
+    SynheartLogger.log('[BehaviorModule] Disposing behavior module...');
     await _eventStream.dispose();
     _synheartBehavior = null;
   }

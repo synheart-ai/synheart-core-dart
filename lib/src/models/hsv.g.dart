@@ -34,16 +34,32 @@ MetaState _$MetaStateFromJson(Map<String, dynamic> json) => MetaState(
   sessionId: json['sessionId'] as String,
   device: DeviceInfo.fromJson(json['device'] as Map<String, dynamic>),
   samplingRateHz: (json['samplingRateHz'] as num).toDouble(),
-  hsiEmbedding: (json['hsiEmbedding'] as List<dynamic>)
-      .map((e) => (e as num).toDouble())
-      .toList(),
+  embedding: StateEmbedding.fromJson(json['embedding'] as Map<String, dynamic>),
+  axes: HSIAxes.fromJson(json['axes'] as Map<String, dynamic>),
 );
 
 Map<String, dynamic> _$MetaStateToJson(MetaState instance) => <String, dynamic>{
   'sessionId': instance.sessionId,
   'device': instance.device,
   'samplingRateHz': instance.samplingRateHz,
-  'hsiEmbedding': instance.hsiEmbedding,
+  'embedding': instance.embedding,
+  'axes': instance.axes,
+};
+
+HSIAxes _$HSIAxesFromJson(Map<String, dynamic> json) => HSIAxes(
+  affect: AffectAxis.fromJson(json['affect'] as Map<String, dynamic>),
+  engagement: EngagementAxis.fromJson(
+    json['engagement'] as Map<String, dynamic>,
+  ),
+  activity: ActivityAxis.fromJson(json['activity'] as Map<String, dynamic>),
+  context: ContextAxis.fromJson(json['context'] as Map<String, dynamic>),
+);
+
+Map<String, dynamic> _$HSIAxesToJson(HSIAxes instance) => <String, dynamic>{
+  'affect': instance.affect,
+  'engagement': instance.engagement,
+  'activity': instance.activity,
+  'context': instance.context,
 };
 
 DeviceInfo _$DeviceInfoFromJson(Map<String, dynamic> json) => DeviceInfo(

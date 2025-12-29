@@ -17,9 +17,6 @@ library synheart_core;
 // Core SDK Entry Point (PRD-compliant Architecture)
 export 'src/synheart.dart';
 
-// Legacy HSI class (for backward compatibility - will be deprecated)
-export 'src/hsi_new.dart' show HSI;
-
 // Configuration
 export 'src/config/synheart_config.dart';
 
@@ -29,6 +26,8 @@ export 'src/models/emotion.dart';
 export 'src/models/focus.dart';
 export 'src/models/behavior.dart';
 export 'src/models/context.dart';
+export 'src/models/hsi_axes.dart';
+export 'src/models/hsi_export.dart';
 
 // Module Base
 export 'src/modules/base/synheart_module.dart';
@@ -47,16 +46,10 @@ export 'src/modules/wear/wear_module.dart';
 export 'src/modules/phone/phone_module.dart';
 export 'src/modules/behavior/behavior_module.dart';
 export 'src/modules/hsi_runtime/hsi_runtime_module.dart';
+export 'src/modules/cloud/cloud_connector_module.dart';
+export 'src/modules/cloud/upload_models.dart';
+export 'src/modules/cloud/cloud_exceptions.dart';
 
 // Services
 export 'src/services/auth_service.dart';
-
-// Legacy exports (for backward compatibility)
-// These are kept for apps still using the old monolithic architecture
-export 'src/core/state_engine.dart';
-export 'src/core/processors.dart';
-export 'src/core/data_sources.dart';
-export 'src/heads/emotion_head.dart';
-export 'src/heads/focus_head.dart';
-// Note: ingestion.dart exports removed to avoid SleepStage conflict
 

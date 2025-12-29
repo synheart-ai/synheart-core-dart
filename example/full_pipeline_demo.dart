@@ -1,104 +1,93 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:synheart_core/synheart_core.dart';
 
-/// Phase 2 Complete Pipeline Test
+/// Full pipeline demo
 ///
-/// Demonstrates the full HSI pipeline with all modules:
+/// Demonstrates the Synheart pipeline end-to-end:
 /// - Capabilities & Consent
 /// - Wear Module (biosignals)
 /// - Phone Module (motion, screen state)
 /// - Behavior Module (user interactions)
-/// - HSI Runtime (fusion & heads)
+/// - HSI Runtime (fusion engine producing HSV)
 void main() {
-  runApp(const FullPipelineApp());
+  runApp(const FullPipelineDemoApp());
 }
 
-class FullPipelineApp extends StatelessWidget {
-  const FullPipelineApp({super.key});
+class FullPipelineDemoApp extends StatelessWidget {
+  const FullPipelineDemoApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'HSI Phase 2 - Full Pipeline',
+      title: 'Synheart - Full Pipeline Demo',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const FullPipelinePage(),
+      home: const FullPipelineDemoPage(),
     );
   }
 }
 
-class FullPipelinePage extends StatefulWidget {
-  const FullPipelinePage({super.key});
+class FullPipelineDemoPage extends StatefulWidget {
+  const FullPipelineDemoPage({super.key});
 
   @override
-  State<FullPipelinePage> createState() => _FullPipelinePageState();
+  State<FullPipelineDemoPage> createState() => _FullPipelineDemoPageState();
 }
 
-class _FullPipelinePageState extends State<FullPipelinePage> {
-  final HSI _hsi = HSI.shared;
-  bool _isConfigured = false;
-  bool _isRunning = false;
+class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
+  bool _isInitialized = false;
+  bool _isSubscribed = false;
   HumanStateVector? _currentState;
   Map<String, String>? _moduleStatuses;
-  String _statusMessage = 'Not configured';
+  String _statusMessage = 'Not initialized';
   int _updateCount = 0;
+  StreamSubscription<HumanStateVector>? _subscription;
 
-  @override
-  void initState() {
-    super.initState();
-  }
-
-  Future<void> _configure() async {
+  Future<void> _initialize() async {
     try {
       setState(() {
-        _statusMessage = 'Configuring...';
+        _statusMessage = 'Initializing...';
       });
 
-      await _hsi.configure(
+      await Synheart.initialize(
         appKey: 'test_app_key',
         userId: 'test_user_123',
         config: SynheartConfig.defaults(),
       );
 
-      // Grant all consents for testing
-      await _hsi.updateConsent(ConsentSnapshot.all());
+      // Grant all consents for demo/testing
+      await Synheart.updateConsent(ConsentSnapshot.all());
 
       setState(() {
-        _isConfigured = true;
-        _moduleStatuses = _hsi.getModuleStatuses();
-        _statusMessage = 'Configured successfully';
+        _isInitialized = true;
+        _moduleStatuses = Synheart.shared.getModuleStatuses();
+        _statusMessage = 'Initialized';
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('HSI configured - all modules ready')),
+          const SnackBar(content: Text('Synheart initialized - all modules ready')),
         );
       }
     } catch (e) {
       setState(() {
-        _statusMessage = 'Configuration failed: $e';
+        _statusMessage = 'Initialization failed: $e';
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Configuration failed: $e')),
+          SnackBar(content: Text('Initialization failed: $e')),
         );
       }
     }
   }
 
-  Future<void> _start() async {
+  Future<void> _subscribe() async {
     try {
-      setState(() {
-        _statusMessage = 'Starting...';
-      });
-
-      await _hsi.start();
-
-      // Subscribe to HSV updates
-      _hsi.onStateUpdate.listen((hsv) {
+      _subscription ??= Synheart.onHSVUpdate.listen((hsv) {
         setState(() {
           _currentState = hsv;
           _updateCount++;
@@ -106,24 +95,24 @@ class _FullPipelinePageState extends State<FullPipelinePage> {
       });
 
       setState(() {
-        _isRunning = true;
-        _moduleStatuses = _hsi.getModuleStatuses();
-        _statusMessage = 'Running';
+        _isSubscribed = true;
+        _moduleStatuses = Synheart.shared.getModuleStatuses();
+        _statusMessage = 'Subscribed to HSV';
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('HSI pipeline started - receiving HSV updates')),
+          const SnackBar(content: Text('Subscribed - receiving HSV updates')),
         );
       }
     } catch (e) {
       setState(() {
-        _statusMessage = 'Start failed: $e';
+        _statusMessage = 'Subscribe failed: $e';
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Start failed: $e')),
+          SnackBar(content: Text('Subscribe failed: $e')),
         );
       }
     }
@@ -131,17 +120,23 @@ class _FullPipelinePageState extends State<FullPipelinePage> {
 
   Future<void> _stop() async {
     try {
-      await _hsi.stop();
+      await Synheart.stop();
+
+      await _subscription?.cancel();
+      _subscription = null;
 
       setState(() {
-        _isRunning = false;
-        _moduleStatuses = _hsi.getModuleStatuses();
+        _isSubscribed = false;
+        _isInitialized = false;
+        _moduleStatuses = Synheart.shared.getModuleStatuses();
         _statusMessage = 'Stopped';
+        _currentState = null;
+        _updateCount = 0;
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('HSI stopped')),
+          const SnackBar(content: Text('Synheart stopped')),
         );
       }
     } catch (e) {
@@ -155,17 +150,19 @@ class _FullPipelinePageState extends State<FullPipelinePage> {
 
   @override
   void dispose() {
-    _hsi.dispose();
+    _subscription?.cancel();
+    _subscription = null;
+    Synheart.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     // Use automatic behavior capture if synheart_behavior is initialized
-    final synheartBehavior = _hsi.behaviorModule?.synheartBehavior;
+    final synheartBehavior = Synheart.shared.behaviorModule?.synheartBehavior;
     final scaffold = Scaffold(
       appBar: AppBar(
-        title: const Text('HSI Phase 2 - Full Pipeline'),
+        title: const Text('Synheart - Full Pipeline Demo'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: SingleChildScrollView(
@@ -173,44 +170,40 @@ class _FullPipelinePageState extends State<FullPipelinePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Status
             _buildStatusCard(),
             const SizedBox(height: 16),
 
-            // Controls
-            if (!_isConfigured)
+            if (!_isInitialized)
               ElevatedButton(
-                onPressed: _configure,
-                child: const Text('Configure HSI'),
+                onPressed: _initialize,
+                child: const Text('Initialize'),
               ),
 
-            if (_isConfigured && !_isRunning)
+            if (_isInitialized && !_isSubscribed)
               ElevatedButton(
-                onPressed: _start,
-                child: const Text('Start HSI Pipeline'),
+                onPressed: _subscribe,
+                child: const Text('Subscribe to HSV'),
               ),
 
-            if (_isRunning)
+            if (_isInitialized)
               ElevatedButton(
                 onPressed: _stop,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('Stop HSI'),
+                child: const Text('Stop'),
               ),
 
             const SizedBox(height: 16),
 
-            // Module statuses
             if (_moduleStatuses != null) _buildModuleStatusesCard(),
 
             const SizedBox(height: 16),
 
-            // Current state (HSV)
             if (_currentState != null) ...[
               _buildStateCard(),
-            ] else if (_isRunning)
+            ] else if (_isSubscribed)
               const Card(
                 child: Padding(
                   padding: EdgeInsets.all(16.0),
@@ -224,19 +217,18 @@ class _FullPipelinePageState extends State<FullPipelinePage> {
 
     // Wrap with synheart_behavior's gesture detector for automatic capture
     // Falls back to manual instrumentation if not available
-    if (synheartBehavior != null && _isRunning) {
+    if (synheartBehavior != null && _isSubscribed) {
       return synheartBehavior.wrapWithGestureDetector(scaffold);
-    } else {
-      // Fallback: Manual tap recording for demonstration
+    } else if (_isSubscribed) {
       return GestureDetector(
         onTap: () {
-          if (_isRunning) {
-            _hsi.behaviorModule?.eventStream.recordTap(Offset.zero);
-          }
+          Synheart.shared.behaviorModule?.eventStream.recordTap(Offset.zero);
         },
         child: scaffold,
       );
     }
+
+    return scaffold;
   }
 
   Widget _buildStatusCard() {
@@ -252,8 +244,8 @@ class _FullPipelinePageState extends State<FullPipelinePage> {
             ),
             const SizedBox(height: 8),
             _buildStatusRow('Status', _statusMessage),
-            _buildStatusRow('Configured', _isConfigured.toString()),
-            _buildStatusRow('Running', _isRunning.toString()),
+            _buildStatusRow('Initialized', _isInitialized.toString()),
+            _buildStatusRow('Subscribed', _isSubscribed.toString()),
             _buildStatusRow('HSV Updates', _updateCount.toString()),
           ],
         ),
@@ -314,7 +306,10 @@ class _FullPipelinePageState extends State<FullPipelinePage> {
         const SizedBox(height: 16),
         _buildSection('Behavior', [
           _buildMetric('Typing Cadence', _currentState!.behavior.typingCadence),
-          _buildMetric('Typing Burstiness', _currentState!.behavior.typingBurstiness),
+          _buildMetric(
+            'Typing Burstiness',
+            _currentState!.behavior.typingBurstiness,
+          ),
           _buildMetric('Scroll Velocity', _currentState!.behavior.scrollVelocity),
           _buildMetric('Idle Gaps', _currentState!.behavior.idleGaps),
           _buildMetric('App Switch Rate', _currentState!.behavior.appSwitchRate),
@@ -403,3 +398,5 @@ class _FullPipelinePageState extends State<FullPipelinePage> {
     }
   }
 }
+
+

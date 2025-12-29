@@ -38,14 +38,27 @@ The Synheart Core SDK consolidates all Synheart signal channels into one SDK:
 
 ### Core Principle
 
-> **HSI represents human state.**
+> **HSV represents human state.**
 >
 > **Interpretation is downstream and optional.**
 
 The Core SDK strictly separates:
-- **Representation (HSI)** - State axes, indices, embeddings
+- **Representation (HSV)** - Human State Vector: state axes, indices, embeddings
 - **Interpretation (Focus, Emotion)** - Optional, explicit modules
 - **Application logic** - Your app
+
+### HSV vs HSI
+
+- **HSV (Human State Vector)**: An internal, time-scoped, multi-dimensional representation that encodes estimates of human physiological, cognitive, and behavioral state for local computation and inference
+  - Language-agnostic model (same across Dart, Kotlin, Swift)
+  - Implemented in Dart classes for this SDK
+  - Fast, type-safe on-device processing
+
+- **HSI 1.0 (Human State Interface)**: Cross-platform JSON wire format
+  - Platform-agnostic canonical format
+  - For external systems and cross-platform communication
+
+The SDK uses a hybrid approach: HSV for local computation, HSI 1.0 for external integration.
 
 ### Core Modules
 
@@ -54,8 +67,8 @@ The Core SDK strictly separates:
 3. **Wear Module** - Biosignal collection from wearables
 4. **Phone Module** - Device motion and context signals
 5. **Behavior Module** - User-device interaction patterns
-6. **HSI Runtime** - Signal fusion and state representation
-7. **Cloud Connector** - Secure HSI snapshot uploads
+6. **HSI Runtime** - Signal fusion and HSV state representation
+7. **Cloud Connector** - Secure HSV snapshot uploads
 
 ### Optional Interpretation Modules
 
@@ -67,19 +80,21 @@ The Core SDK strictly separates:
 ```
 Wear, Phone, Behavior Modules
     ↓
-HSI Runtime
+HSI Runtime (Fusion Engine)
     ↓
-HSI (State Representation)
+HSV (Human State Vector)
     ↓
 Optional: Focus Module → Focus Estimates
 Optional: Emotion Module → Emotion Estimates
+    ↓
+Optional: Export to HSI 1.0 (external format)
 ```
 
 ## Usage
 
 ### Basic Usage
 
-The Core SDK provides HSI (Human State Interface) as the core state representation, with optional interpretation modules for Focus and Emotion:
+The Core SDK provides HSV (Human State Vector) as the core state representation, with optional interpretation modules for Focus and Emotion:
 
 ```dart
 import 'package:synheart_core/synheart_core.dart';
@@ -94,10 +109,10 @@ await Synheart.initialize(
   ),
 );
 
-// Subscribe to HSI updates (core state representation)
-Synheart.onHSIUpdate.listen((hsi) {
-  print('Arousal Index: ${hsi.affect.arousalIndex}');
-  print('Engagement Stability: ${hsi.engagement.engagementStability}');
+// Subscribe to HSV updates (core state representation)
+Synheart.onHSVUpdate.listen((hsv) {
+  print('Arousal Index: ${hsv.meta.axes.affect.arousalIndex}');
+  print('Engagement Stability: ${hsv.meta.axes.engagement.engagementStability}');
 });
 
 // Optional: Enable interpretation modules
@@ -114,6 +129,40 @@ Synheart.onEmotionUpdate.listen((emotion) {
 // Optional: Enable cloud sync (requires consent)
 await Synheart.enableCloud();
 ```
+
+### HSI 1.0 Export
+
+The SDK supports exporting HSV to the canonical HSI 1.0 format for external interoperability:
+
+```dart
+import 'package:synheart_core/synheart_core.dart';
+import 'dart:convert';
+
+// Subscribe to HSV updates
+Synheart.onHSVUpdate.listen((hsv) {
+  // Convert HSV to HSI 1.0 canonical format
+  final hsi10 = hsv.toHSI10(
+    producerName: 'My App',
+    producerVersion: '1.0.0',
+    instanceId: 'instance-123',
+  );
+
+  // Serialize to JSON
+  final json = hsi10.toJson();
+  final jsonString = JsonEncoder.withIndent('  ').convert(json);
+
+  // Send to external system, validate against schema, etc.
+  print(jsonString);
+});
+```
+
+The SDK uses a hybrid architecture:
+- **HSV (Human State Vector)**: Language-agnostic model implemented in Dart classes
+- **HSI 1.0 (Human State Interface)**: Cross-platform JSON format for interoperability
+
+**Note**: All Synheart SDKs (Dart, Kotlin, Swift) implement the same HSV model, ensuring consistent state representation across platforms.
+
+See the [hsi_export_example.dart](example/hsi_export_example.dart) for a complete example.
 
 ### Consent Management
 

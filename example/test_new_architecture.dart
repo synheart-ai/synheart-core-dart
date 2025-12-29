@@ -12,7 +12,7 @@ class NewArchitectureTestApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'HSI New Architecture Test',
+      title: 'Synheart Modules Test',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
@@ -31,7 +31,6 @@ class NewArchitectureTestPage extends StatefulWidget {
 }
 
 class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
-  final HSI _hsi = HSI.shared;
   bool _isConfigured = false;
   bool _isRunning = false;
   ConsentSnapshot? _currentConsent;
@@ -46,10 +45,10 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
   Future<void> _configure() async {
     try {
       setState(() {
-        _statusMessage = 'Configuring...';
+        _statusMessage = 'Initializing...';
       });
 
-      await _hsi.configure(
+      await Synheart.initialize(
         appKey: 'test_app_key',
         userId: 'test_user_123',
         config: SynheartConfig.defaults(),
@@ -57,14 +56,15 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
 
       setState(() {
         _isConfigured = true;
-        _currentConsent = _hsi.currentConsent;
-        _moduleStatuses = _hsi.getModuleStatuses();
-        _statusMessage = 'Configured successfully';
+        _isRunning = true; // initialize starts immediately
+        _currentConsent = Synheart.shared.currentConsent;
+        _moduleStatuses = Synheart.shared.getModuleStatuses();
+        _statusMessage = 'Initialized';
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('HSI configured successfully')),
+          const SnackBar(content: Text('Synheart initialized successfully')),
         );
       }
     } catch (e) {
@@ -81,35 +81,12 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
   }
 
   Future<void> _start() async {
-    try {
-      setState(() {
-        _statusMessage = 'Starting...';
-      });
-
-      await _hsi.start();
-
-      setState(() {
-        _isRunning = true;
-        _moduleStatuses = _hsi.getModuleStatuses();
-        _statusMessage = 'Running';
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('HSI started')),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _statusMessage = 'Start failed: $e';
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Start failed: $e')),
-        );
-      }
-    }
+    // Synheart starts during initialize; keep this button for UI continuity.
+    setState(() {
+      _isRunning = true;
+      _moduleStatuses = Synheart.shared.getModuleStatuses();
+      _statusMessage = 'Running';
+    });
   }
 
   Future<void> _stop() async {
@@ -118,17 +95,17 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
         _statusMessage = 'Stopping...';
       });
 
-      await _hsi.stop();
+      await Synheart.stop();
 
       setState(() {
         _isRunning = false;
-        _moduleStatuses = _hsi.getModuleStatuses();
+        _moduleStatuses = Synheart.shared.getModuleStatuses();
         _statusMessage = 'Stopped';
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('HSI stopped')),
+          const SnackBar(content: Text('Synheart stopped')),
         );
       }
     } catch (e) {
@@ -167,10 +144,10 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
           break;
       }
 
-      await _hsi.updateConsent(updated);
+      await Synheart.updateConsent(updated);
 
       setState(() {
-        _currentConsent = _hsi.currentConsent;
+        _currentConsent = Synheart.shared.currentConsent;
       });
 
       if (mounted) {
@@ -189,17 +166,17 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
 
   @override
   void dispose() {
-    _hsi.dispose();
+    Synheart.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     // Use automatic behavior capture if synheart_behavior is initialized
-    final synheartBehavior = _hsi.behaviorModule?.synheartBehavior;
+    final synheartBehavior = Synheart.shared.behaviorModule?.synheartBehavior;
     final scaffold = Scaffold(
       appBar: AppBar(
-        title: const Text('HSI New Architecture Test'),
+        title: const Text('Synheart Modules Test'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: SingleChildScrollView(
@@ -233,19 +210,16 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
             if (!_isConfigured)
               ElevatedButton(
                 onPressed: _configure,
-                child: const Text('Configure HSI'),
+                child: const Text('Initialize Synheart'),
               ),
 
             if (_isConfigured && !_isRunning)
-              ElevatedButton(
-                onPressed: _start,
-                child: const Text('Start HSI'),
-              ),
+              ElevatedButton(onPressed: _start, child: const Text('Mark Running')),
 
             if (_isRunning)
               ElevatedButton(
                 onPressed: _stop,
-                child: const Text('Stop HSI'),
+                child: const Text('Stop Synheart'),
               ),
 
             const SizedBox(height: 16),

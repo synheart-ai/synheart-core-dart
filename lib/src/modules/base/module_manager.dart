@@ -1,4 +1,5 @@
 import 'synheart_module.dart';
+import '../../core/logger.dart';
 
 /// Manages the lifecycle of all Synheart modules
 ///
@@ -80,7 +81,10 @@ class ModuleManager {
           await module.stop();
         } catch (e) {
           // Log error but continue stopping other modules
-          print('Error stopping module $moduleId: $e');
+          SynheartLogger.log(
+            'Error stopping module $moduleId: $e',
+            error: e,
+          );
         }
       }
     }
@@ -97,7 +101,10 @@ class ModuleManager {
           await module.dispose();
         } catch (e) {
           // Log error but continue disposing other modules
-          print('Error disposing module $moduleId: $e');
+          SynheartLogger.log(
+            'Error disposing module $moduleId: $e',
+            error: e,
+          );
         }
       }
     }

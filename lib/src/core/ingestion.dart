@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:rxdart/rxdart.dart';
 import 'data_sources.dart';
+import 'logger.dart';
 import '../modules/interfaces/feature_providers.dart';
 
 /// Raw signal data from various sources
@@ -208,7 +209,7 @@ class IngestionService {
           _emitCombinedSignals();
         },
         onError: (error) {
-          print('Biosignal stream error: $error');
+          SynheartLogger.log('Biosignal stream error: $error', error: error);
         },
       );
 
@@ -219,7 +220,7 @@ class IngestionService {
           _emitCombinedSignals();
         },
         onError: (error) {
-          print('Behavioral stream error: $error');
+          SynheartLogger.log('Behavioral stream error: $error', error: error);
         },
       );
 
@@ -230,11 +231,11 @@ class IngestionService {
           _emitCombinedSignals();
         },
         onError: (error) {
-          print('Context stream error: $error');
+          SynheartLogger.log('Context stream error: $error', error: error);
         },
       );
     } catch (e) {
-      print('Failed to initialize data sources: $e');
+      SynheartLogger.log('Failed to initialize data sources: $e', error: e);
       rethrow;
     }
   }

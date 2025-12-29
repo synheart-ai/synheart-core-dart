@@ -11,9 +11,8 @@ class MockWearSourceHandler implements WearSourceHandler {
   final Random _random = Random();
 
   // Simulate realistic HR/HRV patterns
-  double _baseHr = 70.0;
-  double _baseHrv = 50.0;
-  int _sampleCount = 0;
+  final double _baseHr = 70.0;
+  final double _baseHrv = 50.0;
 
   @override
   WearSourceType get sourceType => WearSourceType.mock;
@@ -45,8 +44,6 @@ class MockWearSourceHandler implements WearSourceHandler {
       }
 
       // Generate realistic mock data
-      _sampleCount++;
-
       // Simulate circadian rhythm (HR increases during day, decreases at night)
       final hourOfDay = DateTime.now().hour;
       final circadianOffset = sin((hourOfDay - 6) * pi / 12) * 10;

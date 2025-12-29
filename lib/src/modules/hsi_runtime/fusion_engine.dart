@@ -1,6 +1,7 @@
 import '../../models/hsv.dart';
 import '../../models/behavior.dart';
 import '../../models/context.dart';
+import '../../models/hsi_axes.dart';
 import '../interfaces/feature_providers.dart';
 import 'channel_collector.dart';
 
@@ -17,8 +18,18 @@ class FusionEngine {
     // Build fused feature vector
     final fusedVector = _buildFusedVector(features);
 
-    // Run embedding model (placeholder for now)
-    final embedding = await _computeEmbedding(fusedVector);
+    // Run embedding model
+    final embeddingVector = await _computeEmbedding(fusedVector);
+
+    // Compute HSI state axes
+    final axes = _computeStateAxes(features);
+
+    // Create embedding object
+    final embedding = StateEmbedding(
+      vector: embeddingVector,
+      timestamp: timestamp,
+      windowType: _getWindowTypeName(window),
+    );
 
     // Create behavior state
     final behavior = _buildBehaviorState(features.behavior);
@@ -26,12 +37,13 @@ class FusionEngine {
     // Create context state
     final context = _buildContextState(features.phone);
 
-    // Create meta state
+    // Create meta state with HSI axes and embedding
     final meta = MetaState(
       sessionId: 'sess-${DateTime.now().millisecondsSinceEpoch}',
       device: DeviceInfo(platform: 'flutter'),
       samplingRateHz: _getSamplingRate(window),
-      hsiEmbedding: embedding,
+      embedding: embedding,
+      axes: axes,
     );
 
     // Create base HSV (emotion and focus will be populated by heads)
@@ -156,5 +168,153 @@ class FusionEngine {
       case WindowType.window24h:
         return 1.0 / 86400; // 1 sample per day
     }
+  }
+
+  /// Get window type name string
+  String _getWindowTypeName(WindowType window) {
+    switch (window) {
+      case WindowType.window30s:
+        return 'micro';
+      case WindowType.window5m:
+        return 'short';
+      case WindowType.window1h:
+        return 'medium';
+      case WindowType.window24h:
+        return 'long';
+    }
+  }
+
+  /// Compute HSI state axes from collected features
+  HSIAxes _computeStateAxes(CollectedFeatures features) {
+    return HSIAxes(
+      affect: _computeAffectAxis(features),
+      engagement: _computeEngagementAxis(features),
+      activity: _computeActivityAxis(features),
+      context: _computeContextAxis(features),
+    );
+  }
+
+  /// Compute Affect Axis (arousal and valence stability)
+  AffectAxis _computeAffectAxis(CollectedFeatures features) {
+    final wear = features.wear;
+
+    if (wear == null) {
+      return AffectAxis.empty();
+    }
+
+    // Arousal Index: combination of HR and HRV
+    // Higher HR and lower HRV indicate higher arousal
+    double? arousalIndex;
+    if (wear.hrAverage != null && wear.hrvRmssd != null) {
+      // Normalize HR (assuming 40-180 bpm range)
+      final hrNorm = ((wear.hrAverage! - 40) / 140).clamp(0.0, 1.0);
+
+      // Normalize HRV RMSSD (assuming 10-100ms range, inverted for arousal)
+      final hrvNorm = 1.0 - ((wear.hrvRmssd! - 10) / 90).clamp(0.0, 1.0);
+
+      // Combine with weighted average (60% HR, 40% HRV)
+      arousalIndex = (0.6 * hrNorm + 0.4 * hrvNorm).clamp(0.0, 1.0);
+    }
+
+    // Valence Stability: based on HRV stability (SDNN)
+    // Higher SDNN indicates more variation, lower stability
+    double? valenceStability;
+    if (wear.hrvSdnn != null) {
+      // Normalize SDNN (assuming 20-100ms range, inverted for stability)
+      valenceStability = 1.0 - ((wear.hrvSdnn! - 20) / 80).clamp(0.0, 1.0);
+    }
+
+    return AffectAxis(
+      arousalIndex: arousalIndex,
+      valenceStability: valenceStability,
+    );
+  }
+
+  /// Compute Engagement Axis (interaction stability and cadence)
+  EngagementAxis _computeEngagementAxis(CollectedFeatures features) {
+    final behavior = features.behavior;
+
+    if (behavior == null) {
+      return EngagementAxis.empty();
+    }
+
+    // Engagement Stability: inverse of burstiness
+    // Lower burstiness = more stable engagement
+    final engagementStability =
+        (1.0 - behavior.burstiness).clamp(0.0, 1.0);
+
+    // Interaction Cadence: combination of tap rate and keystroke rate
+    final interactionCadence =
+        (0.5 * behavior.tapRateNorm + 0.5 * behavior.keystrokeRateNorm)
+            .clamp(0.0, 1.0);
+
+    return EngagementAxis(
+      engagementStability: engagementStability,
+      interactionCadence: interactionCadence,
+    );
+  }
+
+  /// Compute Activity Axis (motion and posture)
+  ActivityAxis _computeActivityAxis(CollectedFeatures features) {
+    final wear = features.wear;
+    final phone = features.phone;
+
+    // Motion Index: combine wear motion and phone motion
+    double? motionIndex;
+
+    if (wear?.motionIndex != null && phone != null) {
+      // Average of wear and phone motion
+      motionIndex =
+          (0.5 * wear!.motionIndex! + 0.5 * phone.motionLevel).clamp(0.0, 1.0);
+    } else if (wear?.motionIndex != null) {
+      motionIndex = wear!.motionIndex!.clamp(0.0, 1.0);
+    } else if (phone != null) {
+      motionIndex = phone.motionLevel.clamp(0.0, 1.0);
+    }
+
+    // Posture Stability: inverse of motion index
+    // Lower motion = more stable posture
+    final postureStability = motionIndex != null
+        ? (1.0 - motionIndex).clamp(0.0, 1.0)
+        : null;
+
+    return ActivityAxis(
+      motionIndex: motionIndex,
+      postureStability: postureStability,
+    );
+  }
+
+  /// Compute Context Axis (screen time and fragmentation)
+  ContextAxis _computeContextAxis(CollectedFeatures features) {
+    final phone = features.phone;
+    final behavior = features.behavior;
+
+    if (phone == null && behavior == null) {
+      return ContextAxis.empty();
+    }
+
+    // Screen Active Ratio: directly from phone features
+    final screenActiveRatio = phone?.screenOnRatio.clamp(0.0, 1.0);
+
+    // Session Fragmentation: combine app switch rate and behavior fragmentation
+    double? sessionFragmentation;
+
+    if (phone != null && behavior != null) {
+      // Average of normalized app switch rate and session fragmentation
+      // Assume max 10 switches/min
+      final appSwitchNorm = (phone.appSwitchRate / 10.0).clamp(0.0, 1.0);
+      sessionFragmentation =
+          (0.5 * appSwitchNorm + 0.5 * behavior.sessionFragmentation)
+              .clamp(0.0, 1.0);
+    } else if (phone != null) {
+      sessionFragmentation = (phone.appSwitchRate / 10.0).clamp(0.0, 1.0);
+    } else if (behavior != null) {
+      sessionFragmentation = behavior.sessionFragmentation.clamp(0.0, 1.0);
+    }
+
+    return ContextAxis(
+      screenActiveRatio: screenActiveRatio,
+      sessionFragmentation: sessionFragmentation,
+    );
   }
 }

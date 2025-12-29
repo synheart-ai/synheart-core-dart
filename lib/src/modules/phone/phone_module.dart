@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../core/logger.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
@@ -73,20 +74,24 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
 
   @override
   Future<void> onInitialize() async {
-    print('[PhoneModule] Initializing phone collectors...');
+    SynheartLogger.log('[PhoneModule] Initializing phone collectors...');
     // Nothing to initialize for mock collectors
   }
 
   @override
   Future<void> onStart() async {
-    print('[PhoneModule] Starting phone data collection...');
+    SynheartLogger.log('[PhoneModule] Starting phone data collection...');
 
     // Start motion collection
     await _motionCollector.start();
     _subscriptions.add(
       _motionCollector.motionStream.listen(
         (motion) => _cache.addMotionData(motion),
-        onError: (e) => print('[PhoneModule] Motion error: $e'),
+        onError: (e, st) => SynheartLogger.log(
+          '[PhoneModule] Motion error: $e',
+          error: e,
+          stackTrace: st,
+        ),
       ),
     );
 
@@ -95,38 +100,52 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
     _subscriptions.add(
       _screenTracker.screenStream.listen(
         (state) => _cache.addScreenState(state, DateTime.now()),
-        onError: (e) => print('[PhoneModule] Screen state error: $e'),
+        onError: (e, st) => SynheartLogger.log(
+          '[PhoneModule] Screen state error: $e',
+          error: e,
+          stackTrace: st,
+        ),
       ),
     );
 
     // Start app tracking (if capability allows)
-    if (_capabilities.capability(Module.phone).index >= CapabilityLevel.extended.index) {
+    if (_capabilities.capability(Module.phone).index >=
+        CapabilityLevel.extended.index) {
       await _appTracker.start();
       _subscriptions.add(
         _appTracker.appSwitchStream.listen(
           (_) => _cache.addAppSwitch(DateTime.now()),
-          onError: (e) => print('[PhoneModule] App tracking error: $e'),
+          onError: (e, st) => SynheartLogger.log(
+            '[PhoneModule] App tracking error: $e',
+            error: e,
+            stackTrace: st,
+          ),
         ),
       );
     }
 
     // Start notification tracking (if capability allows)
-    if (_capabilities.capability(Module.phone).index >= CapabilityLevel.extended.index) {
+    if (_capabilities.capability(Module.phone).index >=
+        CapabilityLevel.extended.index) {
       await _notificationTracker.start();
       _subscriptions.add(
         _notificationTracker.notificationStream.listen(
           (event) => _cache.addNotification(event),
-          onError: (e) => print('[PhoneModule] Notification error: $e'),
+          onError: (e, st) => SynheartLogger.log(
+            '[PhoneModule] Notification error: $e',
+            error: e,
+            stackTrace: st,
+          ),
         ),
       );
     }
 
-    print('[PhoneModule] Started ${_subscriptions.length} collectors');
+    SynheartLogger.log('[PhoneModule] Started ${_subscriptions.length} collectors');
   }
 
   @override
   Future<void> onStop() async {
-    print('[PhoneModule] Stopping phone data collection...');
+    SynheartLogger.log('[PhoneModule] Stopping phone data collection...');
 
     // Cancel all subscriptions
     for (final sub in _subscriptions) {
@@ -143,7 +162,7 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
 
   @override
   Future<void> onDispose() async {
-    print('[PhoneModule] Disposing phone module...');
+    SynheartLogger.log('[PhoneModule] Disposing phone module...');
 
     await _motionCollector.dispose();
     await _screenTracker.dispose();

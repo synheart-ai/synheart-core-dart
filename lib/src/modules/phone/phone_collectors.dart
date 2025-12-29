@@ -101,7 +101,7 @@ class ScreenStateTracker {
     _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
       // Randomly change screen state
       if (_random.nextDouble() < 0.3) {
-        final states = ScreenState.values;
+        const states = ScreenState.values;
         _currentState = states[_random.nextInt(states.length)];
         _controller.add(_currentState);
       }
@@ -130,13 +130,13 @@ class AppFocusTracker {
   final Random _random = Random();
   final List<String> _mockApps = ['app1', 'app2', 'app3', 'app4'];
   int _switchCount = 0;
-  DateTime _lastSwitch = DateTime.now();
+  final DateTime _startedAt = DateTime.now();
 
   Stream<String> get appSwitchStream => _controller.stream;
 
   /// Get app switch rate (switches per minute)
   double get switchRate {
-    final elapsed = DateTime.now().difference(_lastSwitch).inMinutes;
+    final elapsed = DateTime.now().difference(_startedAt).inMinutes;
     if (elapsed == 0) return 0.0;
     return _switchCount / elapsed;
   }

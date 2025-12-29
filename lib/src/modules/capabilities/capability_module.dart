@@ -23,6 +23,9 @@ class CapabilityModule extends BaseSynheartModule
   Stream<SDKCapabilities?> get capabilitiesStream =>
       _capabilitiesStream.stream;
 
+  /// The last successfully verified token (if any)
+  CapabilityToken? get token => _token;
+
   /// Load capabilities from token
   Future<void> loadFromToken(CapabilityToken token, String secret) async {
     if (!_verifier.isValid(token, secret)) {

@@ -4,6 +4,7 @@ import 'models/hsv.dart';
 import 'models/emotion.dart';
 import 'models/focus.dart';
 import 'config/synheart_config.dart';
+import 'core/logger.dart';
 import 'services/auth_service.dart';
 import 'modules/base/module_manager.dart';
 import 'modules/capabilities/capability_module.dart';
@@ -14,6 +15,7 @@ import 'modules/phone/phone_module.dart';
 import 'modules/behavior/behavior_module.dart';
 import 'modules/hsi_runtime/hsi_runtime_module.dart';
 import 'modules/hsi_runtime/channel_collector.dart';
+import 'modules/cloud/cloud_connector_module.dart';
 import 'heads/emotion_head.dart';
 import 'heads/focus_head.dart';
 
@@ -47,10 +49,10 @@ import 'heads/focus_head.dart';
 ///   ),
 /// );
 ///
-/// // Subscribe to HSI updates (core state representation)
-/// Synheart.onHSIUpdate.listen((hsi) {
-///   print('Arousal Index: ${hsi.affect.arousalIndex}');
-///   print('Engagement Stability: ${hsi.engagement.engagementStability}');
+/// // Subscribe to HSV updates (core state representation)
+/// Synheart.onHSVUpdate.listen((hsv) {
+///   print('Arousal Index: ${hsv.meta.axes.affect.arousalIndex}');
+///   print('Engagement Stability: ${hsv.meta.axes.engagement.engagementStability}');
 /// });
 ///
 /// // Optional: Enable interpretation modules
@@ -83,7 +85,7 @@ class Synheart {
   PhoneModule? _phoneModule;
   BehaviorModule? _behaviorModule;
   HSIRuntimeModule? _hsiRuntimeModule;
-  // TODO: CloudConnectorModule? _cloudConnector;
+  CloudConnectorModule? _cloudConnector;
   // TODO: SyniHooksModule? _syniHooks;
 
   // Optional interpretation modules
@@ -91,6 +93,7 @@ class Synheart {
   FocusHead? _focusHead;
   StreamSubscription? _emotionSubscription;
   StreamSubscription? _focusSubscription;
+  StreamSubscription? _hsvSubscription;
 
   // Services
   final AuthService _authService = MockAuthService();
@@ -102,32 +105,41 @@ class Synheart {
   SynheartConfig? _config;
 
   // Streams
-  final BehaviorSubject<HumanStateVector> _hsiStream =
+  final BehaviorSubject<HumanStateVector> _hsvStream =
       BehaviorSubject<HumanStateVector>();
   final BehaviorSubject<EmotionState> _emotionStream =
       BehaviorSubject<EmotionState>();
   final BehaviorSubject<FocusState> _focusStream =
       BehaviorSubject<FocusState>();
 
-  /// Stream of HSI updates (core state representation)
+  /// Static stream of HSV updates (core state representation)
+  static Stream<HumanStateVector> get onHSVUpdate => shared._hsvStream.stream;
+
+  /// Static stream of emotion updates (optional interpretation)
+  static Stream<EmotionState> get onEmotionUpdate => shared._emotionStream.stream;
+
+  /// Static stream of focus updates (optional interpretation)
+  static Stream<FocusState> get onFocusUpdate => shared._focusStream.stream;
+
+  /// Stream of HSV updates (core state representation)
   ///
-  /// HSI contains:
+  /// HSV (Human State Vector) contains:
   /// - State axes (affect, engagement, activity, context)
   /// - State indices (arousalIndex, engagementStability, etc.)
   /// - 64D state embedding
   ///
-  /// HSI does NOT contain interpretation (emotion, focus).
-  Stream<HumanStateVector> get onHSIUpdate => _hsiStream.stream;
+  /// HSV does NOT contain interpretation (emotion, focus) unless enabled.
+  Stream<HumanStateVector> get hsvUpdates => _hsvStream.stream;
 
   /// Stream of emotion updates (optional interpretation)
   ///
   /// Only emits if emotion module is enabled via enableEmotion().
-  Stream<EmotionState> get onEmotionUpdate => _emotionStream.stream;
+  Stream<EmotionState> get emotionUpdates => _emotionStream.stream;
 
   /// Stream of focus updates (optional interpretation)
   ///
   /// Only emits if focus module is enabled via enableFocus().
-  Stream<FocusState> get onFocusUpdate => _focusStream.stream;
+  Stream<FocusState> get focusUpdates => _focusStream.stream;
 
   /// Initialize Synheart Core SDK
   ///
@@ -170,14 +182,14 @@ class Synheart {
 
     try {
       // 1. Authenticate & get capabilities
-      print('[Synheart] Authenticating...');
+      SynheartLogger.log('[Synheart] Authenticating...');
       final token = await _authService.authenticate(
         appKey: appKey,
         userId: userId,
       );
 
       // 2. Initialize capability module
-      print('[Synheart] Initializing capability module...');
+      SynheartLogger.log('[Synheart] Initializing capability module...');
       _capabilityModule = CapabilityModule();
       await _capabilityModule!.loadFromToken(
         token,
@@ -185,7 +197,7 @@ class Synheart {
       );
 
       // 3. Initialize consent module
-      print('[Synheart] Initializing consent module...');
+      SynheartLogger.log('[Synheart] Initializing consent module...');
       _consentModule = ConsentModule();
 
       // 4. Register modules with manager
@@ -193,7 +205,7 @@ class Synheart {
       _moduleManager.registerModule(_consentModule!);
 
       // 5. Initialize data collection modules
-      print('[Synheart] Initializing data modules...');
+      SynheartLogger.log('[Synheart] Initializing data modules...');
       _wearModule = WearModule(
         capabilities: _capabilityModule!,
         consent: _consentModule!,
@@ -207,12 +219,21 @@ class Synheart {
         consent: _consentModule!,
       );
 
-      _moduleManager.registerModule(_wearModule!, dependsOn: ['capabilities', 'consent']);
-      _moduleManager.registerModule(_phoneModule!, dependsOn: ['capabilities', 'consent']);
-      _moduleManager.registerModule(_behaviorModule!, dependsOn: ['capabilities', 'consent']);
+      _moduleManager.registerModule(
+        _wearModule!,
+        dependsOn: ['capabilities', 'consent'],
+      );
+      _moduleManager.registerModule(
+        _phoneModule!,
+        dependsOn: ['capabilities', 'consent'],
+      );
+      _moduleManager.registerModule(
+        _behaviorModule!,
+        dependsOn: ['capabilities', 'consent'],
+      );
 
-      // 6. Initialize HSI Runtime (NO emotion/focus here - they're optional)
-      print('[Synheart] Initializing HSI Runtime...');
+      // 6. Initialize HSI Runtime (produces HSV - NO emotion/focus here, they're optional)
+      SynheartLogger.log('[Synheart] Initializing HSI Runtime...');
       final collector = ChannelCollector(
         wear: _wearModule!,
         phone: _phoneModule!,
@@ -226,36 +247,58 @@ class Synheart {
         dependsOn: ['wear', 'phone', 'behavior'],
       );
 
-      // 7. Initialize all modules
-      print('[Synheart] Initializing all modules...');
+      // 7. Initialize Cloud Connector (optional, depends on consent and config)
+      if (_config?.cloudConfig != null) {
+        SynheartLogger.log('[Synheart] Initializing Cloud Connector...');
+        _cloudConnector = CloudConnectorModule(
+          capabilities: _capabilityModule!,
+          consent: _consentModule!,
+          hsiRuntime: _hsiRuntimeModule!,
+          config: _config!.cloudConfig!,
+        );
+        _moduleManager.registerModule(
+          _cloudConnector!,
+          dependsOn: ['capabilities', 'consent', 'hsi_runtime'],
+        );
+      }
+
+      // 8. Initialize all modules
+      SynheartLogger.log('[Synheart] Initializing all modules...');
       await _moduleManager.initializeAll();
 
       // 8. Set up consent change listeners
       _consentModule!.addListener(_onConsentChanged);
 
-      // 9. Subscribe to HSI stream (core state only)
-      _hsiRuntimeModule!.hsiStream.listen(
-        (hsi) => _hsiStream.add(hsi),
-        onError: (e) => print('[Synheart] HSI stream error: $e'),
+      // 9. Subscribe to HSV stream (core state only)
+      _hsvSubscription = _hsiRuntimeModule!.hsiStream.listen(
+        _hsvStream.add,
+        onError: (e, st) => SynheartLogger.log(
+          '[Synheart] HSV stream error: $e',
+          error: e,
+          stackTrace: st,
+        ),
       );
 
       // 10. Start modules
-      print('[Synheart] Starting all modules...');
+      SynheartLogger.log('[Synheart] Starting all modules...');
       await _moduleManager.startAll();
 
       _isConfigured = true;
       _isRunning = true;
-      print('[Synheart] Initialization complete');
+      SynheartLogger.log('[Synheart] Initialization complete');
     } catch (e, stack) {
-      print('[Synheart] Initialization failed: $e');
-      print(stack);
+      SynheartLogger.log(
+        '[Synheart] Initialization failed: $e',
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
 
   /// Enable focus interpretation module
   ///
-  /// This is an optional interpretation module that consumes HSI
+  /// This is an optional interpretation module that consumes HSV
   /// and produces focus estimates.
   ///
   /// Example:
@@ -275,17 +318,17 @@ class Synheart {
     }
 
     if (_focusHead != null) {
-      print('[Synheart] Focus module already enabled');
+      SynheartLogger.log('[Synheart] Focus module already enabled');
       return;
     }
 
     try {
-      print('[Synheart] Enabling focus module...');
+      SynheartLogger.log('[Synheart] Enabling focus module...');
 
       _focusHead = FocusHead();
 
-      // Focus head subscribes to HSI stream
-      _focusHead!.start(_hsiStream.stream);
+      // Focus head subscribes to HSV stream
+      _focusHead!.start(_hsvStream.stream);
 
       // Subscribe to focus output
       _focusSubscription = _focusHead!.focusStream.listen(
@@ -293,20 +336,27 @@ class Synheart {
           // Extract focus state from HSV and emit
           _focusStream.add(hsv.focus);
         },
-        onError: (e) => print('[Synheart] Focus stream error: $e'),
+        onError: (e, st) => SynheartLogger.log(
+          '[Synheart] Focus stream error: $e',
+          error: e,
+          stackTrace: st,
+        ),
       );
 
-      print('[Synheart] Focus module enabled');
+      SynheartLogger.log('[Synheart] Focus module enabled');
     } catch (e, stack) {
-      print('[Synheart] Failed to enable focus: $e');
-      print(stack);
+      SynheartLogger.log(
+        '[Synheart] Failed to enable focus: $e',
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
 
   /// Enable emotion interpretation module
   ///
-  /// This is an optional interpretation module that consumes HSI
+  /// This is an optional interpretation module that consumes HSV
   /// and produces emotion estimates.
   ///
   /// Example:
@@ -326,17 +376,17 @@ class Synheart {
     }
 
     if (_emotionHead != null) {
-      print('[Synheart] Emotion module already enabled');
+      SynheartLogger.log('[Synheart] Emotion module already enabled');
       return;
     }
 
     try {
-      print('[Synheart] Enabling emotion module...');
+      SynheartLogger.log('[Synheart] Enabling emotion module...');
 
       _emotionHead = EmotionHead();
 
-      // Emotion head subscribes to HSI stream
-      _emotionHead!.start(_hsiStream.stream);
+      // Emotion head subscribes to HSV stream
+      _emotionHead!.start(_hsvStream.stream);
 
       // Subscribe to emotion output
       _emotionSubscription = _emotionHead!.emotionStream.listen(
@@ -344,13 +394,20 @@ class Synheart {
           // Extract emotion state from HSV and emit
           _emotionStream.add(hsv.emotion);
         },
-        onError: (e) => print('[Synheart] Emotion stream error: $e'),
+        onError: (e, st) => SynheartLogger.log(
+          '[Synheart] Emotion stream error: $e',
+          error: e,
+          stackTrace: st,
+        ),
       );
 
-      print('[Synheart] Emotion module enabled');
+      SynheartLogger.log('[Synheart] Emotion module enabled');
     } catch (e, stack) {
-      print('[Synheart] Failed to enable emotion: $e');
-      print(stack);
+      SynheartLogger.log(
+        '[Synheart] Failed to enable emotion: $e',
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -366,8 +423,80 @@ class Synheart {
   }
 
   Future<void> _enableCloud() async {
-    // TODO: Implement cloud sync
-    throw UnimplementedError('Cloud sync not yet implemented');
+    if (!_isConfigured) {
+      throw StateError('Synheart must be initialized before enabling cloud');
+    }
+
+    if (!_consentModule!.current().cloudUpload) {
+      throw StateError('cloudUpload consent required');
+    }
+
+    if (_cloudConnector == null) {
+      throw StateError('Cloud connector not configured. Provide cloudConfig during initialization');
+    }
+
+    // Cloud connector is already initialized and started with other modules
+    // This method is here for API consistency but the module is auto-started
+    SynheartLogger.log('[Synheart] Cloud connector already active');
+  }
+
+  /// Force upload of queued snapshots now
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.uploadNow();
+  /// ```
+  static Future<void> uploadNow() async {
+    return shared._uploadNow();
+  }
+
+  Future<void> _uploadNow() async {
+    if (!_isConfigured) {
+      throw StateError('Synheart must be initialized before uploading');
+    }
+    if (_cloudConnector == null) {
+      throw StateError('Cloud connector not enabled');
+    }
+    await _cloudConnector!.uploadNow();
+  }
+
+  /// Flush entire upload queue
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.flushUploadQueue();
+  /// ```
+  static Future<void> flushUploadQueue() async {
+    return shared._flushUploadQueue();
+  }
+
+  Future<void> _flushUploadQueue() async {
+    if (!_isConfigured) {
+      throw StateError('Synheart must be initialized before flushing upload queue');
+    }
+    if (_cloudConnector == null) {
+      throw StateError('Cloud connector not enabled');
+    }
+    await _cloudConnector!.flushQueue();
+  }
+
+  /// Disable cloud uploads
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.disableCloud();
+  /// ```
+  static Future<void> disableCloud() async {
+    return shared._disableCloud();
+  }
+
+  Future<void> _disableCloud() async {
+    if (!_isConfigured) {
+      throw StateError('Synheart must be initialized before disabling cloud');
+    }
+    if (_cloudConnector != null) {
+      await _cloudConnector!.stop();
+    }
   }
 
   /// Check if user has granted a specific consent
@@ -457,10 +586,13 @@ class Synheart {
     await _consentModule!.updateConsent(updated);
   }
 
-  /// Get current HSI state (latest)
+  /// Get current HSV state (latest)
   HumanStateVector? get currentState {
     return _hsiRuntimeModule?.currentState;
   }
+
+  /// Get the currently configured user id (if initialized)
+  String? get userId => _userId;
 
   /// Get behavior module for recording events
   BehaviorModule? get behaviorModule => _behaviorModule;
@@ -490,12 +622,12 @@ class Synheart {
 
   /// Handle consent changes
   void _onConsentChanged(ConsentSnapshot consent) {
-    print('[Synheart] Consent changed:');
-    print('  - Biosignals: ${consent.biosignals}');
-    print('  - Behavior: ${consent.behavior}');
-    print('  - Motion: ${consent.motion}');
-    print('  - Cloud Upload: ${consent.cloudUpload}');
-    print('  - Syni: ${consent.syni}');
+    SynheartLogger.log('[Synheart] Consent changed:');
+    SynheartLogger.log('  - Biosignals: ${consent.biosignals}');
+    SynheartLogger.log('  - Behavior: ${consent.behavior}');
+    SynheartLogger.log('  - Motion: ${consent.motion}');
+    SynheartLogger.log('  - Cloud Upload: ${consent.cloudUpload}');
+    SynheartLogger.log('  - Syni: ${consent.syni}');
   }
 
   /// Stop Synheart Core SDK
@@ -509,22 +641,29 @@ class Synheart {
     }
 
     try {
-      print('[Synheart] Stopping...');
+      SynheartLogger.log('[Synheart] Stopping...');
 
       // Stop interpretation modules
       await _focusSubscription?.cancel();
       await _emotionSubscription?.cancel();
+      await _hsvSubscription?.cancel();
       await _focusHead?.stop();
       await _emotionHead?.stop();
+
+      // Remove consent listener (best-effort)
+      _consentModule?.removeListener(_onConsentChanged);
 
       // Stop core modules
       await _moduleManager.stopAll();
 
       _isRunning = false;
-      print('[Synheart] Stopped');
+      SynheartLogger.log('[Synheart] Stopped');
     } catch (e, stack) {
-      print('[Synheart] Stop failed: $e');
-      print(stack);
+      SynheartLogger.log(
+        '[Synheart] Stop failed: $e',
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -541,7 +680,7 @@ class Synheart {
       await _emotionHead?.dispose();
       await _moduleManager.disposeAll();
 
-      await _hsiStream.close();
+      await _hsvStream.close();
       await _emotionStream.close();
       await _focusStream.close();
 
@@ -556,10 +695,15 @@ class Synheart {
       _isConfigured = false;
       _isRunning = false;
 
-      print('[Synheart] Disposed');
+      SynheartLogger.log('[Synheart] Disposed');
+      // Allow re-initialization by creating a fresh instance next time.
+      _instance = null;
     } catch (e, stack) {
-      print('[Synheart] Dispose failed: $e');
-      print(stack);
+      SynheartLogger.log(
+        '[Synheart] Dispose failed: $e',
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 }

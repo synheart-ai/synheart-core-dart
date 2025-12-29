@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:rxdart/rxdart.dart';
+import '../../core/logger.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/feature_providers.dart';
 import '../../models/hsv.dart';
@@ -49,13 +50,13 @@ class HSIRuntimeModule extends BaseSynheartModule {
 
   @override
   Future<void> onInitialize() async {
-    print('[HSIRuntime] Initializing HSI Runtime...');
+    SynheartLogger.log('[HSIRuntime] Initializing HSI Runtime...');
     // No emotion/focus heads here - they're optional modules
   }
 
   @override
   Future<void> onStart() async {
-    print('[HSIRuntime] Starting HSI Runtime...');
+    SynheartLogger.log('[HSIRuntime] Starting HSI Runtime...');
 
     // Start window scheduler
     _scheduler = WindowScheduler(
@@ -68,12 +69,12 @@ class HSIRuntimeModule extends BaseSynheartModule {
     );
 
     _scheduler!.start();
-    print('[HSIRuntime] HSI Runtime started');
+    SynheartLogger.log('[HSIRuntime] HSI Runtime started');
   }
 
   @override
   Future<void> onStop() async {
-    print('[HSIRuntime] Stopping HSI Runtime...');
+    SynheartLogger.log('[HSIRuntime] Stopping HSI Runtime...');
 
     _scheduler?.stop();
     _scheduler = null;
@@ -81,7 +82,7 @@ class HSIRuntimeModule extends BaseSynheartModule {
 
   @override
   Future<void> onDispose() async {
-    print('[HSIRuntime] Disposing HSI Runtime...');
+    SynheartLogger.log('[HSIRuntime] Disposing HSI Runtime...');
 
     await _hsiStream.close();
   }
@@ -93,7 +94,7 @@ class HSIRuntimeModule extends BaseSynheartModule {
       final features = _collector.collect(window);
 
       if (!features.hasAnyFeatures) {
-        print('[HSIRuntime] No features available for $window');
+        SynheartLogger.log('[HSIRuntime] No features available for $window');
         return;
       }
 
@@ -107,10 +108,13 @@ class HSIRuntimeModule extends BaseSynheartModule {
       // Emit HSI (state representation only, no interpretation)
       _hsiStream.add(hsi);
 
-      print('[HSIRuntime] Computed HSI for $window');
+      SynheartLogger.log('[HSIRuntime] Computed HSI for $window');
     } catch (e, stack) {
-      print('[HSIRuntime] Error computing HSI: $e');
-      print(stack);
+      SynheartLogger.log(
+        '[HSIRuntime] Error computing HSI: $e',
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 }

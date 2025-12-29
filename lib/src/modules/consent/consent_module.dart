@@ -1,4 +1,5 @@
 import 'package:rxdart/rxdart.dart';
+import '../../core/logger.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/consent_provider.dart';
 import 'consent_storage.dart';
@@ -113,7 +114,10 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       try {
         listener(consent);
       } catch (e) {
-        print('Error notifying consent listener: $e');
+        SynheartLogger.log(
+          'Error notifying consent listener: $e',
+          error: e,
+        );
       }
     }
   }
@@ -121,19 +125,29 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
   /// Log consent changes for debugging
   void _logConsentChanges(ConsentSnapshot oldConsent, ConsentSnapshot newConsent) {
     if (oldConsent.biosignals != newConsent.biosignals) {
-      print('Consent changed: biosignals ${newConsent.biosignals ? "granted" : "revoked"}');
+      SynheartLogger.log(
+        'Consent changed: biosignals ${newConsent.biosignals ? "granted" : "revoked"}',
+      );
     }
     if (oldConsent.behavior != newConsent.behavior) {
-      print('Consent changed: behavior ${newConsent.behavior ? "granted" : "revoked"}');
+      SynheartLogger.log(
+        'Consent changed: behavior ${newConsent.behavior ? "granted" : "revoked"}',
+      );
     }
     if (oldConsent.motion != newConsent.motion) {
-      print('Consent changed: motion ${newConsent.motion ? "granted" : "revoked"}');
+      SynheartLogger.log(
+        'Consent changed: motion ${newConsent.motion ? "granted" : "revoked"}',
+      );
     }
     if (oldConsent.cloudUpload != newConsent.cloudUpload) {
-      print('Consent changed: cloudUpload ${newConsent.cloudUpload ? "granted" : "revoked"}');
+      SynheartLogger.log(
+        'Consent changed: cloudUpload ${newConsent.cloudUpload ? "granted" : "revoked"}',
+      );
     }
     if (oldConsent.syni != newConsent.syni) {
-      print('Consent changed: syni ${newConsent.syni ? "granted" : "revoked"}');
+      SynheartLogger.log(
+        'Consent changed: syni ${newConsent.syni ? "granted" : "revoked"}',
+      );
     }
   }
 

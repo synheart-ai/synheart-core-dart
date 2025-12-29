@@ -6,10 +6,10 @@ typedef WindowCallback = void Function(WindowType window);
 
 /// Schedules window-based computation
 class WindowScheduler {
-  Timer? _30sTimer;
-  Timer? _5mTimer;
-  Timer? _1hTimer;
-  Timer? _24hTimer;
+  Timer? _timer30s;
+  Timer? _timer5m;
+  Timer? _timer1h;
+  Timer? _timer24h;
 
   final WindowCallback _onWindow;
 
@@ -18,25 +18,25 @@ class WindowScheduler {
   /// Start scheduling windows
   void start() {
     // 30-second window
-    _30sTimer = Timer.periodic(
+    _timer30s = Timer.periodic(
       const Duration(seconds: 30),
       (_) => _onWindow(WindowType.window30s),
     );
 
     // 5-minute window
-    _5mTimer = Timer.periodic(
+    _timer5m = Timer.periodic(
       const Duration(minutes: 5),
       (_) => _onWindow(WindowType.window5m),
     );
 
     // 1-hour window
-    _1hTimer = Timer.periodic(
+    _timer1h = Timer.periodic(
       const Duration(hours: 1),
       (_) => _onWindow(WindowType.window1h),
     );
 
     // 24-hour window
-    _24hTimer = Timer.periodic(
+    _timer24h = Timer.periodic(
       const Duration(hours: 24),
       (_) => _onWindow(WindowType.window24h),
     );
@@ -52,14 +52,14 @@ class WindowScheduler {
 
   /// Stop scheduling
   void stop() {
-    _30sTimer?.cancel();
-    _5mTimer?.cancel();
-    _1hTimer?.cancel();
-    _24hTimer?.cancel();
+    _timer30s?.cancel();
+    _timer5m?.cancel();
+    _timer1h?.cancel();
+    _timer24h?.cancel();
 
-    _30sTimer = null;
-    _5mTimer = null;
-    _1hTimer = null;
-    _24hTimer = null;
+    _timer30s = null;
+    _timer5m = null;
+    _timer1h = null;
+    _timer24h = null;
   }
 }

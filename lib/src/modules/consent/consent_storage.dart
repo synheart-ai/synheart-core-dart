@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../interfaces/consent_provider.dart';
+import '../../core/logger.dart';
 
 /// Encrypted storage for consent snapshots
 class ConsentStorage {
@@ -29,7 +30,7 @@ class ConsentStorage {
       return ConsentSnapshot.fromJson(json);
     } catch (e) {
       // If there's an error reading/parsing, return null
-      print('Error loading consent: $e');
+      SynheartLogger.log('Error loading consent: $e', error: e);
       return null;
     }
   }

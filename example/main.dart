@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:synheart_core/synheart_core.dart';
 
@@ -11,92 +12,90 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'HSI Flutter Example',
+      title: 'Synheart Flutter Example',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const HSIExamplePage(),
+      home: const SynheartExamplePage(),
     );
   }
 }
 
-class HSIExamplePage extends StatefulWidget {
-  const HSIExamplePage({super.key});
+class SynheartExamplePage extends StatefulWidget {
+  const SynheartExamplePage({super.key});
 
   @override
-  State<HSIExamplePage> createState() => _HSIExamplePageState();
+  State<SynheartExamplePage> createState() => _SynheartExamplePageState();
 }
 
-class _HSIExamplePageState extends State<HSIExamplePage> {
-  final HSI _hsi = HSI.shared;
+class _SynheartExamplePageState extends State<SynheartExamplePage> {
   HumanStateVector? _currentState;
-  bool _isRunning = false;
+  bool _isInitialized = false;
+  StreamSubscription<HumanStateVector>? _subscription;
 
   @override
   void initState() {
     super.initState();
-    _initializeHSI();
   }
 
-  Future<void> _initializeHSI() async {
+  Future<void> _initializeSynheart() async {
     try {
-      // Configure Core SDK with app key and user ID
-      await _hsi.configure(
+      if (_isInitialized) return;
+
+      // Initialize Core SDK
+      await Synheart.initialize(
         appKey: 'YOUR_APP_KEY_HERE',
         userId: 'example_user_${DateTime.now().millisecondsSinceEpoch}',
       );
 
-      // Listen to HSI state updates
-      _hsi.onStateUpdate.listen((hsv) {
+      // Enable optional interpretation modules (so Emotion/Focus fields update)
+      await Synheart.enableEmotion();
+      await Synheart.enableFocus();
+
+      _subscription = Synheart.onHSVUpdate.listen((hsv) {
         setState(() {
           _currentState = hsv;
         });
       });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error initializing HSI: $e')),
-        );
-      }
-    }
-  }
 
-  Future<void> _startHSI() async {
-    try {
-      await _hsi.start();
       setState(() {
-        _isRunning = true;
+        _isInitialized = true;
       });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error starting HSI: $e')),
+          SnackBar(content: Text('Error initializing Synheart: $e')),
         );
       }
     }
   }
 
-  Future<void> _stopHSI() async {
-    await _hsi.stop();
+  Future<void> _stopSynheart() async {
+    await Synheart.stop();
     setState(() {
-      _isRunning = false;
+      _currentState = null;
+      _isInitialized = false;
     });
   }
 
   @override
   void dispose() {
-    _hsi.dispose();
+    _subscription?.cancel();
+    _subscription = null;
+    Synheart.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     // Use automatic behavior capture if synheart_behavior is initialized
-    final synheartBehavior = _hsi.behaviorModule?.synheartBehavior;
+    final synheartBehavior = Synheart.shared.behaviorModule?.synheartBehavior;
+    final isRunning = _isInitialized;
+
     final scaffold = Scaffold(
       appBar: AppBar(
-        title: const Text('HSI Flutter Example'),
+        title: const Text('Synheart Flutter Example'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Padding(
@@ -105,8 +104,8 @@ class _HSIExamplePageState extends State<HSIExamplePage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ElevatedButton(
-              onPressed: _isRunning ? _stopHSI : _startHSI,
-              child: Text(_isRunning ? 'Stop HSI' : 'Start HSI'),
+              onPressed: isRunning ? _stopSynheart : _initializeSynheart,
+              child: Text(isRunning ? 'Stop Synheart' : 'Initialize Synheart'),
             ),
             const SizedBox(height: 24),
             if (_currentState != null) ...[
@@ -134,7 +133,9 @@ class _HSIExamplePageState extends State<HSIExamplePage> {
               ]),
             ] else
               const Center(
-                child: Text('No state data yet. Start HSI to begin receiving updates.'),
+                child: Text(
+                  'No state data yet. Initialize Synheart to begin receiving updates.',
+                ),
               ),
           ],
         ),
@@ -142,7 +143,7 @@ class _HSIExamplePageState extends State<HSIExamplePage> {
     );
 
     // Wrap with synheart_behavior's gesture detector for automatic capture
-    if (synheartBehavior != null && _isRunning) {
+    if (synheartBehavior != null && isRunning) {
       return synheartBehavior.wrapWithGestureDetector(scaffold);
     }
     return scaffold;

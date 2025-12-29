@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../core/logger.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
@@ -86,15 +87,18 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
 
   @override
   Future<void> onInitialize() async {
-    print('[WearModule] Initializing wear sources...');
+    SynheartLogger.log('[WearModule] Initializing wear sources...');
 
     for (final source in _sources) {
       if (source.isAvailable) {
         try {
           await source.initialize();
-          print('[WearModule] Initialized ${source.sourceType.name} source');
+          SynheartLogger.log('[WearModule] Initialized ${source.sourceType.name} source');
         } catch (e) {
-          print('[WearModule] Failed to initialize ${source.sourceType.name}: $e');
+          SynheartLogger.log(
+            '[WearModule] Failed to initialize ${source.sourceType.name}: $e',
+            error: e,
+          );
         }
       }
     }
@@ -102,7 +106,7 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
 
   @override
   Future<void> onStart() async {
-    print('[WearModule] Starting wear data collection...');
+    SynheartLogger.log('[WearModule] Starting wear data collection...');
 
     // Subscribe to each source
     for (final source in _sources) {
@@ -113,7 +117,10 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
             _cache.addSample(sample);
           },
           onError: (error) {
-            print('[WearModule] Error from ${source.sourceType.name}: $error');
+            SynheartLogger.log(
+              '[WearModule] Error from ${source.sourceType.name}: $error',
+              error: error,
+            );
           },
         );
 
@@ -121,12 +128,12 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
       }
     }
 
-    print('[WearModule] Started ${_subscriptions.length} wear sources');
+    SynheartLogger.log('[WearModule] Started ${_subscriptions.length} wear sources');
   }
 
   @override
   Future<void> onStop() async {
-    print('[WearModule] Stopping wear data collection...');
+    SynheartLogger.log('[WearModule] Stopping wear data collection...');
 
     // Cancel all subscriptions
     for (final subscription in _subscriptions) {
@@ -137,14 +144,17 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
 
   @override
   Future<void> onDispose() async {
-    print('[WearModule] Disposing wear module...');
+    SynheartLogger.log('[WearModule] Disposing wear module...');
 
     // Dispose all sources
     for (final source in _sources) {
       try {
         await source.dispose();
       } catch (e) {
-        print('[WearModule] Error disposing ${source.sourceType.name}: $e');
+        SynheartLogger.log(
+          '[WearModule] Error disposing ${source.sourceType.name}: $e',
+          error: e,
+        );
       }
     }
   }

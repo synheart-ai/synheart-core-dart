@@ -3,6 +3,7 @@ import 'emotion.dart';
 import 'focus.dart';
 import 'behavior.dart';
 import 'context.dart';
+import 'hsi_axes.dart';
 
 part 'hsv.g.dart';
 
@@ -25,10 +26,10 @@ class HumanStateVector {
   /// Focus state (populated by Focus Engine)
   final FocusState focus;
 
-  /// Behavioral metrics (from Phone SDK + HSI processing)
+  /// Behavioral metrics (from Behavior Module + Runtime processing)
   final BehaviorState behavior;
 
-  /// Context information (from Context Adapters + HSI processing)
+  /// Context information (from Context signals + Runtime processing)
   final ContextState context;
 
   /// Metadata (device, session, internal embeddings)
@@ -95,7 +96,7 @@ class HumanStateVector {
   }
 }
 
-/// Metadata state containing device, session, and internal embeddings
+/// Metadata state containing device, session, and HSI state axes
 @JsonSerializable()
 class MetaState {
   /// Session identifier
@@ -107,20 +108,59 @@ class MetaState {
   /// Sampling rate in Hz
   final double samplingRateHz;
 
-  /// Internal HSI embedding (latent representation)
-  final List<double> hsiEmbedding;
+  /// Internal HSI embedding (64D dense vector)
+  final StateEmbedding embedding;
+
+  /// HSI state axes - core state representation indices
+  final HSIAxes axes;
 
   MetaState({
     required this.sessionId,
     required this.device,
     required this.samplingRateHz,
-    required this.hsiEmbedding,
+    required this.embedding,
+    required this.axes,
   });
 
   factory MetaState.fromJson(Map<String, dynamic> json) =>
       _$MetaStateFromJson(json);
 
   Map<String, dynamic> toJson() => _$MetaStateToJson(this);
+}
+
+/// HSI Axes - All state representation axes
+@JsonSerializable()
+class HSIAxes {
+  /// Affect axis (arousal, valence stability)
+  final AffectAxis affect;
+
+  /// Engagement axis (interaction patterns)
+  final EngagementAxis engagement;
+
+  /// Activity axis (motion, posture)
+  final ActivityAxis activity;
+
+  /// Context axis (screen time, fragmentation)
+  final ContextAxis context;
+
+  HSIAxes({
+    required this.affect,
+    required this.engagement,
+    required this.activity,
+    required this.context,
+  });
+
+  factory HSIAxes.fromJson(Map<String, dynamic> json) =>
+      _$HSIAxesFromJson(json);
+
+  Map<String, dynamic> toJson() => _$HSIAxesToJson(this);
+
+  factory HSIAxes.empty() => HSIAxes(
+        affect: AffectAxis.empty(),
+        engagement: EngagementAxis.empty(),
+        activity: ActivityAxis.empty(),
+        context: ContextAxis.empty(),
+      );
 }
 
 /// Device information

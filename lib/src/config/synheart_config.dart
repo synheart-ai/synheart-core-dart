@@ -105,8 +105,26 @@ class BehaviorConfig {
 
 /// Cloud connector configuration
 class CloudConfig {
-  /// Base URL for cloud API
+  /// Base URL for Synheart Platform
   final String baseUrl;
+
+  /// Tenant ID (from app registration)
+  final String tenantId;
+
+  /// HMAC secret for signing requests
+  final String hmacSecret;
+
+  /// Subject ID (pseudonymous user identifier)
+  final String subjectId;
+
+  /// Subject type (default: "pseudonymous_user")
+  final String subjectType;
+
+  /// Instance ID (UUID for this SDK instance)
+  final String instanceId;
+
+  /// Max upload queue size (default: 100)
+  final int maxQueueSize;
 
   /// Batch size for uploads
   final int batchSize;
@@ -121,7 +139,13 @@ class CloudConfig {
   final bool enableBacklog;
 
   const CloudConfig({
+    required this.tenantId,
+    required this.hmacSecret,
+    required this.subjectId,
+    required this.instanceId,
     this.baseUrl = 'https://api.synheart.com',
+    this.subjectType = 'pseudonymous_user',
+    this.maxQueueSize = 100,
     this.batchSize = 10,
     this.uploadInterval = const Duration(minutes: 5),
     this.maxRetries = 3,

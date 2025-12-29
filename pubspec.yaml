@@ -46,6 +46,7 @@ dependencies:
 
   # Optional: for cloud sync
   http: ^1.1.0
+  connectivity_plus: ^6.0.5
 
   # Optional: for JSON serialization
   json_annotation: ^4.9.0

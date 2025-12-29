@@ -5,15 +5,20 @@ import '../models/emotion.dart';
 import 'package:synheart_emotion/synheart_emotion.dart' as se;
 
 /// Emotion Engine (Synheart Emotion Head)
-/// 
+///
 /// Model head that subscribes to HSI Core stream and populates hsv.emotion
+/// Uses EmotionEngine from synheart_emotion package for inference.
 class EmotionHead {
   StreamSubscription<HumanStateVector>? _subscription;
   final BehaviorSubject<HumanStateVector> _emotionStream =
       BehaviorSubject<HumanStateVector>();
 
-  se.OnnxEmotionModel? _model;
-  Future<se.OnnxEmotionModel>? _modelFuture;
+  se.EmotionEngine? _engine;
+  final se.EmotionConfig _config = const se.EmotionConfig(
+    window: Duration(seconds: 10),  // Short window for near-realtime
+    step: Duration(seconds: 1),     // Frequent updates
+    minRrCount: 5,                  // Lower threshold
+  );
 
   bool _isActive = false;
 
@@ -27,23 +32,47 @@ class EmotionHead {
     if (_isActive) return;
 
     _isActive = true;
-    _subscription = baseHsvStream.listen((baseHsv) async {
-      final model = await _ensureModelLoaded();
+    _subscription = baseHsvStream.listen((baseHsv) {
+      _ensureEngineInitialized();
 
-      // Extract features for synheart_emotion ONNX model
+      // Extract features for synheart_emotion engine
       final features = _extractOnnxFeatures(baseHsv);
       if (features == null) {
         // Not enough signal quality / missing biosignal features yet.
         return;
       }
 
-      // Predict emotion probabilities using synheart_emotion
-      final probs = await model.predictAsync(features);
+      // Synthesize RR intervals from features for EmotionEngine
+      // This is a temporary workaround until we have raw RR data in HSV
+      final hr = features['hr_mean']!;
+      final meanRr = features['mean_rr']!;
 
-      // Map synheart_emotion outputs -> synheart_core EmotionState
-      final calm = (probs['Calm'] ?? 0.0).clamp(0.0, 1.0).toDouble();
-      final stress = (probs['Stressed'] ?? 0.0).clamp(0.0, 1.0).toDouble();
-      final amused = (probs['Amused'] ?? 0.0).clamp(0.0, 1.0).toDouble();
+      // Generate synthetic RR intervals with slight variance to simulate natural variation
+      final syntheticRR = List.generate(10, (i) {
+        final variance = (i % 3 - 1) * 10.0; // Small variance: -10, 0, +10 ms
+        return meanRr + variance;
+      });
+
+      // Push to EmotionEngine
+      _engine!.push(
+        hr: hr,
+        rrIntervalsMs: syntheticRR,
+        timestamp: DateTime.fromMillisecondsSinceEpoch(baseHsv.timestamp),
+      );
+
+      // Consume results from EmotionEngine
+      final results = _engine!.consumeReady();
+      if (results.isEmpty) {
+        // No results ready yet (waiting for step interval or more data)
+        return;
+      }
+
+      final result = results.first;
+
+      // Map synheart_emotion EmotionResult -> synheart_core EmotionState
+      final calm = (result.probabilities['Calm'] ?? 0.0).clamp(0.0, 1.0).toDouble();
+      final stress = (result.probabilities['Stressed'] ?? 0.0).clamp(0.0, 1.0).toDouble();
+      final amused = (result.probabilities['Amused'] ?? 0.0).clamp(0.0, 1.0).toDouble();
 
       final emotion = EmotionState(
         stress: stress,
@@ -67,21 +96,16 @@ class EmotionHead {
     await _subscription?.cancel();
   }
 
-  Future<se.OnnxEmotionModel> _ensureModelLoaded() {
-    if (_model != null) {
-      return Future.value(_model);
-    }
-    _modelFuture ??= se.OnnxEmotionModel.loadFromAsset(
-      // Dependency assets must be loaded with the packages/ prefix.
-      modelAssetPath:
-          'packages/synheart_emotion/assets/ml/extratrees_wrist_all_v1_0.onnx',
-      metaAssetPath:
-          'packages/synheart_emotion/assets/ml/extratrees_wrist_all_v1_0.meta.json',
-    ).then((m) {
-      _model = m;
-      return m;
-    });
-    return _modelFuture!;
+  void _ensureEngineInitialized() {
+    if (_engine != null) return;
+
+    _engine = se.EmotionEngine.fromPretrained(
+      _config,
+      onLog: (level, message, {context}) {
+        // Optional: log emotions for debugging
+        // print('[EmotionHead][$level] $message');
+      },
+    );
   }
 
   /// Extract the synheart_emotion model feature map from HSV.
@@ -93,7 +117,7 @@ class EmotionHead {
   /// - [3] pNN50 (%)
   /// - [4] Mean_RR (ms)
   Map<String, double>? _extractOnnxFeatures(HumanStateVector hsv) {
-    final emb = hsv.meta.hsiEmbedding;
+    final emb = hsv.meta.embedding.vector;
     if (emb.length < 5) {
       return null;
     }
@@ -123,11 +147,9 @@ class EmotionHead {
 
   Future<void> dispose() async {
     await stop();
-    final model = _model;
-    _model = null;
-    if (model != null) {
-      await model.dispose();
-    }
+    // Clear EmotionEngine buffer
+    _engine?.clear();
+    _engine = null;
     await _emotionStream.close();
   }
 }

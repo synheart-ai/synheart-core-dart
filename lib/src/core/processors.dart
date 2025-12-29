@@ -3,6 +3,7 @@ import 'ingestion.dart';
 import '../models/context.dart';
 import '../models/behavior.dart';
 import '../models/hsv.dart';
+import '../models/hsi_axes.dart';
 
 /// Processed signals ready for fusion
 class ProcessedSignals {
@@ -321,12 +322,20 @@ class FusionEngine {
       userPatterns: signals.context.userPatterns,
     );
 
-    // Create meta state
+    // Create embedding object
+    final embedding = StateEmbedding(
+      vector: hsiEmbedding,
+      timestamp: timestamp,
+      windowType: 'micro',
+    );
+
+    // Create meta state with empty axes (legacy processor doesn't compute axes)
     final meta = MetaState(
       sessionId: 'sess-${DateTime.now().millisecondsSinceEpoch}',
       device: DeviceInfo(platform: 'flutter'),
       samplingRateHz: 2.0,
-      hsiEmbedding: hsiEmbedding,
+      embedding: embedding,
+      axes: HSIAxes.empty(),
     );
 
     // Create base HSV (emotion and focus will be empty initially)

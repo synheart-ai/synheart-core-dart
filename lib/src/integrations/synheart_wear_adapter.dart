@@ -1,25 +1,25 @@
-/// Optional integration adapter for synheart_wear package
-///
-/// To use this adapter:
-/// 1. Add synheart_wear to your pubspec.yaml:
-///    dependencies:
-///      synheart_wear: ^0.1.2
-///
-/// 2. Import this file and synheart_wear in your app:
-///    import 'package:hsi_flutter/hsi_flutter.dart';
-///    import 'package:synheart_wear/synheart_wear.dart';
-///    import 'package:hsi_flutter/src/integrations/synheart_wear_adapter.dart';
-///
-/// 3. Create the adapter and pass it to HSI:
-///    final wearAdapter = SynheartWearDataSource();
-///    final hsi = HSI.shared;
-///    await hsi.configure(
-///      appKey: 'YOUR_KEY',
-///      biosignalSource: wearAdapter,
-///    );
-///
-/// Note: This file is commented out by default since synheart_wear is optional.
-/// Uncomment the code below if you have synheart_wear installed.
+// Optional integration adapter for synheart_wear package
+//
+// To use this adapter:
+// 1. Add synheart_wear to your pubspec.yaml:
+//    dependencies:
+//      synheart_wear: ^0.1.2
+//
+// 2. Import this file and synheart_wear in your app:
+//    import 'package:hsi_flutter/hsi_flutter.dart';
+//    import 'package:synheart_wear/synheart_wear.dart';
+//    import 'package:hsi_flutter/src/integrations/synheart_wear_adapter.dart';
+//
+// 3. Create the adapter and pass it to HSI:
+//    final wearAdapter = SynheartWearDataSource();
+//    final hsi = HSI.shared;
+//    await hsi.configure(
+//      appKey: 'YOUR_KEY',
+//      biosignalSource: wearAdapter,
+//    );
+//
+// Note: This file is commented out by default since synheart_wear is optional.
+// Uncomment the code below if you have synheart_wear installed.
 
 /*
 import 'dart:async';
