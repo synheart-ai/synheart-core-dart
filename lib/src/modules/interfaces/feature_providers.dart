@@ -14,12 +14,7 @@ enum WindowType {
 }
 
 /// Sleep stage information
-enum SleepStage {
-  awake,
-  light,
-  deep,
-  rem,
-}
+enum SleepStage { awake, light, deep, rem }
 
 /// Wear module feature provider
 abstract class WearFeatureProvider {

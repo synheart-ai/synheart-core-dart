@@ -70,12 +70,15 @@ class EmotionHead {
       final result = results.first;
 
       // Map synheart_emotion EmotionResult -> synheart_core EmotionState
-      final calm =
-          (result.probabilities['Calm'] ?? 0.0).clamp(0.0, 1.0).toDouble();
-      final stress =
-          (result.probabilities['Stressed'] ?? 0.0).clamp(0.0, 1.0).toDouble();
-      final amused =
-          (result.probabilities['Amused'] ?? 0.0).clamp(0.0, 1.0).toDouble();
+      final calm = (result.probabilities['Calm'] ?? 0.0)
+          .clamp(0.0, 1.0)
+          .toDouble();
+      final stress = (result.probabilities['Stressed'] ?? 0.0)
+          .clamp(0.0, 1.0)
+          .toDouble();
+      final amused = (result.probabilities['Amused'] ?? 0.0)
+          .clamp(0.0, 1.0)
+          .toDouble();
 
       final emotion = EmotionState(
         stress: stress,

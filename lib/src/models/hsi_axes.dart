@@ -25,20 +25,15 @@ class AffectAxis {
   /// Higher values indicate more stable affect over time
   final double? valenceStability;
 
-  AffectAxis({
-    this.arousalIndex,
-    this.valenceStability,
-  });
+  AffectAxis({this.arousalIndex, this.valenceStability});
 
   factory AffectAxis.fromJson(Map<String, dynamic> json) =>
       _$AffectAxisFromJson(json);
 
   Map<String, dynamic> toJson() => _$AffectAxisToJson(this);
 
-  factory AffectAxis.empty() => AffectAxis(
-        arousalIndex: null,
-        valenceStability: null,
-      );
+  factory AffectAxis.empty() =>
+      AffectAxis(arousalIndex: null, valenceStability: null);
 }
 
 /// Engagement Axis - Digital interaction patterns
@@ -52,20 +47,15 @@ class EngagementAxis {
   /// Higher values indicate faster, more consistent interaction cadence
   final double? interactionCadence;
 
-  EngagementAxis({
-    this.engagementStability,
-    this.interactionCadence,
-  });
+  EngagementAxis({this.engagementStability, this.interactionCadence});
 
   factory EngagementAxis.fromJson(Map<String, dynamic> json) =>
       _$EngagementAxisFromJson(json);
 
   Map<String, dynamic> toJson() => _$EngagementAxisToJson(this);
 
-  factory EngagementAxis.empty() => EngagementAxis(
-        engagementStability: null,
-        interactionCadence: null,
-      );
+  factory EngagementAxis.empty() =>
+      EngagementAxis(engagementStability: null, interactionCadence: null);
 }
 
 /// Activity Axis - Physical activity and motion
@@ -79,20 +69,15 @@ class ActivityAxis {
   /// Higher values indicate more stable posture/position
   final double? postureStability;
 
-  ActivityAxis({
-    this.motionIndex,
-    this.postureStability,
-  });
+  ActivityAxis({this.motionIndex, this.postureStability});
 
   factory ActivityAxis.fromJson(Map<String, dynamic> json) =>
       _$ActivityAxisFromJson(json);
 
   Map<String, dynamic> toJson() => _$ActivityAxisToJson(this);
 
-  factory ActivityAxis.empty() => ActivityAxis(
-        motionIndex: null,
-        postureStability: null,
-      );
+  factory ActivityAxis.empty() =>
+      ActivityAxis(motionIndex: null, postureStability: null);
 }
 
 /// Context Axis - Environmental and device state
@@ -106,20 +91,15 @@ class ContextAxis {
   /// Higher values indicate more fragmented sessions
   final double? sessionFragmentation;
 
-  ContextAxis({
-    this.screenActiveRatio,
-    this.sessionFragmentation,
-  });
+  ContextAxis({this.screenActiveRatio, this.sessionFragmentation});
 
   factory ContextAxis.fromJson(Map<String, dynamic> json) =>
       _$ContextAxisFromJson(json);
 
   Map<String, dynamic> toJson() => _$ContextAxisToJson(this);
 
-  factory ContextAxis.empty() => ContextAxis(
-        screenActiveRatio: null,
-        sessionFragmentation: null,
-      );
+  factory ContextAxis.empty() =>
+      ContextAxis(screenActiveRatio: null, sessionFragmentation: null);
 }
 
 /// State Embedding - Dense vector representation of fused multimodal state
@@ -154,8 +134,8 @@ class StateEmbedding {
   Map<String, dynamic> toJson() => _$StateEmbeddingToJson(this);
 
   factory StateEmbedding.empty({required int timestamp}) => StateEmbedding(
-        vector: List.filled(64, 0.0),
-        timestamp: timestamp,
-        windowType: 'micro',
-      );
+    vector: List.filled(64, 0.0),
+    timestamp: timestamp,
+    windowType: 'micro',
+  );
 }

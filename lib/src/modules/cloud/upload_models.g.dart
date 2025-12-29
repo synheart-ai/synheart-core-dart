@@ -7,14 +7,14 @@ part of 'upload_models.dart';
 // **************************************************************************
 
 Subject _$SubjectFromJson(Map<String, dynamic> json) => Subject(
-      subjectType: json['subject_type'] as String,
-      subjectId: json['subject_id'] as String,
-    );
+  subjectType: json['subject_type'] as String,
+  subjectId: json['subject_id'] as String,
+);
 
 Map<String, dynamic> _$SubjectToJson(Subject instance) => <String, dynamic>{
-      'subject_type': instance.subjectType,
-      'subject_id': instance.subjectId,
-    };
+  'subject_type': instance.subjectType,
+  'subject_id': instance.subjectId,
+};
 
 UploadRequest _$UploadRequestFromJson(Map<String, dynamic> json) =>
     UploadRequest(
@@ -54,10 +54,9 @@ UploadErrorResponse _$UploadErrorResponseFromJson(Map<String, dynamic> json) =>
 
 Map<String, dynamic> _$UploadErrorResponseToJson(
   UploadErrorResponse instance,
-) =>
-    <String, dynamic>{
-      'status': instance.status,
-      'code': instance.code,
-      'message': instance.message,
-      'retry_after': instance.retryAfter,
-    };
+) => <String, dynamic>{
+  'status': instance.status,
+  'code': instance.code,
+  'message': instance.message,
+  'retry_after': instance.retryAfter,
+};

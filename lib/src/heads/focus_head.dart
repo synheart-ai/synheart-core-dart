@@ -83,8 +83,9 @@ class FocusHead {
     final idleRatio = (hsv.behavior.idleGaps / 60.0).clamp(0.0, 1.0).toDouble();
     return sf.BehaviorData(
       taskSwitchRate: hsv.behavior.appSwitchRate,
-      interactionBurstiness:
-          hsv.behavior.typingBurstiness.clamp(0.0, 1.0).toDouble(),
+      interactionBurstiness: hsv.behavior.typingBurstiness
+          .clamp(0.0, 1.0)
+          .toDouble(),
       idleRatio: idleRatio,
     );
   }

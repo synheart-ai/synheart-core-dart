@@ -70,7 +70,8 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Synheart initialized - all modules ready')),
+            content: Text('Synheart initialized - all modules ready'),
+          ),
         );
       }
     } catch (e) {
@@ -79,9 +80,9 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Initialization failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Initialization failed: $e')));
       }
     }
   }
@@ -112,9 +113,9 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Subscribe failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Subscribe failed: $e')));
       }
     }
   }
@@ -136,15 +137,15 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Synheart stopped')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Synheart stopped')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Stop failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Stop failed: $e')));
       }
     }
   }
@@ -305,10 +306,14 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
             _currentState!.behavior.typingBurstiness,
           ),
           _buildMetric(
-              'Scroll Velocity', _currentState!.behavior.scrollVelocity),
+            'Scroll Velocity',
+            _currentState!.behavior.scrollVelocity,
+          ),
           _buildMetric('Idle Gaps', _currentState!.behavior.idleGaps),
           _buildMetric(
-              'App Switch Rate', _currentState!.behavior.appSwitchRate),
+            'App Switch Rate',
+            _currentState!.behavior.appSwitchRate,
+          ),
         ]),
       ],
     );
@@ -321,10 +326,7 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             ...children,
           ],
@@ -340,10 +342,7 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label),
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );

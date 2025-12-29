@@ -9,7 +9,7 @@ class ConsentStorage {
   final FlutterSecureStorage _storage;
 
   ConsentStorage({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const FlutterSecureStorage();
 
   /// Save consent snapshot (encrypted)
   Future<void> save(ConsentSnapshot consent) async {

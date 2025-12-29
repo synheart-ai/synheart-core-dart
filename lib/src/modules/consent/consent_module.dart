@@ -23,7 +23,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
   final List<void Function(ConsentSnapshot)> _listeners = [];
 
   ConsentModule({ConsentStorage? storage})
-      : _storage = storage ?? ConsentStorage();
+    : _storage = storage ?? ConsentStorage();
 
   @override
   ConsentSnapshot current() {
@@ -100,8 +100,9 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       biosignals: type == ConsentType.biosignals
           ? granted
           : _currentConsent!.biosignals,
-      behavior:
-          type == ConsentType.behavior ? granted : _currentConsent!.behavior,
+      behavior: type == ConsentType.behavior
+          ? granted
+          : _currentConsent!.behavior,
       motion: type == ConsentType.motion ? granted : _currentConsent!.motion,
       cloudUpload: type == ConsentType.cloudUpload
           ? granted
@@ -119,17 +120,16 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       try {
         listener(consent);
       } catch (e) {
-        SynheartLogger.log(
-          'Error notifying consent listener: $e',
-          error: e,
-        );
+        SynheartLogger.log('Error notifying consent listener: $e', error: e);
       }
     }
   }
 
   /// Log consent changes for debugging
   void _logConsentChanges(
-      ConsentSnapshot oldConsent, ConsentSnapshot newConsent) {
+    ConsentSnapshot oldConsent,
+    ConsentSnapshot newConsent,
+  ) {
     if (oldConsent.biosignals != newConsent.biosignals) {
       SynheartLogger.log(
         'Consent changed: biosignals ${newConsent.biosignals ? "granted" : "revoked"}',

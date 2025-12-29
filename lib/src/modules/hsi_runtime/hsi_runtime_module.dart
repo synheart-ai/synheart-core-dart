@@ -30,9 +30,8 @@ class HSIRuntimeModule extends BaseSynheartModule {
   final BehaviorSubject<HumanStateVector> _hsiStream =
       BehaviorSubject<HumanStateVector>();
 
-  HSIRuntimeModule({
-    required ChannelCollector collector,
-  }) : _collector = collector;
+  HSIRuntimeModule({required ChannelCollector collector})
+    : _collector = collector;
 
   /// Stream of HSI updates (state representation only)
   ///

@@ -15,11 +15,7 @@ class SignalData {
   /// Context signals from Context Adapters
   final ContextSignals? context;
 
-  SignalData({
-    this.biosignals,
-    this.behavioral,
-    this.context,
-  });
+  SignalData({this.biosignals, this.behavioral, this.context});
 }
 
 /// Biosignals from Wear SDK/Service
@@ -59,12 +55,7 @@ class MotionData {
   final double z;
   final double? energy;
 
-  MotionData({
-    required this.x,
-    required this.y,
-    required this.z,
-    this.energy,
-  });
+  MotionData({required this.x, required this.y, required this.z, this.energy});
 }
 
 // SleepStage is defined in feature_providers.dart - imported above
@@ -106,11 +97,7 @@ class ContextSignals {
   /// User patterns
   final UserPatterns? userPatterns;
 
-  ContextSignals({
-    this.conversation,
-    this.deviceState,
-    this.userPatterns,
-  });
+  ContextSignals({this.conversation, this.deviceState, this.userPatterns});
 }
 
 /// Conversation timing metrics
@@ -187,9 +174,9 @@ class IngestionService {
     BiosignalDataSource? biosignalSource,
     BehavioralDataSource? behavioralSource,
     ContextDataSource? contextSource,
-  })  : _biosignalSource = biosignalSource ?? MockBiosignalDataSource(),
-        _behavioralSource = behavioralSource ?? MockBehavioralDataSource(),
-        _contextSource = contextSource ?? MockContextDataSource();
+  }) : _biosignalSource = biosignalSource ?? MockBiosignalDataSource(),
+       _behavioralSource = behavioralSource ?? MockBehavioralDataSource(),
+       _contextSource = contextSource ?? MockContextDataSource();
 
   /// Start ingestion
   Future<void> start() async {
@@ -265,11 +252,13 @@ class IngestionService {
     // Only emit if we have at least biosignal data
     if (_latestBiosignals == null) return;
 
-    emitSignal(SignalData(
-      biosignals: _latestBiosignals,
-      behavioral: _latestBehavioral,
-      context: _latestContext,
-    ));
+    emitSignal(
+      SignalData(
+        biosignals: _latestBiosignals,
+        behavioral: _latestBehavioral,
+        context: _latestContext,
+      ),
+    );
   }
 
   Future<void> dispose() async {

@@ -157,9 +157,9 @@ class SignalProcessor {
     // Average idle gaps
     final idleGaps =
         behavioral.idleGaps != null && behavioral.idleGaps!.isNotEmpty
-            ? behavioral.idleGaps!.reduce((a, b) => a + b) /
-                behavioral.idleGaps!.length
-            : 0.0;
+        ? behavioral.idleGaps!.reduce((a, b) => a + b) /
+              behavioral.idleGaps!.length
+        : 0.0;
 
     // App switch rate (switches per minute)
     final appSwitchRate = behavioral.appSwitches != null
@@ -186,10 +186,7 @@ class SignalProcessor {
           burstiness: 0.0,
           interruptRate: 0.0,
         ),
-        deviceState: DeviceStateContext(
-          foreground: true,
-          screenOn: true,
-        ),
+        deviceState: DeviceStateContext(foreground: true, screenOn: true),
         userPatterns: UserPatternsContext(
           morningFocusBias: 0.5,
           avgSessionMinutes: 0.0,
@@ -203,10 +200,11 @@ class SignalProcessor {
         ? ConversationContext(
             avgReplyDelaySec: context.conversation!.replyDelays.isNotEmpty
                 ? context.conversation!.replyDelays.reduce((a, b) => a + b) /
-                    context.conversation!.replyDelays.length
+                      context.conversation!.replyDelays.length
                 : 0.0,
-            burstiness:
-                _calculateBurstiness(context.conversation!.messageBursts),
+            burstiness: _calculateBurstiness(
+              context.conversation!.messageBursts,
+            ),
             interruptRate:
                 context.conversation!.interrupts.length / 60.0, // per minute
           )
@@ -254,7 +252,8 @@ class SignalProcessor {
   double _calculateSDNN(List<double> rrIntervals) {
     if (rrIntervals.isEmpty) return 0.0;
     final mean = rrIntervals.reduce((a, b) => a + b) / rrIntervals.length;
-    final variance = rrIntervals
+    final variance =
+        rrIntervals
             .map((x) => (x - mean) * (x - mean))
             .reduce((a, b) => a + b) /
         rrIntervals.length;
@@ -266,14 +265,15 @@ class SignalProcessor {
     // Simple burstiness: variance of inter-event intervals
     final intervals = <double>[];
     for (int i = 1; i < events.length; i++) {
-      intervals
-          .add(events[i].difference(events[i - 1]).inMilliseconds / 1000.0);
+      intervals.add(
+        events[i].difference(events[i - 1]).inMilliseconds / 1000.0,
+      );
     }
     if (intervals.isEmpty) return 0.0;
     final mean = intervals.reduce((a, b) => a + b) / intervals.length;
     final variance =
         intervals.map((x) => (x - mean) * (x - mean)).reduce((a, b) => a + b) /
-            intervals.length;
+        intervals.length;
     return (variance / (mean + 0.001)).clamp(0.0, 1.0); // Normalize
   }
 
@@ -281,8 +281,9 @@ class SignalProcessor {
     if (switches.isEmpty) return 0.0;
     // Count switches in last minute
     final now = DateTime.now();
-    final recentSwitches =
-        switches.where((s) => now.difference(s).inSeconds < 60).length;
+    final recentSwitches = switches
+        .where((s) => now.difference(s).inSeconds < 60)
+        .length;
     return recentSwitches / 60.0; // switches per minute
   }
 }

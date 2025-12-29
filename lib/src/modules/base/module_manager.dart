@@ -14,15 +14,9 @@ class ModuleManager {
   bool _isInitialized = false;
 
   /// Register a module with optional dependencies
-  void registerModule(
-    SynheartModule module, {
-    List<String>? dependsOn,
-  }) {
+  void registerModule(SynheartModule module, {List<String>? dependsOn}) {
     if (_modules.containsKey(module.moduleId)) {
-      throw ModuleException(
-        module.moduleId,
-        'Module already registered',
-      );
+      throw ModuleException(module.moduleId, 'Module already registered');
     }
 
     _modules[module.moduleId] = module;
@@ -81,10 +75,7 @@ class ModuleManager {
           await module.stop();
         } catch (e) {
           // Log error but continue stopping other modules
-          SynheartLogger.log(
-            'Error stopping module $moduleId: $e',
-            error: e,
-          );
+          SynheartLogger.log('Error stopping module $moduleId: $e', error: e);
         }
       }
     }
@@ -101,10 +92,7 @@ class ModuleManager {
           await module.dispose();
         } catch (e) {
           // Log error but continue disposing other modules
-          SynheartLogger.log(
-            'Error disposing module $moduleId: $e',
-            error: e,
-          );
+          SynheartLogger.log('Error disposing module $moduleId: $e', error: e);
         }
       }
     }

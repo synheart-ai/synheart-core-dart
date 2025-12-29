@@ -47,12 +47,14 @@ class MockBiosignalDataSource implements BiosignalDataSource {
       }
 
       // Emit mock biosignals
-      _controller.add(Biosignals(
-        heartRate: 70.0 + (DateTime.now().millisecond % 20),
-        hrv: 50.0,
-        rrIntervals: [800.0, 850.0, 820.0, 810.0],
-        respirationRate: 15.0,
-      ));
+      _controller.add(
+        Biosignals(
+          heartRate: 70.0 + (DateTime.now().millisecond % 20),
+          hrv: 50.0,
+          rrIntervals: [800.0, 850.0, 820.0, 810.0],
+          respirationRate: 15.0,
+        ),
+      );
     });
   }
 

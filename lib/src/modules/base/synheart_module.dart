@@ -62,12 +62,7 @@ class ModuleException implements Exception {
   final Object? cause;
   final StackTrace? stackTrace;
 
-  ModuleException(
-    this.moduleId,
-    this.message, {
-    this.cause,
-    this.stackTrace,
-  });
+  ModuleException(this.moduleId, this.message, {this.cause, this.stackTrace});
 
   @override
   String toString() {
@@ -97,10 +92,7 @@ abstract class BaseSynheartModule implements SynheartModule {
   @override
   Future<void> initialize() async {
     if (_status != ModuleStatus.uninitialized) {
-      throw ModuleException(
-        moduleId,
-        'Module already initialized',
-      );
+      throw ModuleException(moduleId, 'Module already initialized');
     }
 
     try {
@@ -146,10 +138,7 @@ abstract class BaseSynheartModule implements SynheartModule {
   @override
   Future<void> stop() async {
     if (_status != ModuleStatus.running) {
-      throw ModuleException(
-        moduleId,
-        'Module is not running',
-      );
+      throw ModuleException(moduleId, 'Module is not running');
     }
 
     try {

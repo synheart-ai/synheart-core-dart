@@ -11,11 +11,6 @@ class SynheartLogger {
     Object? error,
     StackTrace? stackTrace,
   }) {
-    developer.log(
-      message,
-      name: name,
-      error: error,
-      stackTrace: stackTrace,
-    );
+    developer.log(message, name: name, error: error, stackTrace: stackTrace);
   }
 }

@@ -32,10 +32,12 @@ class NetworkMonitor {
 
   bool _isConnected(List<ConnectivityResult> results) {
     // Consider online if any connection type is available
-    return results.any((result) =>
-        result == ConnectivityResult.wifi ||
-        result == ConnectivityResult.mobile ||
-        result == ConnectivityResult.ethernet);
+    return results.any(
+      (result) =>
+          result == ConnectivityResult.wifi ||
+          result == ConnectivityResult.mobile ||
+          result == ConnectivityResult.ethernet,
+    );
   }
 
   bool get isOnline => _isOnline;

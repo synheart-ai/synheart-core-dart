@@ -141,10 +141,7 @@ HumanStateVector _createMockHSV(int timestamp) {
         burstiness: 0.4,
         interruptRate: 0.2,
       ),
-      deviceState: DeviceStateContext(
-        foreground: true,
-        screenOn: true,
-      ),
+      deviceState: DeviceStateContext(foreground: true, screenOn: true),
       userPatterns: UserPatternsContext(
         morningFocusBias: 0.6,
         avgSessionMinutes: 45.0,

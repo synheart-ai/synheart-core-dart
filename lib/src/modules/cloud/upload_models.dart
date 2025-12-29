@@ -10,10 +10,7 @@ class Subject {
   @JsonKey(name: 'subject_id')
   final String subjectId;
 
-  Subject({
-    required this.subjectType,
-    required this.subjectId,
-  });
+  Subject({required this.subjectType, required this.subjectId});
 
   factory Subject.fromJson(Map<String, dynamic> json) =>
       _$SubjectFromJson(json);
@@ -25,10 +22,7 @@ class UploadRequest {
   final Subject subject;
   final List<Map<String, dynamic>> snapshots; // Array of HSI 1.0 payloads
 
-  UploadRequest({
-    required this.subject,
-    required this.snapshots,
-  });
+  UploadRequest({required this.subject, required this.snapshots});
 
   factory UploadRequest.fromJson(Map<String, dynamic> json) =>
       _$UploadRequestFromJson(json);

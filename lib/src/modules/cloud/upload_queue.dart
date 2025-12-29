@@ -10,10 +10,8 @@ class UploadQueue {
 
   static const String _storageKey = 'synheart_upload_queue';
 
-  UploadQueue({
-    required this.maxSize,
-    FlutterSecureStorage? storage,
-  }) : _storage = storage;
+  UploadQueue({required this.maxSize, FlutterSecureStorage? storage})
+    : _storage = storage;
 
   bool get hasItems => _queue.isNotEmpty;
   int get length => _queue.length;
@@ -30,8 +28,10 @@ class UploadQueue {
       final List<dynamic> json = jsonDecode(jsonString);
       _queue.addAll(json.map((e) => HumanStateVector.fromJson(e)));
     } catch (e) {
-      SynheartLogger.log('[UploadQueue] Failed to load from storage: $e',
-          error: e);
+      SynheartLogger.log(
+        '[UploadQueue] Failed to load from storage: $e',
+        error: e,
+      );
     }
   }
 
@@ -44,8 +44,10 @@ class UploadQueue {
       final json = _queue.map((hsv) => hsv.toJson()).toList();
       await storage.write(key: _storageKey, value: jsonEncode(json));
     } catch (e) {
-      SynheartLogger.log('[UploadQueue] Failed to persist to storage: $e',
-          error: e);
+      SynheartLogger.log(
+        '[UploadQueue] Failed to persist to storage: $e',
+        error: e,
+      );
     }
   }
 

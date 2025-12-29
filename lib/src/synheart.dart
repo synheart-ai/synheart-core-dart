@@ -192,10 +192,7 @@ class Synheart {
       // 2. Initialize capability module
       SynheartLogger.log('[Synheart] Initializing capability module...');
       _capabilityModule = CapabilityModule();
-      await _capabilityModule!.loadFromToken(
-        token,
-        'mock_secret',
-      );
+      await _capabilityModule!.loadFromToken(token, 'mock_secret');
 
       // 3. Initialize consent module
       SynheartLogger.log('[Synheart] Initializing consent module...');
@@ -240,9 +237,7 @@ class Synheart {
         phone: _phoneModule!,
         behavior: _behaviorModule!,
       );
-      _hsiRuntimeModule = HSIRuntimeModule(
-        collector: collector,
-      );
+      _hsiRuntimeModule = HSIRuntimeModule(collector: collector);
       _moduleManager.registerModule(
         _hsiRuntimeModule!,
         dependsOn: ['wear', 'phone', 'behavior'],
@@ -434,7 +429,8 @@ class Synheart {
 
     if (_cloudConnector == null) {
       throw StateError(
-          'Cloud connector not configured. Provide cloudConfig during initialization');
+        'Cloud connector not configured. Provide cloudConfig during initialization',
+      );
     }
 
     // Cloud connector is already initialized and started with other modules
@@ -475,7 +471,8 @@ class Synheart {
   Future<void> _flushUploadQueue() async {
     if (!_isConfigured) {
       throw StateError(
-          'Synheart must be initialized before flushing upload queue');
+        'Synheart must be initialized before flushing upload queue',
+      );
     }
     if (_cloudConnector == null) {
       throw StateError('Cloud connector not enabled');

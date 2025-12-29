@@ -15,12 +15,9 @@ void main() {
     setUp(() {
       signer = HMACSigner(hmacSecret: 'test_secret');
       testPayload = UploadRequest(
-        subject: Subject(
-          subjectType: 'test_user',
-          subjectId: 'user_123',
-        ),
+        subject: Subject(subjectType: 'test_user', subjectId: 'user_123'),
         snapshots: [
-          {'hsi_version': '1.0', 'test': 'data'}
+          {'hsi_version': '1.0', 'test': 'data'},
         ],
       );
     });
@@ -173,10 +170,7 @@ void main() {
       final mockClient = MockClient((request) async {
         capturedRequest = request;
         return http.Response(
-          jsonEncode({
-            'status': 'success',
-            'timestamp': 1704067200,
-          }),
+          jsonEncode({'status': 'success', 'timestamp': 1704067200}),
           200,
           headers: {'content-type': 'application/json'},
         );
@@ -195,14 +189,20 @@ void main() {
 
       expect(capturedRequest, isNotNull);
       expect(
-          capturedRequest!.headers['Content-Type'], equals('application/json'));
+        capturedRequest!.headers['Content-Type'],
+        equals('application/json'),
+      );
       expect(
-          capturedRequest!.headers['X-Synheart-Tenant'], equals('test_tenant'));
+        capturedRequest!.headers['X-Synheart-Tenant'],
+        equals('test_tenant'),
+      );
       expect(capturedRequest!.headers['X-Synheart-Signature'], isNotNull);
       expect(capturedRequest!.headers['X-Synheart-Nonce'], isNotNull);
       expect(capturedRequest!.headers['X-Synheart-Timestamp'], isNotNull);
       expect(
-          capturedRequest!.headers['X-Synheart-SDK-Version'], equals('1.0.0'));
+        capturedRequest!.headers['X-Synheart-SDK-Version'],
+        equals('1.0.0'),
+      );
     });
 
     test('retries on transient errors up to max attempts', () async {
@@ -214,10 +214,7 @@ void main() {
           throw Exception('Network error');
         }
         return http.Response(
-          jsonEncode({
-            'status': 'success',
-            'timestamp': 1704067200,
-          }),
+          jsonEncode({'status': 'success', 'timestamp': 1704067200}),
           200,
           headers: {'content-type': 'application/json'},
         );

@@ -8,34 +8,34 @@ class PhoneCache {
 
   /// Add motion data
   void addMotionData(MotionData motion) {
-    _addDataPoint(_PhoneDataPoint(
-      timestamp: motion.timestamp,
-      motionLevel: motion.energy / 3.0, // Normalize to 0-1
-    ));
+    _addDataPoint(
+      _PhoneDataPoint(
+        timestamp: motion.timestamp,
+        motionLevel: motion.energy / 3.0, // Normalize to 0-1
+      ),
+    );
   }
 
   /// Add screen state change
   void addScreenState(ScreenState state, DateTime timestamp) {
-    _addDataPoint(_PhoneDataPoint(
-      timestamp: timestamp,
-      screenOn: state == ScreenState.on || state == ScreenState.unlocked,
-    ));
+    _addDataPoint(
+      _PhoneDataPoint(
+        timestamp: timestamp,
+        screenOn: state == ScreenState.on || state == ScreenState.unlocked,
+      ),
+    );
   }
 
   /// Add app switch event
   void addAppSwitch(DateTime timestamp) {
-    _addDataPoint(_PhoneDataPoint(
-      timestamp: timestamp,
-      appSwitch: true,
-    ));
+    _addDataPoint(_PhoneDataPoint(timestamp: timestamp, appSwitch: true));
   }
 
   /// Add notification event
   void addNotification(NotificationEvent event) {
-    _addDataPoint(_PhoneDataPoint(
-      timestamp: event.timestamp,
-      notification: true,
-    ));
+    _addDataPoint(
+      _PhoneDataPoint(timestamp: event.timestamp, notification: true),
+    );
   }
 
   /// Get features for a window
@@ -104,8 +104,9 @@ class PhoneCache {
 
     // Notification rate (per minute)
     final notifications = data.where((d) => d.notification == true).length;
-    final notificationRate =
-        windowMinutes > 0 ? notifications / windowMinutes : 0.0;
+    final notificationRate = windowMinutes > 0
+        ? notifications / windowMinutes
+        : 0.0;
 
     return PhoneWindowFeatures(
       motionLevel: motionLevel,

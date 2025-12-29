@@ -6,11 +6,7 @@ class CollectedFeatures {
   final PhoneWindowFeatures? phone;
   final BehaviorWindowFeatures? behavior;
 
-  const CollectedFeatures({
-    this.wear,
-    this.phone,
-    this.behavior,
-  });
+  const CollectedFeatures({this.wear, this.phone, this.behavior});
 
   /// Check if we have any features
   bool get hasAnyFeatures => wear != null || phone != null || behavior != null;
@@ -26,9 +22,9 @@ class ChannelCollector {
     WearFeatureProvider? wear,
     PhoneFeatureProvider? phone,
     BehaviorFeatureProvider? behavior,
-  })  : _wear = wear,
-        _phone = phone,
-        _behavior = behavior;
+  }) : _wear = wear,
+       _phone = phone,
+       _behavior = behavior;
 
   /// Collect features for a specific window
   CollectedFeatures collect(WindowType window) {

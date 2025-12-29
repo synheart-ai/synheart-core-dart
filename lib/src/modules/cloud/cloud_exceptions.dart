@@ -16,7 +16,7 @@ class InvalidSignatureError extends CloudConnectorException {
 class RateLimitExceededError extends CloudConnectorException {
   final int retryAfter;
   RateLimitExceededError(this.retryAfter)
-      : super('Rate limit exceeded, retry after $retryAfter seconds');
+    : super('Rate limit exceeded, retry after $retryAfter seconds');
 }
 
 class InvalidTenantError extends CloudConnectorException {

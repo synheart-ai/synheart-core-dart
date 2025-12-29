@@ -30,14 +30,15 @@ class StateEngine {
     BiosignalDataSource? biosignalSource,
     BehavioralDataSource? behavioralSource,
     ContextDataSource? contextSource,
-  })  : _ingestion = ingestion ??
-            IngestionService(
-              biosignalSource: biosignalSource,
-              behavioralSource: behavioralSource,
-              contextSource: contextSource,
-            ),
-        _processor = processor ?? SignalProcessor(),
-        _fusion = fusion ?? FusionEngine();
+  }) : _ingestion =
+           ingestion ??
+           IngestionService(
+             biosignalSource: biosignalSource,
+             behavioralSource: behavioralSource,
+             contextSource: contextSource,
+           ),
+       _processor = processor ?? SignalProcessor(),
+       _fusion = fusion ?? FusionEngine();
 
   /// Stream of base HSV (before emotion/focus heads populate)
   Stream<HumanStateVector> get baseHsvStream => _baseHsvStream.stream;

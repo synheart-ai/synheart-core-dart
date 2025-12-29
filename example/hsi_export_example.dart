@@ -70,18 +70,12 @@ void main() {
         model: 'hsi-fusion-v1',
       ),
       axes: HSIAxes(
-        affect: AffectAxis(
-          arousalIndex: 0.62,
-          valenceStability: 0.78,
-        ),
+        affect: AffectAxis(arousalIndex: 0.62, valenceStability: 0.78),
         engagement: EngagementAxis(
           engagementStability: 0.72,
           interactionCadence: 0.58,
         ),
-        activity: ActivityAxis(
-          motionIndex: 0.35,
-          postureStability: 0.88,
-        ),
+        activity: ActivityAxis(motionIndex: 0.35, postureStability: 0.88),
         context: ContextAxis(
           screenActiveRatio: 0.85,
           sessionFragmentation: 0.22,
@@ -93,7 +87,8 @@ void main() {
   print('=== HSV: Internal Representation (Fast, Type-Safe) ===\n');
   print('Affect Arousal Index: ${hsv.meta.axes.affect.arousalIndex}');
   print(
-      'Engagement Stability: ${hsv.meta.axes.engagement.engagementStability}');
+    'Engagement Stability: ${hsv.meta.axes.engagement.engagementStability}',
+  );
   print('Emotion Stress: ${hsv.emotion.stress}');
   print('Focus Score: ${hsv.focus.score}');
 

@@ -8,10 +8,8 @@ class UploadClient {
   final String baseUrl;
   final http.Client _httpClient;
 
-  UploadClient({
-    required this.baseUrl,
-    http.Client? httpClient,
-  }) : _httpClient = httpClient ?? http.Client();
+  UploadClient({required this.baseUrl, http.Client? httpClient})
+    : _httpClient = httpClient ?? http.Client();
 
   Future<UploadResponse> upload({
     required UploadRequest payload,

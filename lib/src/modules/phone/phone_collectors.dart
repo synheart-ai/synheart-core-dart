@@ -19,22 +19,14 @@ class MotionData {
 }
 
 /// Screen state information
-enum ScreenState {
-  on,
-  off,
-  locked,
-  unlocked,
-}
+enum ScreenState { on, off, locked, unlocked }
 
 /// Notification event
 class NotificationEvent {
   final DateTime timestamp;
   final bool opened; // true if opened, false if just received
 
-  const NotificationEvent({
-    required this.timestamp,
-    required this.opened,
-  });
+  const NotificationEvent({required this.timestamp, required this.opened});
 }
 
 /// Collects motion data from device sensors
@@ -62,13 +54,9 @@ class MotionCollector {
       final z = (_random.nextDouble() - 0.5) * 2;
       final energy = sqrt(x * x + y * y + z * z);
 
-      _controller.add(MotionData(
-        x: x,
-        y: y,
-        z: z,
-        energy: energy,
-        timestamp: DateTime.now(),
-      ));
+      _controller.add(
+        MotionData(x: x, y: y, z: z, energy: energy, timestamp: DateTime.now()),
+      );
     });
   }
 

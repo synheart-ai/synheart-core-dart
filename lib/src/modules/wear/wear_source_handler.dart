@@ -2,13 +2,7 @@ import 'dart:async';
 import '../interfaces/feature_providers.dart';
 
 /// Types of wear data sources
-enum WearSourceType {
-  appleHealth,
-  googleFit,
-  whoop,
-  garmin,
-  mock,
-}
+enum WearSourceType { appleHealth, googleFit, whoop, garmin, mock }
 
 /// Raw wear sample from a data source
 class WearSample {

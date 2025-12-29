@@ -29,8 +29,8 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
   PhoneModule({
     required CapabilityProvider capabilities,
     required ConsentProvider consent,
-  })  : _capabilities = capabilities,
-        _consent = consent;
+  }) : _capabilities = capabilities,
+       _consent = consent;
 
   @override
   PhoneWindowFeatures? features(WindowType window) {
@@ -141,7 +141,8 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
     }
 
     SynheartLogger.log(
-        '[PhoneModule] Started ${_subscriptions.length} collectors');
+      '[PhoneModule] Started ${_subscriptions.length} collectors',
+    );
   }
 
   @override

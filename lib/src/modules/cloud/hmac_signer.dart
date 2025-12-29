@@ -12,9 +12,10 @@ class HMACSigner {
   String generateNonce() {
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final random = Random.secure();
-    final randomHex = List.generate(12, (_) => random.nextInt(256))
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join();
+    final randomHex = List.generate(
+      12,
+      (_) => random.nextInt(256),
+    ).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '${timestamp}_$randomHex';
   }
 

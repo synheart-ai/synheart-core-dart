@@ -95,11 +95,7 @@ class HSI10Window {
   final String end;
   final String? label;
 
-  HSI10Window({
-    required this.start,
-    required this.end,
-    this.label,
-  });
+  HSI10Window({required this.start, required this.end, this.label});
 
   factory HSI10Window.fromJson(Map<String, dynamic> json) =>
       _$HSI10WindowFromJson(json);
@@ -113,10 +109,7 @@ class HSI10Axes {
   final HSI10Domain? affect;
   final HSI10Domain? behavior;
 
-  HSI10Axes({
-    this.affect,
-    this.behavior,
-  });
+  HSI10Axes({this.affect, this.behavior});
 
   factory HSI10Axes.fromJson(Map<String, dynamic> json) =>
       _$HSI10AxesFromJson(json);
@@ -281,67 +274,79 @@ extension HSI10Export on HumanStateVector {
 
     // Convert Affect Axis
     if (meta.axes.affect.arousalIndex != null) {
-      affectReadings.add(HSI10Reading(
-        axis: 'arousal',
-        score: meta.axes.affect.arousalIndex!,
-        confidence:
-            0.8, // Default confidence (internal doesn't track per-axis confidence)
-        windowId: windowId,
-        direction: 'higher_is_more',
-      ));
+      affectReadings.add(
+        HSI10Reading(
+          axis: 'arousal',
+          score: meta.axes.affect.arousalIndex!,
+          confidence:
+              0.8, // Default confidence (internal doesn't track per-axis confidence)
+          windowId: windowId,
+          direction: 'higher_is_more',
+        ),
+      );
     }
 
     if (meta.axes.affect.valenceStability != null) {
-      affectReadings.add(HSI10Reading(
-        axis: 'valence_stability',
-        score: meta.axes.affect.valenceStability!,
-        confidence: 0.8,
-        windowId: windowId,
-        direction: 'higher_is_more',
-      ));
+      affectReadings.add(
+        HSI10Reading(
+          axis: 'valence_stability',
+          score: meta.axes.affect.valenceStability!,
+          confidence: 0.8,
+          windowId: windowId,
+          direction: 'higher_is_more',
+        ),
+      );
     }
 
     // Convert Engagement Axis to behavior domain
     if (meta.axes.engagement.engagementStability != null) {
-      behaviorReadings.add(HSI10Reading(
-        axis: 'engagement_stability',
-        score: meta.axes.engagement.engagementStability!,
-        confidence: 0.8,
-        windowId: windowId,
-        direction: 'higher_is_more',
-      ));
+      behaviorReadings.add(
+        HSI10Reading(
+          axis: 'engagement_stability',
+          score: meta.axes.engagement.engagementStability!,
+          confidence: 0.8,
+          windowId: windowId,
+          direction: 'higher_is_more',
+        ),
+      );
     }
 
     if (meta.axes.engagement.interactionCadence != null) {
-      behaviorReadings.add(HSI10Reading(
-        axis: 'interaction_cadence',
-        score: meta.axes.engagement.interactionCadence!,
-        confidence: 0.8,
-        windowId: windowId,
-        direction: 'higher_is_more',
-      ));
+      behaviorReadings.add(
+        HSI10Reading(
+          axis: 'interaction_cadence',
+          score: meta.axes.engagement.interactionCadence!,
+          confidence: 0.8,
+          windowId: windowId,
+          direction: 'higher_is_more',
+        ),
+      );
     }
 
     // Convert Activity Axis to behavior domain
     if (meta.axes.activity.motionIndex != null) {
-      behaviorReadings.add(HSI10Reading(
-        axis: 'motion',
-        score: meta.axes.activity.motionIndex!,
-        confidence: 0.8,
-        windowId: windowId,
-        direction: 'higher_is_more',
-      ));
+      behaviorReadings.add(
+        HSI10Reading(
+          axis: 'motion',
+          score: meta.axes.activity.motionIndex!,
+          confidence: 0.8,
+          windowId: windowId,
+          direction: 'higher_is_more',
+        ),
+      );
     }
 
     // Convert Context Axis to behavior domain
     if (meta.axes.context.screenActiveRatio != null) {
-      behaviorReadings.add(HSI10Reading(
-        axis: 'screen_active_ratio',
-        score: meta.axes.context.screenActiveRatio!,
-        confidence: 0.8,
-        windowId: windowId,
-        direction: 'higher_is_more',
-      ));
+      behaviorReadings.add(
+        HSI10Reading(
+          axis: 'screen_active_ratio',
+          score: meta.axes.context.screenActiveRatio!,
+          confidence: 0.8,
+          windowId: windowId,
+          direction: 'higher_is_more',
+        ),
+      );
     }
 
     if (affectReadings.isEmpty && behaviorReadings.isEmpty) {

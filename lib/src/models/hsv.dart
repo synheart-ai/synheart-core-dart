@@ -156,11 +156,11 @@ class HSIAxes {
   Map<String, dynamic> toJson() => _$HSIAxesToJson(this);
 
   factory HSIAxes.empty() => HSIAxes(
-        affect: AffectAxis.empty(),
-        engagement: EngagementAxis.empty(),
-        activity: ActivityAxis.empty(),
-        context: ContextAxis.empty(),
-      );
+    affect: AffectAxis.empty(),
+    engagement: EngagementAxis.empty(),
+    activity: ActivityAxis.empty(),
+    context: ContextAxis.empty(),
+  );
 }
 
 /// Device information
@@ -175,11 +175,7 @@ class DeviceInfo {
   /// Optional OS version
   final String? osVersion;
 
-  DeviceInfo({
-    required this.platform,
-    this.model,
-    this.osVersion,
-  });
+  DeviceInfo({required this.platform, this.model, this.osVersion});
 
   factory DeviceInfo.fromJson(Map<String, dynamic> json) =>
       _$DeviceInfoFromJson(json);

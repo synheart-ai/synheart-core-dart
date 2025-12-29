@@ -40,10 +40,10 @@ class CloudConnectorModule extends BaseSynheartModule {
     required ConsentModule consent,
     required HSIRuntimeModule hsiRuntime,
     required CloudConfig config,
-  })  : _capabilities = capabilities,
-        _consent = consent,
-        _hsiRuntime = hsiRuntime,
-        _config = config;
+  }) : _capabilities = capabilities,
+       _consent = consent,
+       _hsiRuntime = hsiRuntime,
+       _config = config;
 
   @override
   Future<void> onInitialize() async {
@@ -75,8 +75,9 @@ class CloudConnectorModule extends BaseSynheartModule {
     _hsvSubscription = _hsiRuntime.hsiStream.listen(_handleHSVUpdate);
 
     // 2. Subscribe to network changes
-    _networkSubscription =
-        _networkMonitor.connectivityStream.listen(_handleNetworkChange);
+    _networkSubscription = _networkMonitor.connectivityStream.listen(
+      _handleNetworkChange,
+    );
 
     // 3. Attempt to flush queue if online
     if (_networkMonitor.isOnline) {
@@ -137,11 +138,13 @@ class CloudConnectorModule extends BaseSynheartModule {
     try {
       // Convert to HSI 1.0
       final hsi10Snapshots = batch
-          .map((hsv) => hsv.toHSI10(
-                producerName: 'Synheart Core SDK',
-                producerVersion: '1.0.0',
-                instanceId: _config.instanceId,
-              ))
+          .map(
+            (hsv) => hsv.toHSI10(
+              producerName: 'Synheart Core SDK',
+              producerVersion: '1.0.0',
+              instanceId: _config.instanceId,
+            ),
+          )
           .toList();
 
       // Create upload payload
@@ -170,7 +173,8 @@ class CloudConnectorModule extends BaseSynheartModule {
       );
 
       SynheartLogger.log(
-          '[CloudConnector] Upload successful: ${response.status}');
+        '[CloudConnector] Upload successful: ${response.status}',
+      );
     } catch (e) {
       // Re-enqueue batch on failure
       await _uploadQueue.requeueBatch(batch);

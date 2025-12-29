@@ -27,10 +27,7 @@ class BehaviorEvent {
     return BehaviorEvent(
       type: BehaviorEventType.tap,
       timestamp: DateTime.now(),
-      metadata: {
-        'x': position.dx,
-        'y': position.dy,
-      },
+      metadata: {'x': position.dx, 'y': position.dy},
     );
   }
 

@@ -1,4 +1,4 @@
-# Synheart Core SDK - Flutter
+# Synheart Core SDK - Dart/Flutter
 
 [![Version](https://img.shields.io/badge/version-0.0.2-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
 [![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.32.0-blue.svg)](https://flutter.dev)

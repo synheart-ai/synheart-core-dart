@@ -14,13 +14,7 @@ enum CapabilityLevel {
 }
 
 /// Module identifiers
-enum Module {
-  wear,
-  phone,
-  behavior,
-  hsi,
-  cloud,
-}
+enum Module { wear, phone, behavior, hsi, cloud }
 
 /// Feature flags for fine-grained control
 enum FeatureFlag {

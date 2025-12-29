@@ -38,12 +38,7 @@ class SynheartConfig {
 }
 
 /// Log level for SDK logging
-enum LogLevel {
-  debug,
-  info,
-  warn,
-  error,
-}
+enum LogLevel { debug, info, warn, error }
 
 /// Wear module configuration
 class WearConfig {

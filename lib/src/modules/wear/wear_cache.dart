@@ -63,14 +63,14 @@ class WearCache {
     List<WearSample> samples,
   ) {
     if (samples.isEmpty) {
-      return WearWindowFeatures(
-        windowDuration: _getWindowDuration(windowType),
-      );
+      return WearWindowFeatures(windowDuration: _getWindowDuration(windowType));
     }
 
     // Extract HR values
-    final hrValues =
-        samples.where((s) => s.hr != null).map((s) => s.hr!).toList();
+    final hrValues = samples
+        .where((s) => s.hr != null)
+        .map((s) => s.hr!)
+        .toList();
 
     // Flatten RR intervals across the window (best source of HRV features)
     final rrIntervals = samples
@@ -114,15 +114,18 @@ class WearCache {
       hrAverage: hrValues.isNotEmpty
           ? hrValues.reduce((a, b) => a + b) / hrValues.length
           : null,
-      hrMin:
-          hrValues.isNotEmpty ? hrValues.reduce((a, b) => a < b ? a : b) : null,
-      hrMax:
-          hrValues.isNotEmpty ? hrValues.reduce((a, b) => a > b ? a : b) : null,
+      hrMin: hrValues.isNotEmpty
+          ? hrValues.reduce((a, b) => a < b ? a : b)
+          : null,
+      hrMax: hrValues.isNotEmpty
+          ? hrValues.reduce((a, b) => a > b ? a : b)
+          : null,
       // Prefer RR-derived RMSSD; fallback to vendor-provided value
-      hrvRmssd: rrRmssd ??
+      hrvRmssd:
+          rrRmssd ??
           (hrvFallbackValues.isNotEmpty
               ? hrvFallbackValues.reduce((a, b) => a + b) /
-                  hrvFallbackValues.length
+                    hrvFallbackValues.length
               : null),
       hrvSdnn: rrSdnn,
       pnn50: rrPnn50,

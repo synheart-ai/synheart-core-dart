@@ -120,21 +120,31 @@ class _SynheartExamplePageState extends State<SynheartExamplePage> {
               _buildSection('Focus', [
                 _buildMetric('Score', _currentState!.focus.score),
                 _buildMetric(
-                    'Cognitive Load', _currentState!.focus.cognitiveLoad),
+                  'Cognitive Load',
+                  _currentState!.focus.cognitiveLoad,
+                ),
                 _buildMetric('Clarity', _currentState!.focus.clarity),
                 _buildMetric('Distraction', _currentState!.focus.distraction),
               ]),
               const SizedBox(height: 16),
               _buildSection('Behavior', [
                 _buildMetric(
-                    'Typing Cadence', _currentState!.behavior.typingCadence),
-                _buildMetric('Typing Burstiness',
-                    _currentState!.behavior.typingBurstiness),
+                  'Typing Cadence',
+                  _currentState!.behavior.typingCadence,
+                ),
                 _buildMetric(
-                    'Scroll Velocity', _currentState!.behavior.scrollVelocity),
+                  'Typing Burstiness',
+                  _currentState!.behavior.typingBurstiness,
+                ),
+                _buildMetric(
+                  'Scroll Velocity',
+                  _currentState!.behavior.scrollVelocity,
+                ),
                 _buildMetric('Idle Gaps', _currentState!.behavior.idleGaps),
                 _buildMetric(
-                    'App Switch Rate', _currentState!.behavior.appSwitchRate),
+                  'App Switch Rate',
+                  _currentState!.behavior.appSwitchRate,
+                ),
               ]),
             ] else
               const Center(
@@ -161,10 +171,7 @@ class _SynheartExamplePageState extends State<SynheartExamplePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             ...children,
           ],

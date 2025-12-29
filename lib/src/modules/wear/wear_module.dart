@@ -29,12 +29,13 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
     required ConsentProvider consent,
     List<WearSourceHandler>? sources,
     bool useSynheartWear = true, // Use synheart_wear package by default
-  })  : _capabilities = capabilities,
-        _consent = consent,
-        _sources = sources ??
-            (useSynheartWear
-                ? [SynheartWearSourceHandler()] // Use synheart_wear by default
-                : [MockWearSourceHandler()]); // Fallback to mock if disabled
+  }) : _capabilities = capabilities,
+       _consent = consent,
+       _sources =
+           sources ??
+           (useSynheartWear
+               ? [SynheartWearSourceHandler()] // Use synheart_wear by default
+               : [MockWearSourceHandler()]); // Fallback to mock if disabled
 
   @override
   WearWindowFeatures? features(WindowType window) {
@@ -94,7 +95,8 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
         try {
           await source.initialize();
           SynheartLogger.log(
-              '[WearModule] Initialized ${source.sourceType.name} source');
+            '[WearModule] Initialized ${source.sourceType.name} source',
+          );
         } catch (e) {
           SynheartLogger.log(
             '[WearModule] Failed to initialize ${source.sourceType.name}: $e',
@@ -130,7 +132,8 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
     }
 
     SynheartLogger.log(
-        '[WearModule] Started ${_subscriptions.length} wear sources');
+      '[WearModule] Started ${_subscriptions.length} wear sources',
+    );
   }
 
   @override

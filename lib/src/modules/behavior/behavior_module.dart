@@ -35,8 +35,8 @@ class BehaviorModule extends BaseSynheartModule
   BehaviorModule({
     required CapabilityProvider capabilities,
     required ConsentProvider consent,
-  })  : _capabilities = capabilities,
-        _consent = consent;
+  }) : _capabilities = capabilities,
+       _consent = consent;
 
   /// Get the event stream for recording events (for manual instrumentation)
   BehaviorEventStream get eventStream => _eventStream;
@@ -111,7 +111,8 @@ class BehaviorModule extends BaseSynheartModule
         ),
       );
       SynheartLogger.log(
-          '[BehaviorModule] synheart_behavior initialized successfully');
+        '[BehaviorModule] synheart_behavior initialized successfully',
+      );
     } catch (e) {
       SynheartLogger.log(
         '[BehaviorModule] Failed to initialize synheart_behavior: $e',
@@ -160,7 +161,8 @@ class BehaviorModule extends BaseSynheartModule
         ),
       );
       SynheartLogger.log(
-          '[BehaviorModule] Subscribed to synheart_behavior events');
+        '[BehaviorModule] Subscribed to synheart_behavior events',
+      );
     }
 
     // Start cleanup timer (every minute)

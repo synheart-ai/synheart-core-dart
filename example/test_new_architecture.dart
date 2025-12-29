@@ -73,9 +73,9 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Configuration failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Configuration failed: $e')));
       }
     }
   }
@@ -104,9 +104,9 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Synheart stopped')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Synheart stopped')));
       }
     } catch (e) {
       setState(() {
@@ -114,9 +114,9 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Stop failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Stop failed: $e')));
       }
     }
   }
@@ -128,24 +128,34 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
       ConsentSnapshot updated;
       switch (type) {
         case ConsentType.biosignals:
-          updated = _currentConsent!
-              .copyWith(biosignals: granted, timestamp: DateTime.now());
+          updated = _currentConsent!.copyWith(
+            biosignals: granted,
+            timestamp: DateTime.now(),
+          );
           break;
         case ConsentType.behavior:
-          updated = _currentConsent!
-              .copyWith(behavior: granted, timestamp: DateTime.now());
+          updated = _currentConsent!.copyWith(
+            behavior: granted,
+            timestamp: DateTime.now(),
+          );
           break;
         case ConsentType.motion:
-          updated = _currentConsent!
-              .copyWith(motion: granted, timestamp: DateTime.now());
+          updated = _currentConsent!.copyWith(
+            motion: granted,
+            timestamp: DateTime.now(),
+          );
           break;
         case ConsentType.cloudUpload:
-          updated = _currentConsent!
-              .copyWith(cloudUpload: granted, timestamp: DateTime.now());
+          updated = _currentConsent!.copyWith(
+            cloudUpload: granted,
+            timestamp: DateTime.now(),
+          );
           break;
         case ConsentType.syni:
-          updated = _currentConsent!
-              .copyWith(syni: granted, timestamp: DateTime.now());
+          updated = _currentConsent!.copyWith(
+            syni: granted,
+            timestamp: DateTime.now(),
+          );
           break;
       }
 
@@ -162,9 +172,9 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update consent: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update consent: $e')));
       }
     }
   }
@@ -220,7 +230,9 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
 
             if (_isConfigured && !_isRunning)
               ElevatedButton(
-                  onPressed: _start, child: const Text('Mark Running')),
+                onPressed: _start,
+                child: const Text('Mark Running'),
+              ),
 
             if (_isRunning)
               ElevatedButton(

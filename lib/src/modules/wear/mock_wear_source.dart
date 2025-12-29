@@ -54,8 +54,10 @@ class MockWearSourceHandler implements WearSourceHandler {
 
       // HRV inversely related to HR (higher HR = lower HRV)
       final hrvVariation = (_random.nextDouble() - 0.5) * 15;
-      final hrv =
-          (_baseHrv - (circadianOffset / 2) + hrvVariation).clamp(20.0, 100.0);
+      final hrv = (_baseHrv - (circadianOffset / 2) + hrvVariation).clamp(
+        20.0,
+        100.0,
+      );
 
       // Generate realistic RR intervals (around 800-1000ms)
       final rrIntervals = List.generate(
@@ -71,26 +73,24 @@ class MockWearSourceHandler implements WearSourceHandler {
       // Sleep stage (only during sleep hours)
       SleepStage? sleepStage;
       if (hourOfDay >= 22 || hourOfDay <= 6) {
-        final sleepStages = [
-          SleepStage.light,
-          SleepStage.deep,
-          SleepStage.rem,
-        ];
+        final sleepStages = [SleepStage.light, SleepStage.deep, SleepStage.rem];
         sleepStage = sleepStages[_random.nextInt(sleepStages.length)];
       }
 
       // Respiration rate (12-20 breaths per minute)
       final respRate = 15.0 + (_random.nextDouble() - 0.5) * 4;
 
-      _controller.add(WearSample(
-        timestamp: DateTime.now(),
-        hr: hr,
-        hrvRmssd: hrv,
-        respRate: respRate,
-        motionLevel: motionLevel,
-        sleepStage: sleepStage,
-        rrIntervals: rrIntervals,
-      ));
+      _controller.add(
+        WearSample(
+          timestamp: DateTime.now(),
+          hr: hr,
+          hrvRmssd: hrv,
+          respRate: respRate,
+          motionLevel: motionLevel,
+          sleepStage: sleepStage,
+          rrIntervals: rrIntervals,
+        ),
+      );
     });
   }
 

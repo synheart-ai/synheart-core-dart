@@ -244,8 +244,10 @@ class FusionEngine {
 
     // Interaction Cadence: combination of tap rate and keystroke rate
     final interactionCadence =
-        (0.5 * behavior.tapRateNorm + 0.5 * behavior.keystrokeRateNorm)
-            .clamp(0.0, 1.0);
+        (0.5 * behavior.tapRateNorm + 0.5 * behavior.keystrokeRateNorm).clamp(
+          0.0,
+          1.0,
+        );
 
     return EngagementAxis(
       engagementStability: engagementStability,
@@ -263,8 +265,10 @@ class FusionEngine {
 
     if (wear?.motionIndex != null && phone != null) {
       // Average of wear and phone motion
-      motionIndex =
-          (0.5 * wear!.motionIndex! + 0.5 * phone.motionLevel).clamp(0.0, 1.0);
+      motionIndex = (0.5 * wear!.motionIndex! + 0.5 * phone.motionLevel).clamp(
+        0.0,
+        1.0,
+      );
     } else if (wear?.motionIndex != null) {
       motionIndex = wear!.motionIndex!.clamp(0.0, 1.0);
     } else if (phone != null) {
@@ -273,8 +277,9 @@ class FusionEngine {
 
     // Posture Stability: inverse of motion index
     // Lower motion = more stable posture
-    final postureStability =
-        motionIndex != null ? (1.0 - motionIndex).clamp(0.0, 1.0) : null;
+    final postureStability = motionIndex != null
+        ? (1.0 - motionIndex).clamp(0.0, 1.0)
+        : null;
 
     return ActivityAxis(
       motionIndex: motionIndex,
@@ -302,8 +307,10 @@ class FusionEngine {
       // Assume max 10 switches/min
       final appSwitchNorm = (phone.appSwitchRate / 10.0).clamp(0.0, 1.0);
       sessionFragmentation =
-          (0.5 * appSwitchNorm + 0.5 * behavior.sessionFragmentation)
-              .clamp(0.0, 1.0);
+          (0.5 * appSwitchNorm + 0.5 * behavior.sessionFragmentation).clamp(
+            0.0,
+            1.0,
+          );
     } else if (phone != null) {
       sessionFragmentation = (phone.appSwitchRate / 10.0).clamp(0.0, 1.0);
     } else if (behavior != null) {

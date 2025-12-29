@@ -21,9 +21,8 @@ class SynheartWearSourceHandler implements WearSourceHandler {
 
   bool _isInitialized = false;
 
-  SynheartWearSourceHandler({
-    wear.SynheartWearConfig? config,
-  }) : _config = config;
+  SynheartWearSourceHandler({wear.SynheartWearConfig? config})
+    : _config = config;
 
   @override
   WearSourceType get sourceType {
@@ -54,11 +53,10 @@ class SynheartWearSourceHandler implements WearSourceHandler {
 
     // Initialize synheart_wear SDK
     _synheartWear = wear.SynheartWear(
-      config: _config ??
+      config:
+          _config ??
           const wear.SynheartWearConfig(
-            enabledAdapters: {
-              wear.DeviceAdapter.appleHealthKit,
-            },
+            enabledAdapters: {wear.DeviceAdapter.appleHealthKit},
             enableLocalCaching: true,
             enableEncryption: true,
             streamInterval: Duration(seconds: 1),
@@ -82,26 +80,28 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     }
 
     // Stream HR data (every 1 second)
-    _hrSubscription =
-        _synheartWear!.streamHR(interval: const Duration(seconds: 1)).listen(
-      (wearMetrics) {
-        _emitSample(wearMetrics);
-      },
-      onError: (error) {
-        _controller?.addError(error);
-      },
-    );
+    _hrSubscription = _synheartWear!
+        .streamHR(interval: const Duration(seconds: 1))
+        .listen(
+          (wearMetrics) {
+            _emitSample(wearMetrics);
+          },
+          onError: (error) {
+            _controller?.addError(error);
+          },
+        );
 
     // Stream HRV data (every 5 seconds for better accuracy)
-    _hrvSubscription =
-        _synheartWear!.streamHRV(windowSize: const Duration(seconds: 5)).listen(
-      (wearMetrics) {
-        _emitSample(wearMetrics);
-      },
-      onError: (error) {
-        _controller?.addError(error);
-      },
-    );
+    _hrvSubscription = _synheartWear!
+        .streamHRV(windowSize: const Duration(seconds: 5))
+        .listen(
+          (wearMetrics) {
+            _emitSample(wearMetrics);
+          },
+          onError: (error) {
+            _controller?.addError(error);
+          },
+        );
   }
 
   void _emitSample(wear.WearMetrics wearMetrics) {
@@ -111,8 +111,9 @@ class SynheartWearSourceHandler implements WearSourceHandler {
 
     // Convert WearMetrics to WearSample
     final hr = wearMetrics.getMetric(wear.MetricType.hr)?.toDouble();
-    final hrvRmssd =
-        wearMetrics.getMetric(wear.MetricType.hrvRmssd)?.toDouble();
+    final hrvRmssd = wearMetrics
+        .getMetric(wear.MetricType.hrvRmssd)
+        ?.toDouble();
     final hrvSdnn = wearMetrics.getMetric(wear.MetricType.hrvSdnn)?.toDouble();
 
     // Use RMSSD if available, otherwise SDNN
@@ -127,8 +128,8 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     final motionLevel = _estimateMotionFromSteps(steps);
 
     final sample = WearSample(
-      timestamp: DateTime
-          .now(), // Use current time, or extract from metrics if available
+      timestamp:
+          DateTime.now(), // Use current time, or extract from metrics if available
       hr: hr,
       hrvRmssd: hrv,
       respRate: null, // Not provided by synheart_wear yet
@@ -151,7 +152,8 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   Stream<WearSample> get sampleStream {
     if (_controller == null) {
       throw StateError(
-          'SynheartWearSourceHandler not initialized. Call initialize() first.');
+        'SynheartWearSourceHandler not initialized. Call initialize() first.',
+      );
     }
     return _controller!.stream;
   }
