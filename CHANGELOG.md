@@ -116,7 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed FusionEngineV2 to FusionEngine (removed misleading version suffix)
 
 ### Technical Details
-- Minimum SDK: Dart 3.8.0, Flutter 3.22.0
+- Minimum SDK: Dart 3.7.0, Flutter 3.24.0
 - Dependencies: synheart_wear ^0.1.2, rxdart ^0.28.0
 - Architecture: Stream-based reactive module system
 - Platform support: iOS, Android

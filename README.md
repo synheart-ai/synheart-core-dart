@@ -1,7 +1,7 @@
 # Synheart Core SDK - Flutter
 
 [![Version](https://img.shields.io/badge/version-0.0.2-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
-[![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.22.0-blue.svg)](https://flutter.dev)
+[![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.24.0-blue.svg)](https://flutter.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
 **Synheart Core SDK** is the single, unified integration point for developers who want to collect HSI-compatible data, process human state on-device, generate focus/emotion signals, and integrate with Syni.
