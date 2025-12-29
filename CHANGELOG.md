@@ -5,38 +5,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.1] - 2025-12-26
 
-### Dependencies
-- All dependencies now using pub.dev hosted versions:
-  - `synheart_emotion: ^0.2.2`
-  - `synheart_focus: ^0.0.1`
-  - `synheart_wear: ^0.1.2`
-
-### Added
-- Initial release of Synheart Core SDK
-- HSI Runtime module for signal fusion and state computation
-- Wear module for biosignal collection from wearables (HR, HRV, motion)
-- Phone module for device motion and context signals
-- Behavior module for digital interaction pattern tracking
-- Consent module for user permission management
-- Cloud Connector for secure HSI snapshot uploads
-- Capabilities module for feature gating (core/extended/research)
-- Optional interpretation modules: Focus Head and Emotion Head
-- Comprehensive HSV (Human State Vector) data model
-- Modular architecture with pluggable modules
-- On-device processing with privacy-first design
-
-### Changed
-- Renamed FusionEngineV2 to FusionEngine (removed misleading version suffix)
-
-### Technical Details
-- Minimum SDK: Dart 3.8.0, Flutter 3.22.0
-- Dependencies: synheart_wear ^0.1.2, rxdart ^0.28.0
-- Architecture: Stream-based reactive module system
-- Platform support: iOS, Android
-
-## [Unreleased]
+## [0.0.2] - 2025-12-29
 
 ### Added
 - **HSI 1.0 Export Capability**: synheart-core-dart can now export HSI 1.0 canonical payloads
@@ -107,6 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Platform-agnostic canonical format for interoperability
   - Best of both worlds: native performance, cross-platform compliance
 
+- **Public API**: removed legacy `HSI` entrypoints; `Synheart` is now the single SDK entrypoint exported from `package:synheart_core/synheart_core.dart`.
+- **Logging**: replaced `print()` usage with internal logger to satisfy `flutter_lints` (`avoid_print`).
+- **Examples**: cleaned up naming and flow to match `Synheart` (including renaming the full pipeline demo).
+
 ### Planned
 - Implement actual ML embedding model (currently placeholder)
 - Improve documentation and examples
@@ -114,4 +88,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Additional wearable device support
 - Phase 2: Add raw RR intervals to HSV metadata for full EmotionEngine integration
 
+
+
+## [0.0.1] - 2025-12-26
+
+### Dependencies
+- All dependencies now using pub.dev hosted versions:
+  - `synheart_emotion: ^0.2.2`
+  - `synheart_focus: ^0.0.1`
+  - `synheart_wear: ^0.1.2`
+
+### Added
+- Initial release of Synheart Core SDK
+- HSI Runtime module for signal fusion and state computation
+- Wear module for biosignal collection from wearables (HR, HRV, motion)
+- Phone module for device motion and context signals
+- Behavior module for digital interaction pattern tracking
+- Consent module for user permission management
+- Cloud Connector for secure HSI snapshot uploads
+- Capabilities module for feature gating (core/extended/research)
+- Optional interpretation modules: Focus Head and Emotion Head
+- Comprehensive HSV (Human State Vector) data model
+- Modular architecture with pluggable modules
+- On-device processing with privacy-first design
+
+### Changed
+- Renamed FusionEngineV2 to FusionEngine (removed misleading version suffix)
+
+### Technical Details
+- Minimum SDK: Dart 3.8.0, Flutter 3.22.0
+- Dependencies: synheart_wear ^0.1.2, rxdart ^0.28.0
+- Architecture: Stream-based reactive module system
+- Platform support: iOS, Android
+
+
+
+[0.0.2]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v0.0.2
 [0.0.1]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v0.0.1

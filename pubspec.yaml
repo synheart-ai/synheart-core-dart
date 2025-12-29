@@ -1,6 +1,6 @@
 name: synheart_core
 description: Synheart Core SDK - The unified SDK for HSI-compatible data collection, on-device state representation, optional interpretation modules (Focus, Emotion), and Syni integration. Includes HSI Runtime, Wear, Phone, Behavior, Consent, Cloud Connector, and Syni Hooks modules.
-version: 0.0.1
+version: 0.0.2
 homepage: https://github.com/synheart-ai/synheart-core-dart
 repository: https://github.com/synheart-ai/synheart-core-dart
 issue_tracker: https://github.com/synheart-ai/synheart-core-dart/issues
