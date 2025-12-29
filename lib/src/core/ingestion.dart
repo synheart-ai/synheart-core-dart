@@ -280,4 +280,3 @@ class IngestionService {
     await _signalStream.close();
   }
 }
-

@@ -119,17 +119,22 @@ class _SynheartExamplePageState extends State<SynheartExamplePage> {
               const SizedBox(height: 16),
               _buildSection('Focus', [
                 _buildMetric('Score', _currentState!.focus.score),
-                _buildMetric('Cognitive Load', _currentState!.focus.cognitiveLoad),
+                _buildMetric(
+                    'Cognitive Load', _currentState!.focus.cognitiveLoad),
                 _buildMetric('Clarity', _currentState!.focus.clarity),
                 _buildMetric('Distraction', _currentState!.focus.distraction),
               ]),
               const SizedBox(height: 16),
               _buildSection('Behavior', [
-                _buildMetric('Typing Cadence', _currentState!.behavior.typingCadence),
-                _buildMetric('Typing Burstiness', _currentState!.behavior.typingBurstiness),
-                _buildMetric('Scroll Velocity', _currentState!.behavior.scrollVelocity),
+                _buildMetric(
+                    'Typing Cadence', _currentState!.behavior.typingCadence),
+                _buildMetric('Typing Burstiness',
+                    _currentState!.behavior.typingBurstiness),
+                _buildMetric(
+                    'Scroll Velocity', _currentState!.behavior.scrollVelocity),
                 _buildMetric('Idle Gaps', _currentState!.behavior.idleGaps),
-                _buildMetric('App Switch Rate', _currentState!.behavior.appSwitchRate),
+                _buildMetric(
+                    'App Switch Rate', _currentState!.behavior.appSwitchRate),
               ]),
             ] else
               const Center(
@@ -187,4 +192,3 @@ class _SynheartExamplePageState extends State<SynheartExamplePage> {
     );
   }
 }
-

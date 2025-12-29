@@ -45,7 +45,8 @@ void main() {
           samplingRateHz: 2.0,
           embedding: StateEmbedding(
             vector: List.generate(64, (i) => i * 0.01),
-            timestamp: DateTime.utc(2025, 12, 28, 0, 0, 10).millisecondsSinceEpoch,
+            timestamp:
+                DateTime.utc(2025, 12, 28, 0, 0, 10).millisecondsSinceEpoch,
             windowType: 'micro',
           ),
           axes: HSIAxes(
@@ -90,7 +91,8 @@ void main() {
       // computed_at should be >= observed_at
       final observed = DateTime.parse(hsi10.observedAtUtc);
       final computed = DateTime.parse(hsi10.computedAtUtc);
-      expect(computed.isAfter(observed) || computed.isAtSameMomentAs(observed), isTrue);
+      expect(computed.isAfter(observed) || computed.isAtSameMomentAs(observed),
+          isTrue);
     });
 
     test('generates valid window structure', () {
@@ -131,7 +133,8 @@ void main() {
       expect(arousal.direction, equals('higher_is_more'));
 
       // Find valence_stability reading
-      final valence = affectReadings.firstWhere((r) => r.axis == 'valence_stability');
+      final valence =
+          affectReadings.firstWhere((r) => r.axis == 'valence_stability');
       expect(valence.score, equals(0.85));
     });
 
@@ -296,8 +299,8 @@ void main() {
       final hsi10 = hsv.toHSI10();
 
       final window = hsi10.windows[hsi10.windowIds.first]!;
-      final duration = DateTime.parse(window.end)
-          .difference(DateTime.parse(window.start));
+      final duration =
+          DateTime.parse(window.end).difference(DateTime.parse(window.start));
       expect(duration.inSeconds, equals(30));
       expect(window.label, equals('micro_window'));
     });
@@ -307,8 +310,8 @@ void main() {
       final hsi10 = hsv.toHSI10();
 
       final window = hsi10.windows[hsi10.windowIds.first]!;
-      final duration = DateTime.parse(window.end)
-          .difference(DateTime.parse(window.start));
+      final duration =
+          DateTime.parse(window.end).difference(DateTime.parse(window.start));
       expect(duration.inMinutes, equals(5));
       expect(window.label, equals('short_window'));
     });
@@ -318,8 +321,8 @@ void main() {
       final hsi10 = hsv.toHSI10();
 
       final window = hsi10.windows[hsi10.windowIds.first]!;
-      final duration = DateTime.parse(window.end)
-          .difference(DateTime.parse(window.start));
+      final duration =
+          DateTime.parse(window.end).difference(DateTime.parse(window.start));
       expect(duration.inHours, equals(1));
       expect(window.label, equals('medium_window'));
     });
@@ -329,8 +332,8 @@ void main() {
       final hsi10 = hsv.toHSI10();
 
       final window = hsi10.windows[hsi10.windowIds.first]!;
-      final duration = DateTime.parse(window.end)
-          .difference(DateTime.parse(window.start));
+      final duration =
+          DateTime.parse(window.end).difference(DateTime.parse(window.start));
       expect(duration.inHours, equals(24));
       expect(window.label, equals('long_window'));
     });

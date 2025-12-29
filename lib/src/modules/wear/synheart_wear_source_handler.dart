@@ -14,11 +14,11 @@ import 'wear_source_handler.dart';
 class SynheartWearSourceHandler implements WearSourceHandler {
   wear.SynheartWear? _synheartWear;
   final wear.SynheartWearConfig? _config;
-  
+
   StreamController<WearSample>? _controller;
   StreamSubscription<wear.WearMetrics>? _hrSubscription;
   StreamSubscription<wear.WearMetrics>? _hrvSubscription;
-  
+
   bool _isInitialized = false;
 
   SynheartWearSourceHandler({
@@ -28,7 +28,8 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   @override
   WearSourceType get sourceType {
     // Determine source type from config if available
-    if (_config?.enabledAdapters.contains(wear.DeviceAdapter.appleHealthKit) == true) {
+    if (_config?.enabledAdapters.contains(wear.DeviceAdapter.appleHealthKit) ==
+        true) {
       return WearSourceType.appleHealth;
     }
     if (_config?.enabledAdapters.contains(wear.DeviceAdapter.fitbit) == true) {
@@ -65,13 +66,13 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     );
 
     await _synheartWear!.initialize();
-    
+
     // Create stream controller
     _controller = StreamController<WearSample>.broadcast();
-    
+
     // Start streaming data
     _startStreaming();
-    
+
     _isInitialized = true;
   }
 
@@ -81,9 +82,8 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     }
 
     // Stream HR data (every 1 second)
-    _hrSubscription = _synheartWear!
-        .streamHR(interval: const Duration(seconds: 1))
-        .listen(
+    _hrSubscription =
+        _synheartWear!.streamHR(interval: const Duration(seconds: 1)).listen(
       (wearMetrics) {
         _emitSample(wearMetrics);
       },
@@ -93,9 +93,8 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     );
 
     // Stream HRV data (every 5 seconds for better accuracy)
-    _hrvSubscription = _synheartWear!
-        .streamHRV(windowSize: const Duration(seconds: 5))
-        .listen(
+    _hrvSubscription =
+        _synheartWear!.streamHRV(windowSize: const Duration(seconds: 5)).listen(
       (wearMetrics) {
         _emitSample(wearMetrics);
       },
@@ -112,21 +111,24 @@ class SynheartWearSourceHandler implements WearSourceHandler {
 
     // Convert WearMetrics to WearSample
     final hr = wearMetrics.getMetric(wear.MetricType.hr)?.toDouble();
-    final hrvRmssd = wearMetrics.getMetric(wear.MetricType.hrvRmssd)?.toDouble();
+    final hrvRmssd =
+        wearMetrics.getMetric(wear.MetricType.hrvRmssd)?.toDouble();
     final hrvSdnn = wearMetrics.getMetric(wear.MetricType.hrvSdnn)?.toDouble();
-    
+
     // Use RMSSD if available, otherwise SDNN
     final hrv = hrvRmssd ?? hrvSdnn;
-    
+
     // Get RR intervals if available
     final rrIntervals = wearMetrics.rrIntervalsMs;
-    
+
     // Get steps for motion estimation (rough proxy)
-    final steps = wearMetrics.getMetric(wear.MetricType.steps)?.toDouble() ?? 0.0;
+    final steps =
+        wearMetrics.getMetric(wear.MetricType.steps)?.toDouble() ?? 0.0;
     final motionLevel = _estimateMotionFromSteps(steps);
-    
+
     final sample = WearSample(
-      timestamp: DateTime.now(), // Use current time, or extract from metrics if available
+      timestamp: DateTime
+          .now(), // Use current time, or extract from metrics if available
       hr: hr,
       hrvRmssd: hrv,
       respRate: null, // Not provided by synheart_wear yet
@@ -148,7 +150,8 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   @override
   Stream<WearSample> get sampleStream {
     if (_controller == null) {
-      throw StateError('SynheartWearSourceHandler not initialized. Call initialize() first.');
+      throw StateError(
+          'SynheartWearSourceHandler not initialized. Call initialize() first.');
     }
     return _controller!.stream;
   }
@@ -157,13 +160,12 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   Future<void> dispose() async {
     await _hrSubscription?.cancel();
     await _hrvSubscription?.cancel();
-    
+
     // Note: synheart_wear may not have a dispose() method
     // The SDK handles cleanup internally when streams are cancelled
     _synheartWear = null;
-    
+
     await _controller?.close();
     _isInitialized = false;
   }
 }
-

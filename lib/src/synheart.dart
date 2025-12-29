@@ -116,7 +116,8 @@ class Synheart {
   static Stream<HumanStateVector> get onHSVUpdate => shared._hsvStream.stream;
 
   /// Static stream of emotion updates (optional interpretation)
-  static Stream<EmotionState> get onEmotionUpdate => shared._emotionStream.stream;
+  static Stream<EmotionState> get onEmotionUpdate =>
+      shared._emotionStream.stream;
 
   /// Static stream of focus updates (optional interpretation)
   static Stream<FocusState> get onFocusUpdate => shared._focusStream.stream;
@@ -432,7 +433,8 @@ class Synheart {
     }
 
     if (_cloudConnector == null) {
-      throw StateError('Cloud connector not configured. Provide cloudConfig during initialization');
+      throw StateError(
+          'Cloud connector not configured. Provide cloudConfig during initialization');
     }
 
     // Cloud connector is already initialized and started with other modules
@@ -472,7 +474,8 @@ class Synheart {
 
   Future<void> _flushUploadQueue() async {
     if (!_isConfigured) {
-      throw StateError('Synheart must be initialized before flushing upload queue');
+      throw StateError(
+          'Synheart must be initialized before flushing upload queue');
     }
     if (_cloudConnector == null) {
       throw StateError('Cloud connector not enabled');
@@ -549,7 +552,9 @@ class Synheart {
     final updated = ConsentSnapshot(
       biosignals: consentType == 'biosignals' ? true : current.biosignals,
       behavior: consentType == 'behavior' ? true : current.behavior,
-      motion: consentType == 'motion' || consentType == 'phoneContext' ? true : current.motion,
+      motion: consentType == 'motion' || consentType == 'phoneContext'
+          ? true
+          : current.motion,
       cloudUpload: consentType == 'cloudUpload' ? true : current.cloudUpload,
       syni: consentType == 'syni' ? true : current.syni,
       timestamp: DateTime.now(),
@@ -577,7 +582,9 @@ class Synheart {
     final updated = ConsentSnapshot(
       biosignals: consentType == 'biosignals' ? false : current.biosignals,
       behavior: consentType == 'behavior' ? false : current.behavior,
-      motion: consentType == 'motion' || consentType == 'phoneContext' ? false : current.motion,
+      motion: consentType == 'motion' || consentType == 'phoneContext'
+          ? false
+          : current.motion,
       cloudUpload: consentType == 'cloudUpload' ? false : current.cloudUpload,
       syni: consentType == 'syni' ? false : current.syni,
       timestamp: DateTime.now(),

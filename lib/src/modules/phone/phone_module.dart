@@ -140,7 +140,8 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
       );
     }
 
-    SynheartLogger.log('[PhoneModule] Started ${_subscriptions.length} collectors');
+    SynheartLogger.log(
+        '[PhoneModule] Started ${_subscriptions.length} collectors');
   }
 
   @override

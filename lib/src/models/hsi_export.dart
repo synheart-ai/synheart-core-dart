@@ -284,7 +284,8 @@ extension HSI10Export on HumanStateVector {
       affectReadings.add(HSI10Reading(
         axis: 'arousal',
         score: meta.axes.affect.arousalIndex!,
-        confidence: 0.8, // Default confidence (internal doesn't track per-axis confidence)
+        confidence:
+            0.8, // Default confidence (internal doesn't track per-axis confidence)
         windowId: windowId,
         direction: 'higher_is_more',
       ));
@@ -348,8 +349,12 @@ extension HSI10Export on HumanStateVector {
     }
 
     return HSI10Axes(
-      affect: affectReadings.isNotEmpty ? HSI10Domain(readings: affectReadings) : null,
-      behavior: behaviorReadings.isNotEmpty ? HSI10Domain(readings: behaviorReadings) : null,
+      affect: affectReadings.isNotEmpty
+          ? HSI10Domain(readings: affectReadings)
+          : null,
+      behavior: behaviorReadings.isNotEmpty
+          ? HSI10Domain(readings: behaviorReadings)
+          : null,
     );
   }
 

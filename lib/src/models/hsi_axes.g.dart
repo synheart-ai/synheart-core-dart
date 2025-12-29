@@ -7,9 +7,9 @@ part of 'hsi_axes.dart';
 // **************************************************************************
 
 AffectAxis _$AffectAxisFromJson(Map<String, dynamic> json) => AffectAxis(
-  arousalIndex: (json['arousalIndex'] as num?)?.toDouble(),
-  valenceStability: (json['valenceStability'] as num?)?.toDouble(),
-);
+      arousalIndex: (json['arousalIndex'] as num?)?.toDouble(),
+      valenceStability: (json['valenceStability'] as num?)?.toDouble(),
+    );
 
 Map<String, dynamic> _$AffectAxisToJson(AffectAxis instance) =>
     <String, dynamic>{
@@ -30,9 +30,9 @@ Map<String, dynamic> _$EngagementAxisToJson(EngagementAxis instance) =>
     };
 
 ActivityAxis _$ActivityAxisFromJson(Map<String, dynamic> json) => ActivityAxis(
-  motionIndex: (json['motionIndex'] as num?)?.toDouble(),
-  postureStability: (json['postureStability'] as num?)?.toDouble(),
-);
+      motionIndex: (json['motionIndex'] as num?)?.toDouble(),
+      postureStability: (json['postureStability'] as num?)?.toDouble(),
+    );
 
 Map<String, dynamic> _$ActivityAxisToJson(ActivityAxis instance) =>
     <String, dynamic>{
@@ -41,9 +41,9 @@ Map<String, dynamic> _$ActivityAxisToJson(ActivityAxis instance) =>
     };
 
 ContextAxis _$ContextAxisFromJson(Map<String, dynamic> json) => ContextAxis(
-  screenActiveRatio: (json['screenActiveRatio'] as num?)?.toDouble(),
-  sessionFragmentation: (json['sessionFragmentation'] as num?)?.toDouble(),
-);
+      screenActiveRatio: (json['screenActiveRatio'] as num?)?.toDouble(),
+      sessionFragmentation: (json['sessionFragmentation'] as num?)?.toDouble(),
+    );
 
 Map<String, dynamic> _$ContextAxisToJson(ContextAxis instance) =>
     <String, dynamic>{

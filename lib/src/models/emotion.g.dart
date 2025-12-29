@@ -7,12 +7,12 @@ part of 'emotion.dart';
 // **************************************************************************
 
 EmotionState _$EmotionStateFromJson(Map<String, dynamic> json) => EmotionState(
-  stress: (json['stress'] as num).toDouble(),
-  calm: (json['calm'] as num).toDouble(),
-  engagement: (json['engagement'] as num).toDouble(),
-  activation: (json['activation'] as num).toDouble(),
-  valence: (json['valence'] as num).toDouble(),
-);
+      stress: (json['stress'] as num).toDouble(),
+      calm: (json['calm'] as num).toDouble(),
+      engagement: (json['engagement'] as num).toDouble(),
+      activation: (json['activation'] as num).toDouble(),
+      valence: (json['valence'] as num).toDouble(),
+    );
 
 Map<String, dynamic> _$EmotionStateToJson(EmotionState instance) =>
     <String, dynamic>{

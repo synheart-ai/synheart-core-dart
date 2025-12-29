@@ -240,8 +240,7 @@ class FusionEngine {
 
     // Engagement Stability: inverse of burstiness
     // Lower burstiness = more stable engagement
-    final engagementStability =
-        (1.0 - behavior.burstiness).clamp(0.0, 1.0);
+    final engagementStability = (1.0 - behavior.burstiness).clamp(0.0, 1.0);
 
     // Interaction Cadence: combination of tap rate and keystroke rate
     final interactionCadence =
@@ -274,9 +273,8 @@ class FusionEngine {
 
     // Posture Stability: inverse of motion index
     // Lower motion = more stable posture
-    final postureStability = motionIndex != null
-        ? (1.0 - motionIndex).clamp(0.0, 1.0)
-        : null;
+    final postureStability =
+        motionIndex != null ? (1.0 - motionIndex).clamp(0.0, 1.0) : null;
 
     return ActivityAxis(
       motionIndex: motionIndex,

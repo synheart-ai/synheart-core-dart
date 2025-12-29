@@ -109,4 +109,3 @@ class UserPatternsContext {
 
   Map<String, dynamic> toJson() => _$UserPatternsContextToJson(this);
 }
-

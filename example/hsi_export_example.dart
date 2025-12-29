@@ -92,7 +92,8 @@ void main() {
 
   print('=== HSV: Internal Representation (Fast, Type-Safe) ===\n');
   print('Affect Arousal Index: ${hsv.meta.axes.affect.arousalIndex}');
-  print('Engagement Stability: ${hsv.meta.axes.engagement.engagementStability}');
+  print(
+      'Engagement Stability: ${hsv.meta.axes.engagement.engagementStability}');
   print('Emotion Stress: ${hsv.emotion.stress}');
   print('Focus Score: ${hsv.focus.score}');
 

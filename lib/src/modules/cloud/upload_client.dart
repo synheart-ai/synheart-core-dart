@@ -91,9 +91,11 @@ class UploadClient {
         // Handle specific errors
         if (response.statusCode == 401 && error.code == 'invalid_signature') {
           throw InvalidSignatureError();
-        } else if (response.statusCode == 403 && error.code == 'invalid_tenant') {
+        } else if (response.statusCode == 403 &&
+            error.code == 'invalid_tenant') {
           throw InvalidTenantError();
-        } else if (response.statusCode == 400 && error.code == 'schema_validation_failed') {
+        } else if (response.statusCode == 400 &&
+            error.code == 'schema_validation_failed') {
           throw SchemaValidationError();
         } else if (response.statusCode == 429) {
           throw RateLimitExceededError(error.retryAfter ?? 60);
@@ -103,7 +105,6 @@ class UploadClient {
         if (attempts >= maxAttempts) {
           throw CloudConnectorException('Upload failed: ${error.message}');
         }
-
       } catch (e) {
         if (e is CloudConnectorException) {
           rethrow; // Don't retry on known exceptions

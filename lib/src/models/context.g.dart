@@ -7,19 +7,19 @@ part of 'context.dart';
 // **************************************************************************
 
 ContextState _$ContextStateFromJson(Map<String, dynamic> json) => ContextState(
-  overload: (json['overload'] as num).toDouble(),
-  frustration: (json['frustration'] as num).toDouble(),
-  engagement: (json['engagement'] as num).toDouble(),
-  conversation: ConversationContext.fromJson(
-    json['conversation'] as Map<String, dynamic>,
-  ),
-  deviceState: DeviceStateContext.fromJson(
-    json['deviceState'] as Map<String, dynamic>,
-  ),
-  userPatterns: UserPatternsContext.fromJson(
-    json['userPatterns'] as Map<String, dynamic>,
-  ),
-);
+      overload: (json['overload'] as num).toDouble(),
+      frustration: (json['frustration'] as num).toDouble(),
+      engagement: (json['engagement'] as num).toDouble(),
+      conversation: ConversationContext.fromJson(
+        json['conversation'] as Map<String, dynamic>,
+      ),
+      deviceState: DeviceStateContext.fromJson(
+        json['deviceState'] as Map<String, dynamic>,
+      ),
+      userPatterns: UserPatternsContext.fromJson(
+        json['userPatterns'] as Map<String, dynamic>,
+      ),
+    );
 
 Map<String, dynamic> _$ContextStateToJson(ContextState instance) =>
     <String, dynamic>{
@@ -40,11 +40,12 @@ ConversationContext _$ConversationContextFromJson(Map<String, dynamic> json) =>
 
 Map<String, dynamic> _$ConversationContextToJson(
   ConversationContext instance,
-) => <String, dynamic>{
-  'avgReplyDelaySec': instance.avgReplyDelaySec,
-  'burstiness': instance.burstiness,
-  'interruptRate': instance.interruptRate,
-};
+) =>
+    <String, dynamic>{
+      'avgReplyDelaySec': instance.avgReplyDelaySec,
+      'burstiness': instance.burstiness,
+      'interruptRate': instance.interruptRate,
+    };
 
 DeviceStateContext _$DeviceStateContextFromJson(Map<String, dynamic> json) =>
     DeviceStateContext(
@@ -69,8 +70,9 @@ UserPatternsContext _$UserPatternsContextFromJson(Map<String, dynamic> json) =>
 
 Map<String, dynamic> _$UserPatternsContextToJson(
   UserPatternsContext instance,
-) => <String, dynamic>{
-  'morningFocusBias': instance.morningFocusBias,
-  'avgSessionMinutes': instance.avgSessionMinutes,
-  'baselineTypingCadence': instance.baselineTypingCadence,
-};
+) =>
+    <String, dynamic>{
+      'morningFocusBias': instance.morningFocusBias,
+      'avgSessionMinutes': instance.avgSessionMinutes,
+      'baselineTypingCadence': instance.baselineTypingCadence,
+    };

@@ -169,7 +169,8 @@ class CloudConnectorModule extends BaseSynheartModule {
         batchSize: batch.length,
       );
 
-      SynheartLogger.log('[CloudConnector] Upload successful: ${response.status}');
+      SynheartLogger.log(
+          '[CloudConnector] Upload successful: ${response.status}');
     } catch (e) {
       // Re-enqueue batch on failure
       await _uploadQueue.requeueBatch(batch);

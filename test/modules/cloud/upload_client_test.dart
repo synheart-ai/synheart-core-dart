@@ -194,12 +194,15 @@ void main() {
       );
 
       expect(capturedRequest, isNotNull);
-      expect(capturedRequest!.headers['Content-Type'], equals('application/json'));
-      expect(capturedRequest!.headers['X-Synheart-Tenant'], equals('test_tenant'));
+      expect(
+          capturedRequest!.headers['Content-Type'], equals('application/json'));
+      expect(
+          capturedRequest!.headers['X-Synheart-Tenant'], equals('test_tenant'));
       expect(capturedRequest!.headers['X-Synheart-Signature'], isNotNull);
       expect(capturedRequest!.headers['X-Synheart-Nonce'], isNotNull);
       expect(capturedRequest!.headers['X-Synheart-Timestamp'], isNotNull);
-      expect(capturedRequest!.headers['X-Synheart-SDK-Version'], equals('1.0.0'));
+      expect(
+          capturedRequest!.headers['X-Synheart-SDK-Version'], equals('1.0.0'));
     });
 
     test('retries on transient errors up to max attempts', () async {

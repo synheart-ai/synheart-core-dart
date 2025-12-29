@@ -15,9 +15,9 @@ class EmotionHead {
 
   se.EmotionEngine? _engine;
   final se.EmotionConfig _config = const se.EmotionConfig(
-    window: Duration(seconds: 10),  // Short window for near-realtime
-    step: Duration(seconds: 1),     // Frequent updates
-    minRrCount: 5,                  // Lower threshold
+    window: Duration(seconds: 10), // Short window for near-realtime
+    step: Duration(seconds: 1), // Frequent updates
+    minRrCount: 5, // Lower threshold
   );
 
   bool _isActive = false;
@@ -70,9 +70,12 @@ class EmotionHead {
       final result = results.first;
 
       // Map synheart_emotion EmotionResult -> synheart_core EmotionState
-      final calm = (result.probabilities['Calm'] ?? 0.0).clamp(0.0, 1.0).toDouble();
-      final stress = (result.probabilities['Stressed'] ?? 0.0).clamp(0.0, 1.0).toDouble();
-      final amused = (result.probabilities['Amused'] ?? 0.0).clamp(0.0, 1.0).toDouble();
+      final calm =
+          (result.probabilities['Calm'] ?? 0.0).clamp(0.0, 1.0).toDouble();
+      final stress =
+          (result.probabilities['Stressed'] ?? 0.0).clamp(0.0, 1.0).toDouble();
+      final amused =
+          (result.probabilities['Amused'] ?? 0.0).clamp(0.0, 1.0).toDouble();
 
       final emotion = EmotionState(
         stress: stress,
@@ -153,4 +156,3 @@ class EmotionHead {
     await _emotionStream.close();
   }
 }
-

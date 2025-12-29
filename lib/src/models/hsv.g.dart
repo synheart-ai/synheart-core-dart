@@ -31,42 +31,43 @@ Map<String, dynamic> _$HumanStateVectorToJson(HumanStateVector instance) =>
     };
 
 MetaState _$MetaStateFromJson(Map<String, dynamic> json) => MetaState(
-  sessionId: json['sessionId'] as String,
-  device: DeviceInfo.fromJson(json['device'] as Map<String, dynamic>),
-  samplingRateHz: (json['samplingRateHz'] as num).toDouble(),
-  embedding: StateEmbedding.fromJson(json['embedding'] as Map<String, dynamic>),
-  axes: HSIAxes.fromJson(json['axes'] as Map<String, dynamic>),
-);
+      sessionId: json['sessionId'] as String,
+      device: DeviceInfo.fromJson(json['device'] as Map<String, dynamic>),
+      samplingRateHz: (json['samplingRateHz'] as num).toDouble(),
+      embedding:
+          StateEmbedding.fromJson(json['embedding'] as Map<String, dynamic>),
+      axes: HSIAxes.fromJson(json['axes'] as Map<String, dynamic>),
+    );
 
 Map<String, dynamic> _$MetaStateToJson(MetaState instance) => <String, dynamic>{
-  'sessionId': instance.sessionId,
-  'device': instance.device,
-  'samplingRateHz': instance.samplingRateHz,
-  'embedding': instance.embedding,
-  'axes': instance.axes,
-};
+      'sessionId': instance.sessionId,
+      'device': instance.device,
+      'samplingRateHz': instance.samplingRateHz,
+      'embedding': instance.embedding,
+      'axes': instance.axes,
+    };
 
 HSIAxes _$HSIAxesFromJson(Map<String, dynamic> json) => HSIAxes(
-  affect: AffectAxis.fromJson(json['affect'] as Map<String, dynamic>),
-  engagement: EngagementAxis.fromJson(
-    json['engagement'] as Map<String, dynamic>,
-  ),
-  activity: ActivityAxis.fromJson(json['activity'] as Map<String, dynamic>),
-  context: ContextAxis.fromJson(json['context'] as Map<String, dynamic>),
-);
+      affect: AffectAxis.fromJson(json['affect'] as Map<String, dynamic>),
+      engagement: EngagementAxis.fromJson(
+        json['engagement'] as Map<String, dynamic>,
+      ),
+      activity: ActivityAxis.fromJson(json['activity'] as Map<String, dynamic>),
+      context: ContextAxis.fromJson(json['context'] as Map<String, dynamic>),
+    );
 
 Map<String, dynamic> _$HSIAxesToJson(HSIAxes instance) => <String, dynamic>{
-  'affect': instance.affect,
-  'engagement': instance.engagement,
-  'activity': instance.activity,
-  'context': instance.context,
-};
+      'affect': instance.affect,
+      'engagement': instance.engagement,
+      'activity': instance.activity,
+      'context': instance.context,
+    };
 
 DeviceInfo _$DeviceInfoFromJson(Map<String, dynamic> json) => DeviceInfo(
-  platform: json['platform'] as String,
-  model: json['model'] as String?,
-  osVersion: json['osVersion'] as String?,
-);
+      platform: json['platform'] as String,
+      model: json['model'] as String?,
+      osVersion: json['osVersion'] as String?,
+    );
 
 Map<String, dynamic> _$DeviceInfoToJson(DeviceInfo instance) =>
     <String, dynamic>{

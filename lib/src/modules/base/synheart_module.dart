@@ -120,7 +120,8 @@ abstract class BaseSynheartModule implements SynheartModule {
 
   @override
   Future<void> start() async {
-    if (_status != ModuleStatus.initialized && _status != ModuleStatus.stopped) {
+    if (_status != ModuleStatus.initialized &&
+        _status != ModuleStatus.stopped) {
       throw ModuleException(
         moduleId,
         'Module must be initialized or stopped before starting',

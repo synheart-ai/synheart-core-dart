@@ -93,7 +93,8 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
       if (source.isAvailable) {
         try {
           await source.initialize();
-          SynheartLogger.log('[WearModule] Initialized ${source.sourceType.name} source');
+          SynheartLogger.log(
+              '[WearModule] Initialized ${source.sourceType.name} source');
         } catch (e) {
           SynheartLogger.log(
             '[WearModule] Failed to initialize ${source.sourceType.name}: $e',
@@ -128,7 +129,8 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
       }
     }
 
-    SynheartLogger.log('[WearModule] Started ${_subscriptions.length} wear sources');
+    SynheartLogger.log(
+        '[WearModule] Started ${_subscriptions.length} wear sources');
   }
 
   @override

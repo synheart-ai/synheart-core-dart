@@ -61,17 +61,20 @@ class BehaviorFeatureExtractor {
   }
 
   double _calculateKeystrokeRate(List<BehaviorEvent> events) {
-    final keystrokes = events.where((e) =>
-      e.type == BehaviorEventType.keyDown ||
-      e.type == BehaviorEventType.keyUp
-    ).length;
+    final keystrokes = events
+        .where((e) =>
+            e.type == BehaviorEventType.keyDown ||
+            e.type == BehaviorEventType.keyUp)
+        .length;
     final duration = _getDuration(events);
     if (duration == 0) return 0.0;
-    return (keystrokes / duration / 2).clamp(0.0, 1.0); // Normalize to reasonable rate
+    return (keystrokes / duration / 2)
+        .clamp(0.0, 1.0); // Normalize to reasonable rate
   }
 
   double _calculateScrollVelocity(List<BehaviorEvent> events) {
-    final scrollEvents = events.where((e) => e.type == BehaviorEventType.scroll);
+    final scrollEvents =
+        events.where((e) => e.type == BehaviorEventType.scroll);
     if (scrollEvents.isEmpty) return 0.0;
 
     final totalDelta = scrollEvents
@@ -89,7 +92,11 @@ class BehaviorFeatureExtractor {
 
     final gaps = <double>[];
     for (int i = 1; i < events.length; i++) {
-      final gap = events[i].timestamp.difference(events[i - 1].timestamp).inSeconds.toDouble();
+      final gap = events[i]
+          .timestamp
+          .difference(events[i - 1].timestamp)
+          .inSeconds
+          .toDouble();
       gaps.add(gap);
     }
 
@@ -98,7 +105,8 @@ class BehaviorFeatureExtractor {
   }
 
   double _calculateSwitchRate(List<BehaviorEvent> events) {
-    final switches = events.where((e) => e.type == BehaviorEventType.appSwitch).length;
+    final switches =
+        events.where((e) => e.type == BehaviorEventType.appSwitch).length;
     final duration = _getDuration(events);
     if (duration == 0) return 0.0;
     return (switches / duration).clamp(0.0, 1.0);
@@ -110,18 +118,20 @@ class BehaviorFeatureExtractor {
     // Calculate inter-event intervals
     final intervals = <double>[];
     for (int i = 1; i < events.length; i++) {
-      intervals.add(
-        events[i].timestamp.difference(events[i - 1].timestamp).inMilliseconds / 1000.0
-      );
+      intervals.add(events[i]
+              .timestamp
+              .difference(events[i - 1].timestamp)
+              .inMilliseconds /
+          1000.0);
     }
 
     if (intervals.isEmpty) return 0.0;
 
     // Burstiness: variance / mean
     final mean = intervals.reduce((a, b) => a + b) / intervals.length;
-    final variance = intervals
-        .map((x) => (x - mean) * (x - mean))
-        .reduce((a, b) => a + b) / intervals.length;
+    final variance =
+        intervals.map((x) => (x - mean) * (x - mean)).reduce((a, b) => a + b) /
+            intervals.length;
 
     return (variance / (mean + 0.001)).clamp(0.0, 1.0);
   }
@@ -132,7 +142,8 @@ class BehaviorFeatureExtractor {
     // Count distinct "sessions" (clusters of events with < 30s gaps)
     int sessions = 1;
     for (int i = 1; i < events.length; i++) {
-      final gap = events[i].timestamp.difference(events[i - 1].timestamp).inSeconds;
+      final gap =
+          events[i].timestamp.difference(events[i - 1].timestamp).inSeconds;
       if (gap > 30) sessions++;
     }
 
@@ -141,10 +152,11 @@ class BehaviorFeatureExtractor {
   }
 
   double _calculateNotificationLoad(List<BehaviorEvent> events) {
-    final notifications = events.where((e) =>
-      e.type == BehaviorEventType.notificationReceived ||
-      e.type == BehaviorEventType.notificationOpened
-    ).length;
+    final notifications = events
+        .where((e) =>
+            e.type == BehaviorEventType.notificationReceived ||
+            e.type == BehaviorEventType.notificationOpened)
+        .length;
 
     final duration = _getDuration(events);
     if (duration == 0) return 0.0;
@@ -152,24 +164,25 @@ class BehaviorFeatureExtractor {
     return (notifications / duration).clamp(0.0, 1.0);
   }
 
-  double _estimateDistraction(
-    {
+  double _estimateDistraction({
     required double switchRate,
     required double burstiness,
     required double fragmentation,
     required double notificationLoad,
   }) {
     // Simple weighted average (will be replaced by MLP)
-    return (
-      switchRate * 0.3 +
-      burstiness * 0.2 +
-      fragmentation * 0.3 +
-      notificationLoad * 0.2
-    ).clamp(0.0, 1.0);
+    return (switchRate * 0.3 +
+            burstiness * 0.2 +
+            fragmentation * 0.3 +
+            notificationLoad * 0.2)
+        .clamp(0.0, 1.0);
   }
 
   double _getDuration(List<BehaviorEvent> events) {
     if (events.length < 2) return 0.0;
-    return events.last.timestamp.difference(events.first.timestamp).inSeconds.toDouble();
+    return events.last.timestamp
+        .difference(events.first.timestamp)
+        .inSeconds
+        .toDouble();
   }
 }

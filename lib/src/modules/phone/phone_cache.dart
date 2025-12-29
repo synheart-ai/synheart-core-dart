@@ -104,7 +104,8 @@ class PhoneCache {
 
     // Notification rate (per minute)
     final notifications = data.where((d) => d.notification == true).length;
-    final notificationRate = windowMinutes > 0 ? notifications / windowMinutes : 0.0;
+    final notificationRate =
+        windowMinutes > 0 ? notifications / windowMinutes : 0.0;
 
     return PhoneWindowFeatures(
       motionLevel: motionLevel,

@@ -54,7 +54,8 @@ class MockWearSourceHandler implements WearSourceHandler {
 
       // HRV inversely related to HR (higher HR = lower HRV)
       final hrvVariation = (_random.nextDouble() - 0.5) * 15;
-      final hrv = (_baseHrv - (circadianOffset / 2) + hrvVariation).clamp(20.0, 100.0);
+      final hrv =
+          (_baseHrv - (circadianOffset / 2) + hrvVariation).clamp(20.0, 100.0);
 
       // Generate realistic RR intervals (around 800-1000ms)
       final rrIntervals = List.generate(

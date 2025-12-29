@@ -30,7 +30,8 @@ class UploadQueue {
       final List<dynamic> json = jsonDecode(jsonString);
       _queue.addAll(json.map((e) => HumanStateVector.fromJson(e)));
     } catch (e) {
-      SynheartLogger.log('[UploadQueue] Failed to load from storage: $e', error: e);
+      SynheartLogger.log('[UploadQueue] Failed to load from storage: $e',
+          error: e);
     }
   }
 
@@ -43,7 +44,8 @@ class UploadQueue {
       final json = _queue.map((hsv) => hsv.toJson()).toList();
       await storage.write(key: _storageKey, value: jsonEncode(json));
     } catch (e) {
-      SynheartLogger.log('[UploadQueue] Failed to persist to storage: $e', error: e);
+      SynheartLogger.log('[UploadQueue] Failed to persist to storage: $e',
+          error: e);
     }
   }
 

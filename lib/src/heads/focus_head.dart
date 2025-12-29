@@ -5,7 +5,7 @@ import '../models/focus.dart';
 import 'package:synheart_focus/synheart_focus.dart' as sf;
 
 /// Focus Engine (Synheart Focus Head)
-/// 
+///
 /// Model head that subscribes to HSI stream (optionally with emotion)
 /// and populates hsv.focus
 class FocusHead {
@@ -66,11 +66,10 @@ class FocusHead {
     final motionIntensity = emb.length > 5 ? emb[5] : 0.0;
 
     // Prefer emotion-derived stress when available; otherwise fall back to overload.
-    final stressIndex = (hsv.emotion.stress > 0
-            ? hsv.emotion.stress
-            : hsv.context.overload)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    final stressIndex =
+        (hsv.emotion.stress > 0 ? hsv.emotion.stress : hsv.context.overload)
+            .clamp(0.0, 1.0)
+            .toDouble();
 
     return sf.HSIData(
       hr: hr,
@@ -96,4 +95,3 @@ class FocusHead {
     await _focusStream.close();
   }
 }
-

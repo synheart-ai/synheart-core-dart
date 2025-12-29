@@ -8,7 +8,7 @@ import 'hsi_axes.dart';
 part 'hsv.g.dart';
 
 /// Human State Vector (HSV) - The canonical representation of human state
-/// 
+///
 /// This is the shared "state bus" that all Synheart components consume.
 /// HSI Core produces the base HSV, then Emotion and Focus heads populate
 /// their respective sections.
@@ -186,4 +186,3 @@ class DeviceInfo {
 
   Map<String, dynamic> toJson() => _$DeviceInfoToJson(this);
 }
-

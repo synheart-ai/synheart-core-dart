@@ -69,7 +69,8 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Synheart initialized - all modules ready')),
+          const SnackBar(
+              content: Text('Synheart initialized - all modules ready')),
         );
       }
     } catch (e) {
@@ -172,19 +173,16 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
           children: [
             _buildStatusCard(),
             const SizedBox(height: 16),
-
             if (!_isInitialized)
               ElevatedButton(
                 onPressed: _initialize,
                 child: const Text('Initialize'),
               ),
-
             if (_isInitialized && !_isSubscribed)
               ElevatedButton(
                 onPressed: _subscribe,
                 child: const Text('Subscribe to HSV'),
               ),
-
             if (_isInitialized)
               ElevatedButton(
                 onPressed: _stop,
@@ -194,13 +192,9 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
                 ),
                 child: const Text('Stop'),
               ),
-
             const SizedBox(height: 16),
-
             if (_moduleStatuses != null) _buildModuleStatusesCard(),
-
             const SizedBox(height: 16),
-
             if (_currentState != null) ...[
               _buildStateCard(),
             ] else if (_isSubscribed)
@@ -310,9 +304,11 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
             'Typing Burstiness',
             _currentState!.behavior.typingBurstiness,
           ),
-          _buildMetric('Scroll Velocity', _currentState!.behavior.scrollVelocity),
+          _buildMetric(
+              'Scroll Velocity', _currentState!.behavior.scrollVelocity),
           _buildMetric('Idle Gaps', _currentState!.behavior.idleGaps),
-          _buildMetric('App Switch Rate', _currentState!.behavior.appSwitchRate),
+          _buildMetric(
+              'App Switch Rate', _currentState!.behavior.appSwitchRate),
         ]),
       ],
     );
@@ -398,5 +394,3 @@ class _FullPipelineDemoPageState extends State<FullPipelineDemoPage> {
     }
   }
 }
-
-

@@ -15,7 +15,8 @@ import 'feature_extractor.dart';
 ///
 /// Captures user-device interaction patterns using synheart_behavior package.
 /// Provides window-based behavioral features to HSI Runtime.
-class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvider {
+class BehaviorModule extends BaseSynheartModule
+    implements BehaviorFeatureProvider {
   @override
   String get moduleId => 'behavior';
 
@@ -109,7 +110,8 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
           enableMotionLite: false,
         ),
       );
-      SynheartLogger.log('[BehaviorModule] synheart_behavior initialized successfully');
+      SynheartLogger.log(
+          '[BehaviorModule] synheart_behavior initialized successfully');
     } catch (e) {
       SynheartLogger.log(
         '[BehaviorModule] Failed to initialize synheart_behavior: $e',
@@ -157,7 +159,8 @@ class BehaviorModule extends BaseSynheartModule implements BehaviorFeatureProvid
           stackTrace: st,
         ),
       );
-      SynheartLogger.log('[BehaviorModule] Subscribed to synheart_behavior events');
+      SynheartLogger.log(
+          '[BehaviorModule] Subscribed to synheart_behavior events');
     }
 
     // Start cleanup timer (every minute)

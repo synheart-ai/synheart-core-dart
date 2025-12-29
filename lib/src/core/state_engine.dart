@@ -6,7 +6,7 @@ import 'processors.dart';
 import 'data_sources.dart';
 
 /// HSI Core (State Engine)
-/// 
+///
 /// Responsible for:
 /// - Ingestion from Wear SDK, Phone SDK, Context Adapters
 /// - Processing & Normalization
@@ -73,9 +73,8 @@ class StateEngine {
   }
 
   /// Get current state (latest HSV)
-  HumanStateVector? get currentState => _baseHsvStream.hasValue
-      ? _baseHsvStream.value
-      : null;
+  HumanStateVector? get currentState =>
+      _baseHsvStream.hasValue ? _baseHsvStream.value : null;
 
   /// Dispose resources
   Future<void> dispose() async {
@@ -83,4 +82,3 @@ class StateEngine {
     await _baseHsvStream.close();
   }
 }
-

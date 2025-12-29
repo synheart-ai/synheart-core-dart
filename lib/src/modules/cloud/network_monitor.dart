@@ -3,7 +3,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 class NetworkMonitor {
   final Connectivity _connectivity = Connectivity();
-  final StreamController<bool> _connectivityController = StreamController<bool>.broadcast();
+  final StreamController<bool> _connectivityController =
+      StreamController<bool>.broadcast();
 
   StreamSubscription? _subscription;
   bool _isOnline = false;
@@ -32,10 +33,9 @@ class NetworkMonitor {
   bool _isConnected(List<ConnectivityResult> results) {
     // Consider online if any connection type is available
     return results.any((result) =>
-      result == ConnectivityResult.wifi ||
-      result == ConnectivityResult.mobile ||
-      result == ConnectivityResult.ethernet
-    );
+        result == ConnectivityResult.wifi ||
+        result == ConnectivityResult.mobile ||
+        result == ConnectivityResult.ethernet);
   }
 
   bool get isOnline => _isOnline;

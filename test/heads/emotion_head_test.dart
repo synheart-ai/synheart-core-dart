@@ -83,7 +83,9 @@ void main() {
       expect(emotionHead, isNotNull);
 
       await subscription.cancel();
-    }, skip: 'EmotionEngine timing-dependent test - may not emit reliably in unit test environment');
+    },
+        skip:
+            'EmotionEngine timing-dependent test - may not emit reliably in unit test environment');
 
     test('maps EmotionResult to EmotionState correctly', () async {
       final List<HumanStateVector> emittedHsvs = [];
@@ -132,11 +134,14 @@ void main() {
 
         // Check derived fields are computed correctly
         // activation = (engagement + stress) / 2
-        final expectedActivation = ((emotion.engagement + emotion.stress) / 2.0).clamp(0.0, 1.0);
+        final expectedActivation =
+            ((emotion.engagement + emotion.stress) / 2.0).clamp(0.0, 1.0);
         expect(emotion.activation, closeTo(expectedActivation, 0.01));
 
         // valence = calm + engagement - stress
-        final expectedValence = (emotion.calm + emotion.engagement - emotion.stress).clamp(-1.0, 1.0);
+        final expectedValence =
+            (emotion.calm + emotion.engagement - emotion.stress)
+                .clamp(-1.0, 1.0);
         expect(emotion.valence, closeTo(expectedValence, 0.01));
       }
 
@@ -185,7 +190,8 @@ void main() {
       emotionHead.start(hsvController.stream);
 
       // Create HSV with insufficient embedding (< 5 elements)
-      final hsv = _createMockHSVWithEmbedding([1.0, 2.0]); // Only 2 elements, need at least 5
+      final hsv = _createMockHSVWithEmbedding(
+          [1.0, 2.0]); // Only 2 elements, need at least 5
 
       hsvController.add(hsv);
       await Future.delayed(const Duration(milliseconds: 200));

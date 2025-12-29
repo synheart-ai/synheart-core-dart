@@ -20,8 +20,7 @@ class CapabilityModule extends BaseSynheartModule
       BehaviorSubject<SDKCapabilities?>();
 
   /// Stream of capability updates
-  Stream<SDKCapabilities?> get capabilitiesStream =>
-      _capabilitiesStream.stream;
+  Stream<SDKCapabilities?> get capabilitiesStream => _capabilitiesStream.stream;
 
   /// The last successfully verified token (if any)
   CapabilityToken? get token => _token;

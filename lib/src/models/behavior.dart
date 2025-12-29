@@ -33,4 +33,3 @@ class BehaviorState {
 
   Map<String, dynamic> toJson() => _$BehaviorStateToJson(this);
 }
-

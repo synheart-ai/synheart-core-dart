@@ -15,7 +15,8 @@ class Subject {
     required this.subjectId,
   });
 
-  factory Subject.fromJson(Map<String, dynamic> json) => _$SubjectFromJson(json);
+  factory Subject.fromJson(Map<String, dynamic> json) =>
+      _$SubjectFromJson(json);
   Map<String, dynamic> toJson() => _$SubjectToJson(this);
 }
 
@@ -29,7 +30,8 @@ class UploadRequest {
     required this.snapshots,
   });
 
-  factory UploadRequest.fromJson(Map<String, dynamic> json) => _$UploadRequestFromJson(json);
+  factory UploadRequest.fromJson(Map<String, dynamic> json) =>
+      _$UploadRequestFromJson(json);
   Map<String, dynamic> toJson() => _$UploadRequestToJson(this);
 }
 
@@ -48,7 +50,8 @@ class UploadResponse {
     required this.timestamp,
   });
 
-  factory UploadResponse.fromJson(Map<String, dynamic> json) => _$UploadResponseFromJson(json);
+  factory UploadResponse.fromJson(Map<String, dynamic> json) =>
+      _$UploadResponseFromJson(json);
   Map<String, dynamic> toJson() => _$UploadResponseToJson(this);
 }
 
@@ -68,6 +71,7 @@ class UploadErrorResponse {
     this.retryAfter,
   });
 
-  factory UploadErrorResponse.fromJson(Map<String, dynamic> json) => _$UploadErrorResponseFromJson(json);
+  factory UploadErrorResponse.fromJson(Map<String, dynamic> json) =>
+      _$UploadErrorResponseFromJson(json);
   Map<String, dynamic> toJson() => _$UploadErrorResponseToJson(this);
 }

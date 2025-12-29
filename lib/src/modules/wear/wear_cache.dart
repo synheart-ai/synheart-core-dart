@@ -69,10 +69,8 @@ class WearCache {
     }
 
     // Extract HR values
-    final hrValues = samples
-        .where((s) => s.hr != null)
-        .map((s) => s.hr!)
-        .toList();
+    final hrValues =
+        samples.where((s) => s.hr != null).map((s) => s.hr!).toList();
 
     // Flatten RR intervals across the window (best source of HRV features)
     final rrIntervals = samples
@@ -116,12 +114,10 @@ class WearCache {
       hrAverage: hrValues.isNotEmpty
           ? hrValues.reduce((a, b) => a + b) / hrValues.length
           : null,
-      hrMin: hrValues.isNotEmpty
-          ? hrValues.reduce((a, b) => a < b ? a : b)
-          : null,
-      hrMax: hrValues.isNotEmpty
-          ? hrValues.reduce((a, b) => a > b ? a : b)
-          : null,
+      hrMin:
+          hrValues.isNotEmpty ? hrValues.reduce((a, b) => a < b ? a : b) : null,
+      hrMax:
+          hrValues.isNotEmpty ? hrValues.reduce((a, b) => a > b ? a : b) : null,
       // Prefer RR-derived RMSSD; fallback to vendor-provided value
       hrvRmssd: rrRmssd ??
           (hrvFallbackValues.isNotEmpty
@@ -141,8 +137,7 @@ class WearCache {
     );
   }
 
-  double _mean(List<double> xs) =>
-      xs.reduce((a, b) => a + b) / xs.length;
+  double _mean(List<double> xs) => xs.reduce((a, b) => a + b) / xs.length;
 
   double _sdnn(List<double> rrIntervalsMs) {
     final mean = _mean(rrIntervalsMs);

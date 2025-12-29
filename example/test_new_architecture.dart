@@ -128,19 +128,24 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
       ConsentSnapshot updated;
       switch (type) {
         case ConsentType.biosignals:
-          updated = _currentConsent!.copyWith(biosignals: granted, timestamp: DateTime.now());
+          updated = _currentConsent!
+              .copyWith(biosignals: granted, timestamp: DateTime.now());
           break;
         case ConsentType.behavior:
-          updated = _currentConsent!.copyWith(behavior: granted, timestamp: DateTime.now());
+          updated = _currentConsent!
+              .copyWith(behavior: granted, timestamp: DateTime.now());
           break;
         case ConsentType.motion:
-          updated = _currentConsent!.copyWith(motion: granted, timestamp: DateTime.now());
+          updated = _currentConsent!
+              .copyWith(motion: granted, timestamp: DateTime.now());
           break;
         case ConsentType.cloudUpload:
-          updated = _currentConsent!.copyWith(cloudUpload: granted, timestamp: DateTime.now());
+          updated = _currentConsent!
+              .copyWith(cloudUpload: granted, timestamp: DateTime.now());
           break;
         case ConsentType.syni:
-          updated = _currentConsent!.copyWith(syni: granted, timestamp: DateTime.now());
+          updated = _currentConsent!
+              .copyWith(syni: granted, timestamp: DateTime.now());
           break;
       }
 
@@ -214,7 +219,8 @@ class _NewArchitectureTestPageState extends State<NewArchitectureTestPage> {
               ),
 
             if (_isConfigured && !_isRunning)
-              ElevatedButton(onPressed: _start, child: const Text('Mark Running')),
+              ElevatedButton(
+                  onPressed: _start, child: const Text('Mark Running')),
 
             if (_isRunning)
               ElevatedButton(

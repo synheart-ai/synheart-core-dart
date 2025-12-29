@@ -97,10 +97,15 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
     }
 
     final updated = _currentConsent!.copyWith(
-      biosignals: type == ConsentType.biosignals ? granted : _currentConsent!.biosignals,
-      behavior: type == ConsentType.behavior ? granted : _currentConsent!.behavior,
+      biosignals: type == ConsentType.biosignals
+          ? granted
+          : _currentConsent!.biosignals,
+      behavior:
+          type == ConsentType.behavior ? granted : _currentConsent!.behavior,
       motion: type == ConsentType.motion ? granted : _currentConsent!.motion,
-      cloudUpload: type == ConsentType.cloudUpload ? granted : _currentConsent!.cloudUpload,
+      cloudUpload: type == ConsentType.cloudUpload
+          ? granted
+          : _currentConsent!.cloudUpload,
       syni: type == ConsentType.syni ? granted : _currentConsent!.syni,
       timestamp: DateTime.now(),
     );
@@ -123,7 +128,8 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
   }
 
   /// Log consent changes for debugging
-  void _logConsentChanges(ConsentSnapshot oldConsent, ConsentSnapshot newConsent) {
+  void _logConsentChanges(
+      ConsentSnapshot oldConsent, ConsentSnapshot newConsent) {
     if (oldConsent.biosignals != newConsent.biosignals) {
       SynheartLogger.log(
         'Consent changed: biosignals ${newConsent.biosignals ? "granted" : "revoked"}',
