@@ -1,0 +1,64 @@
+name: synheart_core
+description: Synheart Core SDK - The unified SDK for HSI-compatible data collection, on-device state representation, optional interpretation modules (Focus, Emotion), and Syni integration. Includes HSI Runtime, Wear, Phone, Behavior, Consent, Cloud Connector, and Syni Hooks modules.
+version: 0.0.2
+homepage: https://github.com/synheart-ai/synheart-core-dart
+repository: https://github.com/synheart-ai/synheart-core-dart
+issue_tracker: https://github.com/synheart-ai/synheart-core-dart/issues
+documentation: https://github.com/synheart-ai/synheart-core
+topics:
+  - health
+  - wearables
+  - biosignals
+  - hsi
+  - behavior
+
+
+
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+  flutter: ">=3.32.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Synheart interpretation SDKs (external)
+  synheart_emotion: ^0.2.2
+  synheart_focus: ^0.0.1
+
+  # Synheart Wear SDK - Required for wearable data collection
+  # See: https://pub.dev/packages/synheart_wear
+  synheart_wear: ^0.1.2
+
+  # Synheart Behavior SDK - For automatic behavioral signal capture
+  # See: https://pub.dev/packages/synheart_behavior
+  synheart_behavior: ^0.0.1
+
+
+  # Core dependencies
+  rxdart: ^0.28.0
+  collection: ^1.18.0
+
+  # Cryptography for HMAC verification
+  crypto: ^3.0.3
+
+  # Secure storage for consent and sensitive data
+  flutter_secure_storage: ^9.0.0
+
+  # Optional: for cloud sync
+  http: ^1.1.0
+  connectivity_plus: ^6.0.5
+
+  # Optional: for JSON serialization
+  json_annotation: ^4.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.7
+  json_serializable: ^6.7.1
+
+flutter:
+  uses-material-design: true
+

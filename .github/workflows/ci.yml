@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  analyze:
+    name: Analyze and Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.0'
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze code
+        run: flutter analyze
+
+      - name: Check publish readiness
+        run: dart pub publish --dry-run
+
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        flutter: [pinned, latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter (pinned)
+        uses: subosito/flutter-action@v2
+        if: matrix.flutter == 'pinned'
+        with:
+          channel: 'stable'
+          flutter-version: '3.32.0'
+
+      - name: Setup Flutter (latest stable)
+        uses: subosito/flutter-action@v2
+        if: matrix.flutter == 'latest'
+        with:
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: |
+          if [ -d "test" ]; then
+            flutter test
+          else
+            echo "No test directory found, skipping tests"
+          fi
+        shell: bash
+
+      - name: Test example (if exists)
+        run: |
+          if [ -d "example" ]; then
+            cd example
+            flutter pub get
+            flutter analyze
+          else
+            echo "No example directory found, skipping example tests"
+          fi
+        shell: bash
