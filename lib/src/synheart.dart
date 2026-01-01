@@ -192,7 +192,7 @@ class Synheart {
       // 2. Initialize capability module
       SynheartLogger.log('[Synheart] Initializing capability module...');
       _capabilityModule = CapabilityModule();
-      await _capabilityModule!.loadFromToken(token, 'mock_secret');
+      await _capabilityModule!.loadFromToken(token, MockAuthService.mockSecret);
 
       // 3. Initialize consent module
       SynheartLogger.log('[Synheart] Initializing consent module...');

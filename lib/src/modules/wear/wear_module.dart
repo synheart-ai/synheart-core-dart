@@ -23,6 +23,7 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
   final ConsentProvider _consent;
 
   final List<StreamSubscription<WearSample>> _subscriptions = [];
+  final Set<WearSourceHandler> _initializedSources = {};
 
   WearModule({
     required CapabilityProvider capabilities,
@@ -89,11 +90,13 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
   @override
   Future<void> onInitialize() async {
     SynheartLogger.log('[WearModule] Initializing wear sources...');
+    _initializedSources.clear();
 
     for (final source in _sources) {
       if (source.isAvailable) {
         try {
           await source.initialize();
+          _initializedSources.add(source);
           SynheartLogger.log(
             '[WearModule] Initialized ${source.sourceType.name} source',
           );
@@ -111,23 +114,34 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
   Future<void> onStart() async {
     SynheartLogger.log('[WearModule] Starting wear data collection...');
 
-    // Subscribe to each source
+    // Subscribe to each successfully initialized source
     for (final source in _sources) {
-      if (source.isAvailable) {
-        final subscription = source.sampleStream.listen(
-          (sample) {
-            // Add to cache
-            _cache.addSample(sample);
-          },
-          onError: (error) {
-            SynheartLogger.log(
-              '[WearModule] Error from ${source.sourceType.name}: $error',
-              error: error,
-            );
-          },
-        );
+      if (source.isAvailable && _initializedSources.contains(source)) {
+        try {
+          final subscription = source.sampleStream.listen(
+            (sample) {
+              // Add to cache
+              _cache.addSample(sample);
+            },
+            onError: (error) {
+              SynheartLogger.log(
+                '[WearModule] Error from ${source.sourceType.name}: $error',
+                error: error,
+              );
+            },
+          );
 
-        _subscriptions.add(subscription);
+          _subscriptions.add(subscription);
+        } catch (e) {
+          SynheartLogger.log(
+            '[WearModule] Failed to start ${source.sourceType.name}: $e',
+            error: e,
+          );
+        }
+      } else if (source.isAvailable && !_initializedSources.contains(source)) {
+        SynheartLogger.log(
+          '[WearModule] Skipping ${source.sourceType.name} - not initialized',
+        );
       }
     }
 

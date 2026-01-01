@@ -28,11 +28,11 @@ dependencies:
 
   # Synheart Wear SDK - Required for wearable data collection
   # See: https://pub.dev/packages/synheart_wear
-  synheart_wear: ^0.1.2
+  synheart_wear: ^0.2.2 
 
   # Synheart Behavior SDK - For automatic behavioral signal capture
   # See: https://pub.dev/packages/synheart_behavior
-  synheart_behavior: ^0.0.1
+  synheart_behavior: ^0.1.2
 
 
   # Core dependencies

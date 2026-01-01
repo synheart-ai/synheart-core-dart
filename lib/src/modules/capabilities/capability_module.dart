@@ -27,8 +27,20 @@ class CapabilityModule extends BaseSynheartModule
 
   /// Load capabilities from token
   Future<void> loadFromToken(CapabilityToken token, String secret) async {
-    if (!_verifier.isValid(token, secret)) {
-      throw CapabilityException('Invalid capability token');
+    // Check expiration first
+    if (_verifier.isExpired(token)) {
+      throw CapabilityException(
+        'Capability token is expired',
+        code: 'TOKEN_EXPIRED',
+      );
+    }
+
+    // Check signature
+    if (!_verifier.verifySignature(token, secret)) {
+      throw CapabilityException(
+        'Invalid capability token signature',
+        code: 'INVALID_SIGNATURE',
+      );
     }
 
     _token = token;

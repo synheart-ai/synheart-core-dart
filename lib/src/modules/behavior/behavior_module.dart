@@ -175,32 +175,57 @@ class BehaviorModule extends BaseSynheartModule
 
   /// Convert synheart_behavior event to internal BehaviorEvent format
   BehaviorEvent? _convertSynheartEvent(dynamic event) {
-    // Map synheart_behavior events to internal event types
-    final eventType = event.eventType as String?;
-    if (eventType == null) return null;
+    try {
+      // event.eventType is a BehaviorEventType enum from synheart_behavior package
+      final eventType = event.eventType;
+      if (eventType == null) return null;
 
-    switch (eventType.toLowerCase()) {
-      case 'tap':
-      case 'touch':
-        return BehaviorEvent.tap(Offset.zero);
-      case 'scroll':
-        final delta = event.metrics?['scrollDelta'] as double? ?? 0.0;
-        return BehaviorEvent.scroll(delta);
-      case 'keydown':
-      case 'key_down':
-        return BehaviorEvent.keyDown();
-      case 'keyup':
-      case 'key_up':
-        return BehaviorEvent.keyUp();
-      case 'app_switch':
-      case 'appswitch':
-        return BehaviorEvent.appSwitch();
-      case 'notification_received':
-        return BehaviorEvent.notificationReceived();
-      case 'notification_opened':
-        return BehaviorEvent.notificationOpened();
-      default:
-        return null;
+      // Get the enum name as string for comparison
+      final eventTypeName = eventType.name.toLowerCase();
+
+      // Map synheart_behavior event types to internal BehaviorEvent
+      switch (eventTypeName) {
+        case 'tap':
+        case 'touch':
+          // Try to get position from metrics if available
+          final x = event.metrics?['x'] as double? ?? 0.0;
+          final y = event.metrics?['y'] as double? ?? 0.0;
+          return BehaviorEvent.tap(Offset(x, y));
+        case 'scroll':
+          final delta =
+              event.metrics?['scrollDelta'] as double? ??
+              event.metrics?['delta'] as double? ??
+              0.0;
+          return BehaviorEvent.scroll(delta);
+        case 'keydown':
+        case 'key_down':
+        case 'typing':
+          return BehaviorEvent.keyDown();
+        case 'keyup':
+        case 'key_up':
+          return BehaviorEvent.keyUp();
+        case 'app_switch':
+        case 'appswitch':
+          return BehaviorEvent.appSwitch();
+        case 'notification_received':
+        case 'notification':
+          return BehaviorEvent.notificationReceived();
+        case 'notification_opened':
+          return BehaviorEvent.notificationOpened();
+        default:
+          // Log unknown event types for debugging
+          SynheartLogger.log(
+            '[BehaviorModule] Unknown event type: $eventTypeName',
+          );
+          return null;
+      }
+    } catch (e, stackTrace) {
+      SynheartLogger.log(
+        '[BehaviorModule] Error converting synheart_behavior event: $e',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      return null;
     }
   }
 

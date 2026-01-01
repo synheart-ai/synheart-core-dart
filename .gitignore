@@ -49,3 +49,7 @@ app.*.map.json
 # Generated files (commented out - we publish these for pub.dev)
 # *.g.dart
 # *.freezed.dart
+
+
+behavior_example.dart
+behavior_page.dart
