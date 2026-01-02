@@ -387,8 +387,12 @@ class Synheart {
       // Subscribe to emotion output
       _emotionSubscription = _emotionHead!.emotionStream.listen(
         (hsv) {
-          // Extract emotion state from HSV and emit
+          // Extract emotion state from HSV and emit to emotion stream
           _emotionStream.add(hsv.emotion);
+          
+          // Also merge emotion-populated HSV back into main HSV stream
+          // This ensures UI subscribers see the updated emotion data
+          _hsvStream.add(hsv);
         },
         onError: (e, st) => SynheartLogger.log(
           '[Synheart] Emotion stream error: $e',
