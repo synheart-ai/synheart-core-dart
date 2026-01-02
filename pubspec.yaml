@@ -22,17 +22,19 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Synheart interpretation SDKs (external)
-  synheart_emotion: ^0.2.2
-  synheart_focus: ^0.0.1
+  # Synheart interpretation SDKs (local)
+  synheart_emotion:
+    path: ../synheart-emotion-dart
+  synheart_focus:
+    path: ../synheart-focus-dart
 
   # Synheart Wear SDK - Required for wearable data collection
-  # See: https://pub.dev/packages/synheart_wear
-  synheart_wear: ^0.1.2
+  synheart_wear:
+    path: ../synheart-wear-dart
 
   # Synheart Behavior SDK - For automatic behavioral signal capture
-  # See: https://pub.dev/packages/synheart_behavior
-  synheart_behavior: ^0.0.1
+  synheart_behavior:
+    path: ../synheart-behavior-dart
 
 
   # Core dependencies

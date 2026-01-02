@@ -51,19 +51,46 @@ class SynheartWearSourceHandler implements WearSourceHandler {
       return;
     }
 
-    // Initialize synheart_wear SDK
+    // Initialize synheart_wear SDK with config or default
     _synheartWear = wear.SynheartWear(
       config:
           _config ??
-          const wear.SynheartWearConfig(
-            enabledAdapters: {wear.DeviceAdapter.appleHealthKit},
-            enableLocalCaching: true,
-            enableEncryption: true,
-            streamInterval: Duration(seconds: 1),
-          ),
+          wear.SynheartWearConfig.withAdapters({
+            wear.DeviceAdapter.appleHealthKit,
+          }),
     );
 
-    await _synheartWear!.initialize();
+    // Step 1: Request permissions explicitly (recommended pattern from README)
+    // This allows providing a custom reason for better UX
+    try {
+      final permissionResult = await _synheartWear!.requestPermissions(
+        permissions: {
+          wear.PermissionType.heartRate,
+          wear.PermissionType.heartRateVariability,
+          wear.PermissionType.steps,
+          wear.PermissionType.calories,
+        },
+        reason:
+            'Synheart Core needs access to your health data to provide personalized insights.',
+      );
+
+      // Step 2: Check if permissions were granted before initializing
+      if (permissionResult.values.any((s) => s == wear.ConsentStatus.granted)) {
+        // Step 3: Initialize SDK (validates permissions and data availability)
+        await _synheartWear!.initialize();
+      } else {
+        // Permissions were denied - throw error
+        throw Exception(
+          'Health data permissions were not granted. Please grant permissions to use wearable features.',
+        );
+      }
+    } on wear.SynheartWearError {
+      // Re-throw synheart_wear errors as-is
+      rethrow;
+    } catch (e) {
+      // Wrap other errors
+      throw Exception('Failed to initialize synheart_wear: $e');
+    }
 
     // Create stream controller
     _controller = StreamController<WearSample>.broadcast();
@@ -79,9 +106,10 @@ class SynheartWearSourceHandler implements WearSourceHandler {
       return;
     }
 
-    // Stream HR data (every 1 second)
+    // Stream HR data - use config interval or SDK default (2 seconds)
+    final hrInterval = _config?.streamInterval ?? const Duration(seconds: 2);
     _hrSubscription = _synheartWear!
-        .streamHR(interval: const Duration(seconds: 1))
+        .streamHR(interval: hrInterval)
         .listen(
           (wearMetrics) {
             _emitSample(wearMetrics);
@@ -91,9 +119,10 @@ class SynheartWearSourceHandler implements WearSourceHandler {
           },
         );
 
-    // Stream HRV data (every 5 seconds for better accuracy)
+    // Stream HRV data - use config window size or SDK default (5 seconds)
+    final hrvWindowSize = _config?.hrvWindowSize ?? const Duration(seconds: 5);
     _hrvSubscription = _synheartWear!
-        .streamHRV(windowSize: const Duration(seconds: 5))
+        .streamHRV(windowSize: hrvWindowSize)
         .listen(
           (wearMetrics) {
             _emitSample(wearMetrics);
@@ -128,8 +157,7 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     final motionLevel = _estimateMotionFromSteps(steps);
 
     final sample = WearSample(
-      timestamp:
-          DateTime.now(), // Use current time, or extract from metrics if available
+      timestamp: wearMetrics.timestamp, // Use timestamp from metrics
       hr: hr,
       hrvRmssd: hrv,
       respRate: null, // Not provided by synheart_wear yet
@@ -163,11 +191,12 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     await _hrSubscription?.cancel();
     await _hrvSubscription?.cancel();
 
-    // Note: synheart_wear may not have a dispose() method
-    // The SDK handles cleanup internally when streams are cancelled
+    // Dispose synheart_wear SDK (cleans up timers and stream controllers)
+    _synheartWear?.dispose();
     _synheartWear = null;
 
     await _controller?.close();
+    _controller = null;
     _isInitialized = false;
   }
 }
