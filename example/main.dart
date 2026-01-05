@@ -33,6 +33,9 @@ class _SynheartExamplePageState extends State<SynheartExamplePage> {
   HumanStateVector? _currentState;
   bool _isInitialized = false;
   StreamSubscription<HumanStateVector>? _subscription;
+  Timer? _sessionTimer;
+  Duration _sessionDuration = Duration.zero;
+  DateTime? _sessionStartTime;
 
   @override
   void initState() {
@@ -63,6 +66,20 @@ class _SynheartExamplePageState extends State<SynheartExamplePage> {
         });
       });
 
+      // Start a session through the behavior module if available
+      final behaviorModule = Synheart.shared.behaviorModule;
+      if (behaviorModule?.synheartBehavior != null) {
+        try {
+          await behaviorModule!.synheartBehavior!.startSession();
+        } catch (e) {
+          // Session start is optional, continue if it fails
+          print('Note: Could not start behavior session: $e');
+        }
+      }
+
+      // Start session timer
+      _startSessionTimer();
+
       setState(() {
         _isInitialized = true;
       });
@@ -75,7 +92,43 @@ class _SynheartExamplePageState extends State<SynheartExamplePage> {
     }
   }
 
+  void _startSessionTimer() {
+    _sessionStartTime = DateTime.now();
+    _sessionDuration = Duration.zero;
+    _sessionTimer?.cancel();
+    _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted && _sessionStartTime != null) {
+        setState(() {
+          _sessionDuration = DateTime.now().difference(_sessionStartTime!);
+        });
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  void _stopSessionTimer() {
+    _sessionTimer?.cancel();
+    _sessionTimer = null;
+    _sessionStartTime = null;
+    _sessionDuration = Duration.zero;
+  }
+
   Future<void> _stopSynheart() async {
+    // Stop session timer
+    _stopSessionTimer();
+
+    // End session through behavior module if available
+    final behaviorModule = Synheart.shared.behaviorModule;
+    if (behaviorModule?.synheartBehavior != null) {
+      try {
+        // Note: synheart_behavior sessions are typically ended automatically
+        // when the app is closed or when explicitly ended
+      } catch (e) {
+        print('Note: Could not end behavior session: $e');
+      }
+    }
+
     await Synheart.stop();
     setState(() {
       _currentState = null;
@@ -85,6 +138,7 @@ class _SynheartExamplePageState extends State<SynheartExamplePage> {
 
   @override
   void dispose() {
+    _stopSessionTimer();
     _subscription?.cancel();
     _subscription = null;
     Synheart.dispose();
@@ -225,6 +279,33 @@ class _SynheartExamplePageState extends State<SynheartExamplePage> {
                   _buildConsentChip('Behavior', consent.behavior),
                   _buildConsentChip('Motion', consent.motion),
                 ],
+              ),
+            ],
+            if (isRunning) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.timer,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Session Time: ${_formatDuration(_sessionDuration)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ],
@@ -753,5 +834,17 @@ class _SynheartExamplePageState extends State<SynheartExamplePage> {
         ],
       ),
     );
+  }
+
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+    
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    } else {
+      return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
   }
 }
