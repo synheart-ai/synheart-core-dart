@@ -43,6 +43,9 @@ abstract class WearSourceHandler {
   /// Start streaming wear samples
   Stream<WearSample> get sampleStream;
 
-  /// Stop and cleanup
+  /// Stop streaming (but keep initialized for potential restart)
+  Future<void> stop();
+
+  /// Stop and cleanup all resources
   Future<void> dispose();
 }

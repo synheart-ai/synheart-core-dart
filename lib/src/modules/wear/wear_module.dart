@@ -41,11 +41,27 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
   WearWindowFeatures? features(WindowType window) {
     // Check consent first
     if (!_consent.current().biosignals) {
+      SynheartLogger.log(
+        '[WearModule] No features: biosignals consent denied',
+      );
       return null; // Return null if consent denied
     }
 
     final features = _cache.getFeatures(window);
     if (features == null) {
+      SynheartLogger.log(
+        '[WearModule] No features: cache returned null for $window',
+      );
+      return null;
+    }
+
+    // Check if features are actually populated
+    if (features.hrAverage == null &&
+        features.hrvRmssd == null &&
+        features.motionIndex == null) {
+      SynheartLogger.log(
+        '[WearModule] No features: cache has empty features for $window (no data collected yet)',
+      );
       return null;
     }
 
@@ -111,6 +127,22 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
   Future<void> onStart() async {
     SynheartLogger.log('[WearModule] Starting wear data collection...');
 
+    // Ensure all sources are initialized (in case they were stopped)
+    for (final source in _sources) {
+      if (source.isAvailable) {
+        try {
+          // Re-initialize if needed (e.g., after stop() disposed the SDK)
+          await source.initialize();
+        } catch (e) {
+          SynheartLogger.log(
+            '[WearModule] Failed to re-initialize ${source.sourceType.name}: $e',
+            error: e,
+          );
+          // Continue with other sources even if one fails
+        }
+      }
+    }
+
     // Subscribe to each source
     for (final source in _sources) {
       if (source.isAvailable) {
@@ -145,6 +177,21 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
       await subscription.cancel();
     }
     _subscriptions.clear();
+
+    // Stop all sources to stop their internal streaming
+    // This ensures synheart_wear SDK timers are stopped
+    for (final source in _sources) {
+      if (source.isAvailable) {
+        try {
+          await source.stop();
+        } catch (e) {
+          SynheartLogger.log(
+            '[WearModule] Error stopping ${source.sourceType.name}: $e',
+            error: e,
+          );
+        }
+      }
+    }
   }
 
   @override

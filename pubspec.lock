@@ -760,31 +760,35 @@ packages:
   synheart_behavior:
     dependency: "direct main"
     description:
-      path: "../synheart-behavior-dart"
-      relative: true
-    source: path
+      name: synheart_behavior
+      sha256: "615919c77dd4a8e5f4e56f2d72628c3d7a189228bd6f22299797cdda3f150e1c"
+      url: "https://pub.dev"
+    source: hosted
     version: "0.1.2"
   synheart_emotion:
     dependency: "direct main"
     description:
-      path: "../synheart-emotion-dart"
-      relative: true
-    source: path
-    version: "0.2.3"
+      name: synheart_emotion
+      sha256: "041f6c373c7263e8d39c741211a9fc596959293381d371ce984890f73175a929"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.0"
   synheart_focus:
     dependency: "direct main"
     description:
-      path: "../synheart-focus-dart"
-      relative: true
-    source: path
+      name: synheart_focus
+      sha256: ef8add70a98be65500bdce900237635eb8a87f3547b3993ddfd856519310e54e
+      url: "https://pub.dev"
+    source: hosted
     version: "0.1.0"
   synheart_wear:
     dependency: "direct main"
     description:
-      path: "../synheart-wear-dart"
-      relative: true
-    source: path
-    version: "0.2.3"
+      name: synheart_wear
+      sha256: "5292879af49cdc2ed659a5796f25d95a7447a0c4362281aeddb998f3904286f5"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.2"
   term_glyph:
     dependency: transitive
     description:

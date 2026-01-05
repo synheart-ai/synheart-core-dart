@@ -47,56 +47,64 @@ class SynheartWearSourceHandler implements WearSourceHandler {
 
   @override
   Future<void> initialize() async {
-    if (_isInitialized) {
+    // If already initialized and SDK exists, skip
+    if (_isInitialized && _synheartWear != null) {
       return;
     }
 
-    // Initialize synheart_wear SDK with config or default
-    _synheartWear = wear.SynheartWear(
-      config:
-          _config ??
-          wear.SynheartWearConfig.withAdapters({
-            wear.DeviceAdapter.appleHealthKit,
-          }),
-    );
-
-    // Step 1: Request permissions explicitly (recommended pattern from README)
-    // This allows providing a custom reason for better UX
-    try {
-      final permissionResult = await _synheartWear!.requestPermissions(
-        permissions: {
-          wear.PermissionType.heartRate,
-          wear.PermissionType.heartRateVariability,
-          wear.PermissionType.steps,
-          wear.PermissionType.calories,
-        },
-        reason:
-            'Synheart Core needs access to your health data to provide personalized insights.',
+    // If SDK was disposed (e.g., after stop()), we need to recreate it
+    if (_synheartWear == null) {
+      // Initialize synheart_wear SDK with config or default
+      _synheartWear = wear.SynheartWear(
+        config:
+            _config ??
+            wear.SynheartWearConfig.withAdapters({
+              wear.DeviceAdapter.appleHealthKit,
+            }),
       );
 
-      // Step 2: Check if permissions were granted before initializing
-      if (permissionResult.values.any((s) => s == wear.ConsentStatus.granted)) {
-        // Step 3: Initialize SDK (validates permissions and data availability)
-        await _synheartWear!.initialize();
-      } else {
-        // Permissions were denied - throw error
-        throw Exception(
-          'Health data permissions were not granted. Please grant permissions to use wearable features.',
+      // Step 1: Request permissions explicitly (recommended pattern from README)
+      // This allows providing a custom reason for better UX
+      try {
+        final permissionResult = await _synheartWear!.requestPermissions(
+          permissions: {
+            wear.PermissionType.heartRate,
+            wear.PermissionType.heartRateVariability,
+            wear.PermissionType.steps,
+            wear.PermissionType.calories,
+          },
+          reason:
+              'Synheart Core needs access to your health data to provide personalized insights.',
         );
+
+        // Step 2: Check if permissions were granted before initializing
+        if (permissionResult.values.any(
+          (s) => s == wear.ConsentStatus.granted,
+        )) {
+          // Step 3: Initialize SDK (validates permissions and data availability)
+          await _synheartWear!.initialize();
+        } else {
+          // Permissions were denied - throw error
+          throw Exception(
+            'Health data permissions were not granted. Please grant permissions to use wearable features.',
+          );
+        }
+      } on wear.SynheartWearError {
+        // Re-throw synheart_wear errors as-is
+        rethrow;
+      } catch (e) {
+        // Wrap other errors
+        throw Exception('Failed to initialize synheart_wear: $e');
       }
-    } on wear.SynheartWearError {
-      // Re-throw synheart_wear errors as-is
-      rethrow;
-    } catch (e) {
-      // Wrap other errors
-      throw Exception('Failed to initialize synheart_wear: $e');
     }
 
-    // Create stream controller
-    _controller = StreamController<WearSample>.broadcast();
+    // Create stream controller if it doesn't exist
+    _controller ??= StreamController<WearSample>.broadcast();
 
-    // Start streaming data
-    _startStreaming();
+    // Start streaming data (only if not already streaming)
+    if (_hrSubscription == null && _hrvSubscription == null) {
+      _startStreaming();
+    }
 
     _isInitialized = true;
   }
@@ -187,14 +195,29 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   }
 
   @override
-  Future<void> dispose() async {
+  Future<void> stop() async {
+    // Cancel subscriptions to stop receiving data
     await _hrSubscription?.cancel();
+    _hrSubscription = null;
     await _hrvSubscription?.cancel();
+    _hrvSubscription = null;
 
-    // Dispose synheart_wear SDK (cleans up timers and stream controllers)
+    // Explicitly dispose synheart_wear SDK to stop its internal timers
+    // This ensures streaming stops immediately, not waiting for timer checks
+    // The SDK will be re-initialized if needed when restarting
     _synheartWear?.dispose();
     _synheartWear = null;
 
+    // Note: _isInitialized remains true to allow checking if re-init is needed
+    // The controller stays open for potential restart
+  }
+
+  @override
+  Future<void> dispose() async {
+    // Stop streaming first
+    await stop();
+
+    // Close the stream controller
     await _controller?.close();
     _controller = null;
     _isInitialized = false;

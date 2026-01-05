@@ -324,13 +324,15 @@ class Synheart {
       _focusHead = FocusHead();
 
       // Focus head subscribes to HSV stream
-      _focusHead!.start(_hsvStream.stream);
+      await _focusHead!.start(_hsvStream.stream);
 
       // Subscribe to focus output
       _focusSubscription = _focusHead!.focusStream.listen(
-        (hsv) {
-          // Extract focus state from HSV and emit
-          _focusStream.add(hsv.focus);
+        (hsvWithFocus) {
+          // Instead of just emitting focus, merge the full HSV back into the main stream
+          _hsvStream.add(hsvWithFocus);
+          // Also emit focus state for backward compatibility
+          _focusStream.add(hsvWithFocus.focus);
         },
         onError: (e, st) => SynheartLogger.log(
           '[Synheart] Focus stream error: $e',

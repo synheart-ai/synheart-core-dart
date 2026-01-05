@@ -95,9 +95,15 @@ class MockWearSourceHandler implements WearSourceHandler {
   }
 
   @override
-  Future<void> dispose() async {
+  Future<void> stop() async {
     _timer?.cancel();
     _timer = null;
+    // Note: Keep _controller open for potential restart
+  }
+
+  @override
+  Future<void> dispose() async {
+    await stop();
     await _controller.close();
   }
 }
