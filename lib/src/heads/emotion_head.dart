@@ -37,6 +37,11 @@ class EmotionHead {
   Completer<void>?
   _initializationCompleter; // Completer for initialization (created on demand)
 
+  Timer?
+  _inferenceTimer; // Periodic timer to check for emotion results (every 5s, matching step interval)
+  HumanStateVector?
+  _latestHsv; // Cache latest HSV for emotion population when results arrive
+
   EmotionHead();
 
   /// Stream of HSVs with emotion populated
@@ -60,15 +65,50 @@ class EmotionHead {
         );
       },
     );
+
+    // Start periodic inference check (every 5s, matching step interval)
+    // This ensures we check for results regularly, independent of HSV update frequency
+    _inferenceTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _checkForResults(),
+    );
   }
 
-  /// Process HSV update asynchronously
+  /// Process HSV update asynchronously - pushes data to emotion engine
+  ///
+  /// This method only pushes data to the emotion engine. Result checking
+  /// is handled separately by the periodic inference timer.
   Future<void> _processHsv(HumanStateVector baseHsv) async {
     // Prevent concurrent processing
     if (_isProcessing) return;
     _isProcessing = true;
 
     try {
+      // Cache latest HSV for emotion population when results arrive
+      // Preserve existing emotion data if new base HSV has empty emotion
+      // This prevents emotion data from being cleared when new base HSV updates arrive
+      HumanStateVector hsvToCache;
+      if (_latestHsv != null &&
+          _isEmotionEmpty(baseHsv.emotion) &&
+          !_isEmotionEmpty(_latestHsv!.emotion)) {
+        // New base HSV has empty emotion, but we have existing emotion data
+        // Merge existing emotion into new base HSV to preserve it
+        hsvToCache = baseHsv.copyWithEmotion(_latestHsv!.emotion);
+      } else {
+        // New base HSV has emotion data, or we don't have existing emotion
+        // Use the new base HSV as-is
+        hsvToCache = baseHsv;
+      }
+      _latestHsv = hsvToCache;
+
+      // If base HSV has empty emotion but we have existing emotion data,
+      // emit the merged HSV immediately to prevent UI from showing empty emotion
+      // This ensures emotion data persists even when base HSV updates arrive
+      if (_isEmotionEmpty(baseHsv.emotion) &&
+          !_isEmotionEmpty(hsvToCache.emotion)) {
+        _emotionStream.add(hsvToCache);
+      }
+
       // Ensure engine is initialized (async model loading)
       await _ensureEngineInitialized();
 
@@ -99,64 +139,20 @@ class EmotionHead {
       final syntheticRR = _generateSyntheticRrIntervals(meanRr);
 
       // Push to EmotionEngine (adds to ring buffer)
+      // Result checking is handled by periodic timer, not here
       _engine!.push(
         hr: hr,
         rrIntervalsMs: syntheticRR,
         timestamp: DateTime.fromMillisecondsSinceEpoch(baseHsv.timestamp),
       );
 
-      // Consume results asynchronously (required for ONNX models)
-      final results = await _engine!.consumeReadyAsync();
-      if (results.isEmpty) {
-        // No results ready yet (waiting for step interval or more data)
-        SynheartLogger.log(
-          '[EmotionHead] No results ready yet (waiting for step interval or more data)',
-        );
-        return;
-      }
-
-      final result = results.first;
-
-      // Map synheart_emotion EmotionResult -> synheart_core EmotionState
-      // Real ONNX models return "Baseline" and "Stress" (binary classification)
-      final baselineProb = (result.probabilities['Baseline'] ?? 0.0)
-          .clamp(0.0, 1.0)
-          .toDouble();
-      final stressProb = (result.probabilities['Stress'] ?? 0.0)
-          .clamp(0.0, 1.0)
-          .toDouble();
-
-      // Map to EmotionState:
-      // - Baseline → calm
-      // - Stress → stress
-      // - Engagement: derived from stress level (lower stress = higher engagement)
-      // - Activation: derived from stress (higher stress = higher activation)
-      // - Valence: derived from baseline vs stress (baseline = positive, stress = negative)
-      final emotion = EmotionState(
-        stress: stressProb,
-        calm: baselineProb,
-        engagement: (1.0 - stressProb).clamp(0.0, 1.0), // Inverse of stress
-        activation: stressProb, // Stress indicates activation
-        valence: (baselineProb - stressProb).clamp(
-          -1.0,
-          1.0,
-        ), // Baseline positive, stress negative
-      );
-
-      // Update HSV with emotion
-      final hsvWithEmotion = baseHsv.copyWithEmotion(emotion);
-
-      // Emit updated HSV
-      _emotionStream.add(hsvWithEmotion);
-
       SynheartLogger.log(
-        '[EmotionHead] Emotion updated: Stress=${stressProb.toStringAsFixed(2)}, '
-        'Calm=${baselineProb.toStringAsFixed(2)}, '
-        'Engagement=${emotion.engagement.toStringAsFixed(2)}',
+        '[EmotionHead] Pushed data to emotion engine: HR=${hr.toStringAsFixed(1)}, '
+        'MeanRR=${meanRr.toStringAsFixed(1)}ms',
       );
     } catch (e, stackTrace) {
       SynheartLogger.log(
-        '[EmotionHead] Error processing HSV: $e',
+        '[EmotionHead] Error pushing data to emotion engine: $e',
         error: e,
         stackTrace: stackTrace,
       );
@@ -165,9 +161,99 @@ class EmotionHead {
     }
   }
 
+  /// Check for emotion results periodically (called by inference timer)
+  ///
+  /// This method is called every 5 seconds to check if emotion results are ready,
+  /// matching the emotion engine's step interval.
+  Future<void> _checkForResults() async {
+    if (_engine == null || !_isActive) return;
+
+    try {
+      // Check for ready results (async for ONNX models)
+      final results = await _engine!.consumeReadyAsync();
+      if (results.isEmpty) {
+        // No results ready yet (waiting for step interval or more data)
+        return;
+      }
+
+      // Process first result
+      final result = results.first;
+      _processResults(result);
+    } catch (e, stackTrace) {
+      SynheartLogger.log(
+        '[EmotionHead] Error checking for emotion results: $e',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  /// Process emotion result and emit updated HSV
+  ///
+  /// Maps EmotionResult from synheart_emotion to EmotionState and updates
+  /// the latest HSV with emotion data.
+  void _processResults(se.EmotionResult result) {
+    // Need latest HSV to update with emotion
+    if (_latestHsv == null) {
+      SynheartLogger.log(
+        '[EmotionHead] No HSV available for emotion population',
+      );
+      return;
+    }
+
+    // Map synheart_emotion EmotionResult -> synheart_core EmotionState
+    // Real ONNX models return "Baseline" and "Stress" (binary classification)
+    final baselineProb = (result.probabilities['Baseline'] ?? 0.0)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final stressProb = (result.probabilities['Stress'] ?? 0.0)
+        .clamp(0.0, 1.0)
+        .toDouble();
+
+    // Map to EmotionState:
+    // - Baseline → calm
+    // - Stress → stress
+    // - Engagement: derived from stress level (lower stress = higher engagement)
+    // - Activation: derived from stress (higher stress = higher activation)
+    // - Valence: derived from baseline vs stress (baseline = positive, stress = negative)
+    final emotion = EmotionState(
+      stress: stressProb,
+      calm: baselineProb,
+      engagement: (1.0 - stressProb).clamp(0.0, 1.0), // Inverse of stress
+      activation: stressProb, // Stress indicates activation
+      valence: (baselineProb - stressProb).clamp(
+        -1.0,
+        1.0,
+      ), // Baseline positive, stress negative
+    );
+
+    // Update latest HSV with emotion
+    final hsvWithEmotion = _latestHsv!.copyWithEmotion(emotion);
+
+    // Emit updated HSV
+    _emotionStream.add(hsvWithEmotion);
+
+    SynheartLogger.log(
+      '[EmotionHead] Emotion updated: Stress=${stressProb.toStringAsFixed(2)}, '
+      'Calm=${baselineProb.toStringAsFixed(2)}, '
+      'Engagement=${emotion.engagement.toStringAsFixed(2)}',
+    );
+  }
+
+  /// Check if emotion state is empty (all values are 0.0)
+  bool _isEmotionEmpty(EmotionState emotion) {
+    return emotion.stress == 0.0 &&
+        emotion.calm == 0.0 &&
+        emotion.engagement == 0.0 &&
+        emotion.activation == 0.0 &&
+        emotion.valence == 0.0;
+  }
+
   /// Stop the emotion head
   Future<void> stop() async {
     _isActive = false;
+    _inferenceTimer?.cancel();
+    _inferenceTimer = null;
     await _subscription?.cancel();
   }
 

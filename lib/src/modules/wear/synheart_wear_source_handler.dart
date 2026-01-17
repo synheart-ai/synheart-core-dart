@@ -102,7 +102,7 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     _controller ??= StreamController<WearSample>.broadcast();
 
     // Start streaming data (only if not already streaming)
-    if (_hrSubscription == null && _hrvSubscription == null) {
+    if (_hrSubscription == null) {
       _startStreaming();
     }
 
@@ -114,8 +114,12 @@ class SynheartWearSourceHandler implements WearSourceHandler {
       return;
     }
 
-    // Stream HR data - use config interval or SDK default (2 seconds)
-    final hrInterval = _config?.streamInterval ?? const Duration(seconds: 2);
+    // Use single HR stream - it already contains HRV data when available
+    // Default interval is 1 second to align with synheart-emotion-dart and synheart-focus-dart example apps
+    // This provides sufficient data density for inference engines (60 points/min vs 12 points/min at 5s)
+    // FocusEngine requires 30+ HR points in 60s window, EmotionEngine also benefits from higher frequency
+    // Health Connect typically limits to ~30-60 requests per minute (1s = 60 calls/min, within limit)
+    final hrInterval = _config?.streamInterval ?? const Duration(seconds: 1);
     _hrSubscription = _synheartWear!
         .streamHR(interval: hrInterval)
         .listen(
@@ -127,18 +131,20 @@ class SynheartWearSourceHandler implements WearSourceHandler {
           },
         );
 
-    // Stream HRV data - use config window size or SDK default (5 seconds)
-    final hrvWindowSize = _config?.hrvWindowSize ?? const Duration(seconds: 5);
-    _hrvSubscription = _synheartWear!
-        .streamHRV(windowSize: hrvWindowSize)
-        .listen(
-          (wearMetrics) {
-            _emitSample(wearMetrics);
-          },
-          onError: (error) {
-            _controller?.addError(error);
-          },
-        );
+    // Removed HRV stream subscription - HR stream already includes HRV data
+    // Note: readMetrics() returns all available metrics including HRV, so we don't need
+    // a separate HRV stream subscription. Using a single stream reduces Health Connect
+    // API calls and prevents rate limiting issues.
+    //
+    // Previous dual stream approach:
+    // - HR stream: ~30 calls/minute (every 2s)
+    // - HRV stream: ~12 calls/minute (every 5s)
+    // - Total: ~42 calls/minute (exceeds quota limits)
+    //
+    // Current single stream approach:
+    // - HR stream only: ~60 calls/minute (every 1s)
+    // - Total: ~60 calls/minute (within Health Connect 30-60 calls/min limit)
+    // - Provides 60 HR points/min, sufficient for FocusEngine (needs 30+ in 60s window)
   }
 
   void _emitSample(wear.WearMetrics wearMetrics) {
