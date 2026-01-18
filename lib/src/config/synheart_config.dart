@@ -20,6 +20,9 @@ class SynheartConfig {
   /// Cloud connector configuration
   final CloudConfig? cloudConfig;
 
+  /// Consent service configuration
+  final ConsentConfig? consentConfig;
+
   const SynheartConfig({
     this.enableCloudSync = false,
     this.enableSyniHooks = false,
@@ -29,6 +32,7 @@ class SynheartConfig {
     this.phoneConfig,
     this.behaviorConfig,
     this.cloudConfig,
+    this.consentConfig,
   });
 
   /// Create default configuration
@@ -146,4 +150,41 @@ class CloudConfig {
     this.maxRetries = 3,
     this.enableBacklog = true,
   });
+}
+
+/// Consent service configuration
+class ConsentConfig {
+  /// Base URL for consent service (defaults to cloud baseUrl if not provided)
+  final String? consentServiceUrl;
+
+  /// App ID for consent service
+  final String? appId;
+
+  /// App API key for consent service authentication
+  final String? appApiKey;
+
+  /// Device ID (UUID for this device, auto-generated if not provided)
+  final String? deviceId;
+
+  /// Platform identifier ('ios', 'android', 'flutter')
+  final String platform;
+
+  /// User ID (optional, for pseudonymous identification)
+  final String? userId;
+
+  /// Region code (e.g., 'US', 'EU')
+  final String? region;
+
+  const ConsentConfig({
+    this.consentServiceUrl,
+    this.appId,
+    this.appApiKey,
+    this.deviceId,
+    this.platform = 'flutter',
+    this.userId,
+    this.region,
+  });
+
+  /// Check if consent service is configured
+  bool get isConfigured => appId != null && appApiKey != null;
 }

@@ -162,6 +162,12 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
     await _notificationTracker.stop();
   }
 
+  /// Clear all cached data
+  Future<void> clearCache() async {
+    _cache.clear();
+    SynheartLogger.log('[PhoneModule] Cache cleared');
+  }
+
   @override
   Future<void> onDispose() async {
     SynheartLogger.log('[PhoneModule] Disposing phone module...');

@@ -39,6 +39,10 @@ class ConsentSnapshot {
   /// Schema version for this consent snapshot
   final String version;
 
+  /// Whether user explicitly denied consent (vs never asked)
+  /// This distinguishes "pending" (never asked) from "denied" (user declined)
+  final bool explicitlyDenied;
+
   const ConsentSnapshot({
     required this.biosignals,
     required this.behavior,
@@ -47,6 +51,7 @@ class ConsentSnapshot {
     required this.syni,
     required this.timestamp,
     this.version = '1.0.0',
+    this.explicitlyDenied = false,
   });
 
   /// Check if a specific consent type is allowed
@@ -74,6 +79,7 @@ class ConsentSnapshot {
     bool? syni,
     DateTime? timestamp,
     String? version,
+    bool? explicitlyDenied,
   }) {
     return ConsentSnapshot(
       biosignals: biosignals ?? this.biosignals,
@@ -83,11 +89,15 @@ class ConsentSnapshot {
       syni: syni ?? this.syni,
       timestamp: timestamp ?? this.timestamp,
       version: version ?? this.version,
+      explicitlyDenied: explicitlyDenied ?? this.explicitlyDenied,
     );
   }
 
   /// Create a consent snapshot with all consents denied
-  factory ConsentSnapshot.none() {
+  ///
+  /// [explicitlyDenied] indicates if user explicitly declined (true)
+  /// or if consent was never requested (false, default)
+  factory ConsentSnapshot.none({bool explicitlyDenied = false}) {
     return ConsentSnapshot(
       biosignals: false,
       behavior: false,
@@ -95,6 +105,7 @@ class ConsentSnapshot {
       cloudUpload: false,
       syni: false,
       timestamp: DateTime.now(),
+      explicitlyDenied: explicitlyDenied,
     );
   }
 
@@ -119,6 +130,7 @@ class ConsentSnapshot {
       'syni': syni,
       'timestamp': timestamp.toIso8601String(),
       'version': version,
+      'explicitlyDenied': explicitlyDenied,
     };
   }
 
@@ -131,6 +143,7 @@ class ConsentSnapshot {
       syni: json['syni'] as bool,
       timestamp: DateTime.parse(json['timestamp'] as String),
       version: json['version'] as String? ?? '1.0.0',
+      explicitlyDenied: json['explicitlyDenied'] as bool? ?? false,
     );
   }
 }

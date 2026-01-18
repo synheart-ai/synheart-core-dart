@@ -127,12 +127,25 @@ class BehaviorModule extends BaseSynheartModule
   Future<void> onStart() async {
     SynheartLogger.log('[BehaviorModule] Starting behavior tracking...');
 
+    // Check consent status
+    final consent = _consent.current();
+    SynheartLogger.log(
+      '[BehaviorModule] Behavior consent: ${consent.behavior}',
+    );
+
     // Subscribe to manual event stream
     _eventSubscription = _eventStream.events.listen(
       (event) {
         // Check consent before adding event
         if (_consent.current().behavior) {
+          SynheartLogger.log(
+            '[BehaviorModule] Manual event received: ${event.type}',
+          );
           _aggregator.addEvent(event);
+        } else {
+          SynheartLogger.log(
+            '[BehaviorModule] Event ignored (behavior consent denied): ${event.type}',
+          );
         }
       },
       onError: (e, st) => SynheartLogger.log(
@@ -151,8 +164,19 @@ class BehaviorModule extends BaseSynheartModule
             // Convert synheart_behavior event to internal BehaviorEvent
             final behaviorEvent = _convertSynheartEvent(event);
             if (behaviorEvent != null) {
+              SynheartLogger.log(
+                '[BehaviorModule] Auto event received: ${behaviorEvent.type}',
+              );
               _aggregator.addEvent(behaviorEvent);
+            } else {
+              SynheartLogger.log(
+                '[BehaviorModule] Event conversion failed for: ${event.eventType}',
+              );
             }
+          } else {
+            SynheartLogger.log(
+              '[BehaviorModule] Auto event ignored (behavior consent denied): ${event.eventType}',
+            );
           }
         },
         onError: (e, st) => SynheartLogger.log(
@@ -163,6 +187,13 @@ class BehaviorModule extends BaseSynheartModule
       );
       SynheartLogger.log(
         '[BehaviorModule] Subscribed to synheart_behavior events',
+      );
+    } else {
+      SynheartLogger.log(
+        '[BehaviorModule] Warning: synheart_behavior not initialized - automatic events will not be captured',
+      );
+      SynheartLogger.log(
+        '[BehaviorModule] Tip: Wrap your app with synheartBehavior.wrapWithGestureDetector() to enable automatic event capture',
       );
     }
 
@@ -219,6 +250,12 @@ class BehaviorModule extends BaseSynheartModule
 
     _cleanupTimer?.cancel();
     _cleanupTimer = null;
+  }
+
+  /// Clear all cached data
+  Future<void> clearCache() async {
+    _aggregator.clear();
+    SynheartLogger.log('[BehaviorModule] Cache cleared');
   }
 
   @override

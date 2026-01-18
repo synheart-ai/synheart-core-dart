@@ -44,6 +44,12 @@ dependencies:
   # Optional: for JSON serialization
   json_annotation: ^4.9.0
 
+  # State management for example app
+  provider: ^6.1.1
+
+  # Preferences storage
+  shared_preferences: ^2.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

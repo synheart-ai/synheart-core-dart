@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:rxdart/rxdart.dart';
 import 'models/hsv.dart';
 import 'models/emotion.dart';
@@ -7,8 +8,10 @@ import 'config/synheart_config.dart';
 import 'core/logger.dart';
 import 'services/auth_service.dart';
 import 'modules/base/module_manager.dart';
+import 'modules/base/synheart_module.dart';
 import 'modules/capabilities/capability_module.dart';
 import 'modules/consent/consent_module.dart';
+import 'modules/consent/consent_storage.dart';
 import 'modules/interfaces/consent_provider.dart';
 import 'modules/wear/wear_module.dart';
 import 'modules/phone/phone_module.dart';
@@ -18,6 +21,9 @@ import 'modules/hsi_runtime/channel_collector.dart';
 import 'modules/cloud/cloud_connector_module.dart';
 import 'heads/emotion_head.dart';
 import 'heads/focus_head.dart';
+import 'modules/consent/consent_profile.dart';
+import 'modules/consent/consent_token.dart';
+import 'modules/consent/consent_ui.dart';
 
 /// Synheart Core SDK - Main Entry Point
 ///
@@ -196,7 +202,7 @@ class Synheart {
 
       // 3. Initialize consent module
       SynheartLogger.log('[Synheart] Initializing consent module...');
-      _consentModule = ConsentModule();
+      _consentModule = ConsentModule(consentConfig: _config?.consentConfig);
 
       // 4. Register modules with manager
       _moduleManager.registerModule(_capabilityModule!);
@@ -207,6 +213,8 @@ class Synheart {
       _wearModule = WearModule(
         capabilities: _capabilityModule!,
         consent: _consentModule!,
+        focusEnabled: _focusHead != null,
+        emotionEnabled: _emotionHead != null,
       );
       _phoneModule = PhoneModule(
         capabilities: _capabilityModule!,
@@ -341,6 +349,9 @@ class Synheart {
         ),
       );
 
+      // Update wear module to use higher frequency collection (1s)
+      await _wearModule?.updateModuleStatus(focusEnabled: true);
+
       SynheartLogger.log('[Synheart] Focus module enabled');
     } catch (e, stack) {
       SynheartLogger.log(
@@ -391,7 +402,7 @@ class Synheart {
         (hsv) {
           // Extract emotion state from HSV and emit to emotion stream
           _emotionStream.add(hsv.emotion);
-          
+
           // Also merge emotion-populated HSV back into main HSV stream
           // This ensures UI subscribers see the updated emotion data
           _hsvStream.add(hsv);
@@ -402,6 +413,9 @@ class Synheart {
           stackTrace: st,
         ),
       );
+
+      // Update wear module to use higher frequency collection (1s)
+      await _wearModule?.updateModuleStatus(emotionEnabled: true);
 
       SynheartLogger.log('[Synheart] Emotion module enabled');
     } catch (e, stack) {
@@ -433,15 +447,38 @@ class Synheart {
       throw StateError('cloudUpload consent required');
     }
 
+    // If cloud connector doesn't exist, create it lazily
     if (_cloudConnector == null) {
-      throw StateError(
-        'Cloud connector not configured. Provide cloudConfig during initialization',
+      // Check if cloudConfig was provided during initialization
+      CloudConfig? cloudConfig = _config?.cloudConfig;
+
+      // If no cloudConfig was provided, we cannot enable cloud sync
+      // CloudConfig requires tenantId, hmacSecret, etc. which must come from app config
+      if (cloudConfig == null) {
+        throw StateError(
+          'Cloud Connector not configured. Provide cloudConfig during initialization with tenantId, hmacSecret, subjectId, and instanceId.',
+        );
+      }
+
+      SynheartLogger.log('[Synheart] Lazy initializing Cloud Connector...');
+      _cloudConnector = CloudConnectorModule(
+        capabilities: _capabilityModule!,
+        consent: _consentModule!,
+        hsiRuntime: _hsiRuntimeModule!,
+        config: cloudConfig,
       );
+      _moduleManager.registerModule(
+        _cloudConnector!,
+        dependsOn: ['capabilities', 'consent', 'hsi_runtime'],
+      );
+
+      await _cloudConnector!.initialize();
     }
 
-    // Cloud connector is already initialized and started with other modules
-    // This method is here for API consistency but the module is auto-started
-    SynheartLogger.log('[Synheart] Cloud connector already active');
+    // Ensure cloud connector is running
+    if (_cloudConnector!.status != ModuleStatus.running) {
+      await _cloudConnector!.start();
+    }
   }
 
   /// Force upload of queued snapshots now
@@ -536,47 +573,17 @@ class Synheart {
     }
   }
 
-  /// Grant consent for a specific data type
-  ///
-  /// Example:
-  /// ```dart
-  /// await Synheart.grantConsent('biosignals');
-  /// ```
-  static Future<void> grantConsent(String consentType) async {
-    return shared._grantConsent(consentType);
-  }
-
-  Future<void> _grantConsent(String consentType) async {
-    if (_consentModule == null) {
-      throw StateError('Consent module not initialized');
-    }
-
-    final current = _consentModule!.current();
-    final updated = ConsentSnapshot(
-      biosignals: consentType == 'biosignals' ? true : current.biosignals,
-      behavior: consentType == 'behavior' ? true : current.behavior,
-      motion: consentType == 'motion' || consentType == 'phoneContext'
-          ? true
-          : current.motion,
-      cloudUpload: consentType == 'cloudUpload' ? true : current.cloudUpload,
-      syni: consentType == 'syni' ? true : current.syni,
-      timestamp: DateTime.now(),
-    );
-
-    await _consentModule!.updateConsent(updated);
-  }
-
   /// Revoke consent for a specific data type
   ///
   /// Example:
   /// ```dart
-  /// await Synheart.revokeConsent('biosignals');
+  /// await Synheart.revokeConsentType('biosignals');
   /// ```
-  static Future<void> revokeConsent(String consentType) async {
-    return shared._revokeConsent(consentType);
+  static Future<void> revokeConsentType(String consentType) async {
+    return shared._revokeConsentType(consentType);
   }
 
-  Future<void> _revokeConsent(String consentType) async {
+  Future<void> _revokeConsentType(String consentType) async {
     if (_consentModule == null) {
       throw StateError('Consent module not initialized');
     }
@@ -607,6 +614,49 @@ class Synheart {
   /// Get behavior module for recording events
   BehaviorModule? get behaviorModule => _behaviorModule;
 
+  /// Wrap a widget with behavior gesture detector if behavior consent is granted
+  ///
+  /// This method automatically checks if:
+  /// - The SDK is initialized
+  /// - Behavior module is available
+  /// - Behavior consent is granted
+  ///
+  /// If all conditions are met, the widget is wrapped with the gesture detector.
+  /// Otherwise, the original widget is returned unwrapped.
+  ///
+  /// Example:
+  /// ```dart
+  /// MaterialApp(
+  ///   home: Synheart.wrapWithBehaviorDetector(
+  ///     MaterialApp(...),
+  ///   ),
+  /// )
+  /// ```
+  static Widget wrapWithBehaviorDetector(Widget child) {
+    return shared._wrapWithBehaviorDetector(child);
+  }
+
+  Widget _wrapWithBehaviorDetector(Widget child) {
+    // Check if SDK is configured and behavior module is available
+    if (!_isConfigured || _behaviorModule == null) {
+      return child;
+    }
+
+    // Check if behavior consent is granted
+    if (_consentModule == null || !_consentModule!.current().behavior) {
+      return child;
+    }
+
+    // Get synheart_behavior instance
+    final synheartBehavior = _behaviorModule!.synheartBehavior;
+    if (synheartBehavior == null) {
+      return child;
+    }
+
+    // Wrap with gesture detector
+    return synheartBehavior.wrapWithGestureDetector(child);
+  }
+
   /// Get current consent snapshot
   ConsentSnapshot? get currentConsent {
     return _consentModule?.current();
@@ -622,6 +672,493 @@ class Synheart {
       throw StateError('Consent module not initialized');
     }
     await _consentModule!.updateConsent(consent);
+  }
+
+  // Consent service integration methods
+
+  /// Consent UI manager (for app-provided UI)
+  final ConsentUIManager _consentUI = ConsentUIManager();
+
+  /// Set custom consent UI provider
+  ///
+  /// Example:
+  /// ```dart
+  /// Synheart.setConsentUIProvider((profiles) async {
+  ///   // Show your custom UI
+  ///   return await showConsentDialog(profiles);
+  /// });
+  /// ```
+  static void setConsentUIProvider(ConsentUIProvider provider) {
+    shared._consentUI.customUIProvider = provider;
+  }
+
+  /// Get available consent profiles from cloud service
+  ///
+  /// Requires ConsentConfig to be provided during initialization.
+  static Future<List<ConsentProfile>> getAvailableConsentProfiles() async {
+    return shared._getAvailableConsentProfiles();
+  }
+
+  Future<List<ConsentProfile>> _getAvailableConsentProfiles() async {
+    if (_consentModule == null) {
+      throw StateError('Consent module not initialized');
+    }
+    return await _consentModule!.getAvailableProfiles();
+  }
+
+  /// Request consent by presenting UI and issuing token
+  ///
+  /// This method:
+  /// 1. Fetches available consent profiles
+  /// 2. Presents UI (via customUIProvider if set)
+  /// 3. Issues token for selected profile
+  /// 4. Updates local consent snapshot
+  ///
+  /// Returns the issued token, or null if user declined.
+  static Future<ConsentToken?> requestConsent() async {
+    return shared._requestConsent();
+  }
+
+  Future<ConsentToken?> _requestConsent() async {
+    if (_consentModule == null) {
+      throw StateError('Consent module not initialized');
+    }
+
+    try {
+      // 1. Fetch available profiles
+      final profiles = await _consentModule!.getAvailableProfiles();
+      if (profiles.isEmpty) {
+        SynheartLogger.log('[Synheart] No consent profiles available');
+        return null;
+      }
+
+      // 2. Present UI (via hook)
+      final selected = await _consentUI.presentConsentFlow(profiles);
+      if (selected == null) {
+        return null; // User declined
+      }
+
+      // 3. Issue token
+      final token = await _consentModule!.requestConsent(selected);
+      return token;
+    } catch (e, stack) {
+      SynheartLogger.log(
+        '[Synheart] Error requesting consent: $e',
+        error: e,
+        stackTrace: stack,
+      );
+      rethrow;
+    }
+  }
+
+  /// Check current consent status
+  static ConsentStatus getConsentStatus() {
+    return shared._getConsentStatus();
+  }
+
+  ConsentStatus _getConsentStatus() {
+    if (_consentModule == null) {
+      return ConsentStatus.pending;
+    }
+    return _consentModule!.checkConsentStatus();
+  }
+
+  /// Get current consent token (if available and valid)
+  static ConsentToken? getCurrentConsentToken() {
+    return shared._getCurrentConsentToken();
+  }
+
+  ConsentToken? _getCurrentConsentToken() {
+    return _consentModule?.getCurrentToken();
+  }
+
+  /// Get all consent statuses as a map
+  ///
+  /// Example:
+  /// ```dart
+  /// Map<String, bool> statuses = await Synheart.getConsentStatusMap();
+  /// print(statuses['biosignals']); // true/false
+  /// ```
+  static Map<String, bool> getConsentStatusMap() {
+    return shared._getConsentStatusMap();
+  }
+
+  /// Check if consent is needed
+  ///
+  /// Returns true if:
+  /// - CloudConfig is provided
+  /// - At least one module config is provided (Wear, Phone, or Behavior)
+  /// - No stored consent exists
+  ///
+  /// Example:
+  /// ```dart
+  /// if (await Synheart.needsConsent()) {
+  ///   // Show consent UI
+  /// }
+  /// ```
+  static Future<bool> needsConsent() async {
+    return shared._needsConsent();
+  }
+
+  Future<bool> _needsConsent() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before checking consent needs',
+      );
+    }
+
+    // Only need consent if CloudConfig is provided
+    if (_config?.cloudConfig == null) {
+      return false;
+    }
+
+    // Check if at least one module config is provided
+    final hasModuleConfig =
+        _config?.wearConfig != null ||
+        _config?.phoneConfig != null ||
+        _config?.behaviorConfig != null;
+
+    if (!hasModuleConfig) {
+      return false;
+    }
+
+    // Check if consent was previously stored
+    if (_consentModule == null) {
+      return true; // No consent module means no stored consent
+    }
+
+    // Check if consent exists in storage
+    final storage = ConsentStorage();
+    final hasStoredConsent = await storage.exists();
+    return !hasStoredConsent;
+  }
+
+  /// Get consent information for enabled modules
+  ///
+  /// Returns a map of module names to their consent descriptions.
+  /// Only includes modules that have configs provided during initialization.
+  ///
+  /// Example:
+  /// ```dart
+  /// final consentInfo = await Synheart.getConsentInfo();
+  /// print(consentInfo['biosignals']); // "Collect heart rate and HRV data..."
+  /// ```
+  static Future<Map<String, String>> getConsentInfo() async {
+    return shared._getConsentInfo();
+  }
+
+  Future<Map<String, String>> _getConsentInfo() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before getting consent info',
+      );
+    }
+
+    final info = <String, String>{};
+
+    if (_config?.wearConfig != null) {
+      info['biosignals'] =
+          'Collect heart rate, heart rate variability, and other biosignals from your wearable device to understand your physiological state.';
+    }
+
+    if (_config?.phoneConfig != null) {
+      info['motion'] =
+          'Collect motion and phone context data (screen state, app usage) to understand your activity patterns and device interactions.';
+    }
+
+    if (_config?.behaviorConfig != null) {
+      info['behavior'] =
+          'Collect behavioral data (typing patterns, gestures) to understand your interaction patterns and cognitive state.';
+    }
+
+    if (_config?.cloudConfig != null) {
+      info['cloudUpload'] =
+          'Upload anonymized state data to the cloud for enhanced insights and personalization. Your data is encrypted and pseudonymized.';
+    }
+
+    return info;
+  }
+
+  /// Grant consent for specific modules
+  ///
+  /// This should be called after the user has made their consent choices in the UI.
+  /// If CloudConfig is provided, this will also issue a consent token from the consent service.
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.grantConsent(
+  ///   biosignals: true,
+  ///   behavior: true,
+  ///   motion: true,
+  ///   cloudUpload: true,
+  /// );
+  /// ```
+  static Future<void> grantConsent({
+    required bool biosignals,
+    required bool behavior,
+    required bool motion,
+    required bool cloudUpload,
+    String? profileId,
+  }) async {
+    return shared._grantConsent(
+      biosignals: biosignals,
+      behavior: behavior,
+      motion: motion,
+      cloudUpload: cloudUpload,
+      profileId: profileId,
+    );
+  }
+
+  Future<void> _grantConsent({
+    required bool biosignals,
+    required bool behavior,
+    required bool motion,
+    required bool cloudUpload,
+    String? profileId,
+  }) async {
+    if (!_isConfigured) {
+      throw StateError('Synheart must be initialized before granting consent');
+    }
+
+    if (_consentModule == null) {
+      throw StateError('Consent module not initialized');
+    }
+
+    // If CloudConfig is provided and cloudUpload is true, issue token
+    if (_config?.cloudConfig != null && cloudUpload && profileId != null) {
+      try {
+        // Fetch profiles if needed
+        final profiles = await _consentModule!.getAvailableProfiles();
+        final profile = profiles.firstWhere(
+          (p) => p.id == profileId,
+          orElse: () => throw StateError('Profile not found: $profileId'),
+        );
+
+        // Request consent token
+        await _consentModule!.requestConsent(profile);
+        SynheartLogger.log(
+          '[Synheart] Consent token issued for profile: $profileId',
+        );
+      } catch (e) {
+        SynheartLogger.log(
+          '[Synheart] Error issuing consent token: $e',
+          error: e,
+        );
+        // Continue with local consent even if token issuance fails
+      }
+    }
+
+    // Update local consent snapshot
+    final snapshot = ConsentSnapshot(
+      biosignals: biosignals,
+      behavior: behavior,
+      motion: motion,
+      cloudUpload: cloudUpload,
+      syni: false,
+      timestamp: DateTime.now(),
+      explicitlyDenied: false,
+    );
+
+    await _consentModule!.updateConsent(snapshot);
+
+    // If any consent was denied, stop data collection for those modules immediately
+    if (!biosignals && _wearModule != null) {
+      SynheartLogger.log(
+        '[Synheart] Biosignals consent denied - stopping wear data collection',
+      );
+      // The WearModule will handle this via consent stream listener
+    }
+
+    if (!behavior && _behaviorModule != null) {
+      SynheartLogger.log(
+        '[Synheart] Behavior consent denied - stopping behavior data collection',
+      );
+      // The BehaviorModule will handle this via consent checks
+    }
+
+    if (!motion && _phoneModule != null) {
+      SynheartLogger.log(
+        '[Synheart] Motion consent denied - stopping phone data collection',
+      );
+      // The PhoneModule will handle this via consent checks
+    }
+
+    SynheartLogger.log(
+      '[Synheart] Consent granted: biosignals=$biosignals, behavior=$behavior, motion=$motion, cloudUpload=$cloudUpload',
+    );
+  }
+
+  Map<String, bool> _getConsentStatusMap() {
+    if (_consentModule == null) {
+      return {
+        'biosignals': false,
+        'behavior': false,
+        'motion': false,
+        'phoneContext': false,
+        'cloudUpload': false,
+        'syni': false,
+      };
+    }
+
+    final consent = _consentModule!.current();
+    return {
+      'biosignals': consent.biosignals,
+      'behavior': consent.behavior,
+      'motion': consent.motion,
+      'phoneContext': consent.motion, // Alias
+      'cloudUpload': consent.cloudUpload,
+      'syni': consent.syni,
+    };
+  }
+
+  /// Delete all local data
+  ///
+  /// Clears:
+  /// - Module caches (wear, phone, behavior)
+  /// - Consent data (but keeps consent preferences)
+  /// - Upload queue
+  /// - HSI state
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.deleteLocalData();
+  /// ```
+  static Future<void> deleteLocalData() async {
+    return shared._deleteLocalData();
+  }
+
+  Future<void> _deleteLocalData() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before deleting local data',
+      );
+    }
+
+    SynheartLogger.log('[Synheart] Deleting all local data...');
+
+    // Clear module caches
+    if (_wearModule != null) {
+      await _wearModule!.clearCache();
+    }
+    if (_phoneModule != null) {
+      await _phoneModule!.clearCache();
+    }
+    if (_behaviorModule != null) {
+      await _behaviorModule!.clearCache();
+    }
+
+    // Clear upload queue
+    if (_cloudConnector != null) {
+      await _cloudConnector!.clearQueue();
+    }
+
+    // Clear HSI state (if any persisted state exists)
+    // Note: HSI Runtime doesn't persist state, so nothing to clear
+
+    SynheartLogger.log('[Synheart] Local data deleted');
+  }
+
+  /// Delete data for a specific module
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.deleteModuleData('biosignals');
+  /// ```
+  static Future<void> deleteModuleData(String moduleName) async {
+    return shared._deleteModuleData(moduleName);
+  }
+
+  Future<void> _deleteModuleData(String moduleName) async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before deleting module data',
+      );
+    }
+
+    SynheartLogger.log('[Synheart] Deleting data for module: $moduleName');
+
+    switch (moduleName.toLowerCase()) {
+      case 'biosignals':
+      case 'wear':
+        await _wearModule?.clearCache();
+        break;
+      case 'phonecontext':
+      case 'phone':
+      case 'motion':
+        await _phoneModule?.clearCache();
+        break;
+      case 'behavior':
+        await _behaviorModule?.clearCache();
+        break;
+      default:
+        throw ArgumentError('Unknown module: $moduleName');
+    }
+
+    SynheartLogger.log('[Synheart] Module data deleted: $moduleName');
+  }
+
+  /// Delete cloud data
+  ///
+  /// Clears the upload queue and notifies cloud service to delete user data.
+  /// Note: This requires an API call to the cloud service.
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.deleteCloudData();
+  /// ```
+  static Future<void> deleteCloudData() async {
+    return shared._deleteCloudData();
+  }
+
+  Future<void> _deleteCloudData() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before deleting cloud data',
+      );
+    }
+
+    SynheartLogger.log('[Synheart] Deleting cloud data...');
+
+    // Clear upload queue
+    if (_cloudConnector != null) {
+      await _cloudConnector!.clearQueue();
+    }
+
+    // TODO: Add API call to cloud service to delete user data
+    // This would require:
+    // 1. Cloud service endpoint for data deletion
+    // 2. User authentication/authorization
+    // 3. Confirmation of deletion
+    SynheartLogger.log(
+      '[Synheart] Cloud upload queue cleared. Note: Cloud service data deletion requires API call (not implemented yet)',
+    );
+  }
+
+  /// Revoke consent (clears token and notifies cloud)
+  static Future<void> revokeConsent() async {
+    return shared._revokeConsent();
+  }
+
+  Future<void> _revokeConsent() async {
+    if (_consentModule == null) {
+      throw StateError('Consent module not initialized');
+    }
+    await _consentModule!.revokeConsent();
+  }
+
+  /// Deny consent (marks as explicitly denied by user)
+  ///
+  /// This should be called when user declines consent in the UI,
+  /// to distinguish from "never asked" (pending) state.
+  static Future<void> denyConsent() async {
+    return shared._denyConsent();
+  }
+
+  Future<void> _denyConsent() async {
+    if (_consentModule == null) {
+      throw StateError('Consent module not initialized');
+    }
+    await _consentModule!.denyConsent();
   }
 
   /// Get module statuses (for debugging)
@@ -659,6 +1196,12 @@ class Synheart {
       await _hsvSubscription?.cancel();
       await _focusHead?.stop();
       await _emotionHead?.stop();
+
+      // Update wear module to reduce collection frequency (no longer need 1s)
+      await _wearModule?.updateModuleStatus(
+        focusEnabled: false,
+        emotionEnabled: false,
+      );
 
       // Remove consent listener (best-effort)
       _consentModule?.removeListener(_onConsentChanged);
