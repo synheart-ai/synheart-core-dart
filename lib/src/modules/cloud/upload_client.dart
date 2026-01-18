@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'hmac_signer.dart';
+import '../consent/consent_token.dart';
 import 'upload_models.dart';
 import 'cloud_exceptions.dart';
 
@@ -15,6 +16,7 @@ class UploadClient {
     required UploadRequest payload,
     required HMACSigner signer,
     required String tenantId,
+    ConsentToken? consentToken,
   }) async {
     const method = 'POST';
     const path = '/v1/ingest/hsi';
@@ -30,6 +32,7 @@ class UploadClient {
       signer: signer,
       tenantId: tenantId,
       maxAttempts: 3,
+      consentToken: consentToken,
     );
   }
 
@@ -40,6 +43,7 @@ class UploadClient {
     required HMACSigner signer,
     required String tenantId,
     required int maxAttempts,
+    ConsentToken? consentToken,
   }) async {
     int attempts = 0;
     int baseDelay = 1000; // 1 second
@@ -64,15 +68,23 @@ class UploadClient {
 
         // Build fresh request for each attempt
         final uri = Uri.parse('$baseUrl$path');
+        final headers = <String, String>{
+          'Content-Type': 'application/json',
+          'X-Synheart-Tenant': tenantId,
+          'X-Synheart-Signature': signature,
+          'X-Synheart-Nonce': nonce,
+          'X-Synheart-Timestamp': timestamp.toString(),
+          'X-Synheart-SDK-Version': '1.0.0',
+        };
+
+        // Add consent token if provided (takes precedence over HMAC for authorization)
+        if (consentToken != null && consentToken.isValid) {
+          headers['Authorization'] = 'Bearer ${consentToken.token}';
+          headers['X-Consent-Profile-ID'] = consentToken.profileId;
+        }
+
         final request = http.Request(method, uri)
-          ..headers.addAll({
-            'Content-Type': 'application/json',
-            'X-Synheart-Tenant': tenantId,
-            'X-Synheart-Signature': signature,
-            'X-Synheart-Nonce': nonce,
-            'X-Synheart-Timestamp': timestamp.toString(),
-            'X-Synheart-SDK-Version': '1.0.0',
-          })
+          ..headers.addAll(headers)
           ..body = bodyJson;
 
         final streamedResponse = await _httpClient.send(request);
@@ -87,8 +99,15 @@ class UploadClient {
         final error = UploadErrorResponse.fromJson(errorBody);
 
         // Handle specific errors
-        if (response.statusCode == 401 && error.code == 'invalid_signature') {
-          throw InvalidSignatureError();
+        if (response.statusCode == 401) {
+          if (error.code == 'invalid_signature') {
+            throw InvalidSignatureError();
+          } else if (error.code == 'invalid_token' ||
+              error.code == 'token_expired') {
+            throw TokenExpiredError('Consent token expired or invalid');
+          } else {
+            throw InvalidSignatureError();
+          }
         } else if (response.statusCode == 403 &&
             error.code == 'invalid_tenant') {
           throw InvalidTenantError();

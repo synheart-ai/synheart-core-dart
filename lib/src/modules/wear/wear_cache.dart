@@ -57,6 +57,12 @@ class WearCache {
     }
   }
 
+  /// Clear all cached data
+  void clear() {
+    _windowSamples.clear();
+    _cachedFeatures.clear();
+  }
+
   /// Compute aggregated features from samples
   WearWindowFeatures _computeFeatures(
     WindowType windowType,

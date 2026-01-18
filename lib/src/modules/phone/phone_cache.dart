@@ -129,6 +129,12 @@ class PhoneCache {
         return const Duration(hours: 24);
     }
   }
+
+  /// Clear all cached data
+  void clear() {
+    _windowData.clear();
+    _cachedFeatures.clear();
+  }
 }
 
 /// Internal data point for phone data

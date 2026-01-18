@@ -23,27 +23,52 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
   final ConsentProvider _consent;
 
   final List<StreamSubscription<WearSample>> _subscriptions = [];
+  StreamSubscription<ConsentSnapshot>? _consentSubscription;
 
   WearModule({
     required CapabilityProvider capabilities,
     required ConsentProvider consent,
     List<WearSourceHandler>? sources,
     bool useSynheartWear = true, // Use synheart_wear package by default
+    bool focusEnabled = false,
+    bool emotionEnabled = false,
   }) : _capabilities = capabilities,
        _consent = consent,
        _sources =
            sources ??
            (useSynheartWear
-               ? [SynheartWearSourceHandler()] // Use synheart_wear by default
+               ? [
+                   SynheartWearSourceHandler(
+                     focusEnabled: focusEnabled,
+                     emotionEnabled: emotionEnabled,
+                   ),
+                 ] // Use synheart_wear by default
                : [MockWearSourceHandler()]); // Fallback to mock if disabled
+
+  /// Update module enablement status
+  ///
+  /// This allows dynamic adjustment of collection frequency when
+  /// Focus/Emotion modules are enabled or disabled at runtime.
+  Future<void> updateModuleStatus({
+    bool? focusEnabled,
+    bool? emotionEnabled,
+  }) async {
+    // Update all SynheartWearSourceHandler instances
+    for (final source in _sources) {
+      if (source is SynheartWearSourceHandler) {
+        await source.updateModuleStatus(
+          focusEnabled: focusEnabled,
+          emotionEnabled: emotionEnabled,
+        );
+      }
+    }
+  }
 
   @override
   WearWindowFeatures? features(WindowType window) {
     // Check consent first
     if (!_consent.current().biosignals) {
-      SynheartLogger.log(
-        '[WearModule] No features: biosignals consent denied',
-      );
+      SynheartLogger.log('[WearModule] No features: biosignals consent denied');
       return null; // Return null if consent denied
     }
 
@@ -127,12 +152,79 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
   Future<void> onStart() async {
     SynheartLogger.log('[WearModule] Starting wear data collection...');
 
+    // Check consent before starting - don't collect data if consent is denied
+    if (!_consent.current().biosignals) {
+      SynheartLogger.log(
+        '[WearModule] Not starting data collection: biosignals consent denied',
+      );
+      return;
+    }
+
+    // Listen to consent changes to dynamically stop/start collection
+    // Use asyncMap to properly handle async operations in the stream
+    _consentSubscription = _consent
+        .observe()
+        .asyncMap((consent) async {
+          if (!consent.biosignals) {
+            // Consent revoked - stop data collection immediately
+            SynheartLogger.log(
+              '[WearModule] Biosignals consent revoked - stopping data collection',
+            );
+            await _stopDataCollection();
+          } else if (consent.biosignals && _subscriptions.isEmpty) {
+            // Consent granted - start data collection if not already started
+            SynheartLogger.log(
+              '[WearModule] Biosignals consent granted - starting data collection',
+            );
+            await _startDataCollection();
+          }
+          return consent;
+        })
+        .listen(
+          (_) {
+            // Stream processed
+          },
+          onError: (error) {
+            SynheartLogger.log(
+              '[WearModule] Error in consent stream: $error',
+              error: error,
+            );
+          },
+        );
+
+    // Start data collection
+    await _startDataCollection();
+
+    SynheartLogger.log(
+      '[WearModule] Started ${_subscriptions.length} wear sources',
+    );
+  }
+
+  /// Start data collection from all sources
+  Future<void> _startDataCollection() async {
+    // Check consent again before starting
+    if (!_consent.current().biosignals) {
+      SynheartLogger.log(
+        '[WearModule] Cannot start: biosignals consent denied',
+      );
+      return;
+    }
+
     // Ensure all sources are initialized (in case they were stopped)
     for (final source in _sources) {
       if (source.isAvailable) {
         try {
           // Re-initialize if needed (e.g., after stop() disposed the SDK)
           await source.initialize();
+
+          // For SynheartWearSourceHandler, explicitly start streaming after initialization
+          // This ensures we only start streaming when consent is granted
+          if (source is SynheartWearSourceHandler) {
+            source.startStreaming();
+            SynheartLogger.log(
+              '[WearModule] Started HR streaming for ${source.sourceType.name}',
+            );
+          }
         } catch (e) {
           SynheartLogger.log(
             '[WearModule] Failed to re-initialize ${source.sourceType.name}: $e',
@@ -148,7 +240,14 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
       if (source.isAvailable) {
         final subscription = source.sampleStream.listen(
           (sample) {
-            // Add to cache
+            // Check consent before caching - don't cache if consent is denied
+            if (!_consent.current().biosignals) {
+              SynheartLogger.log(
+                '[WearModule] Sample ignored: biosignals consent denied',
+              );
+              return;
+            }
+            // Add to cache only if consent is granted
             _cache.addSample(sample);
           },
           onError: (error) {
@@ -162,24 +261,17 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
         _subscriptions.add(subscription);
       }
     }
-
-    SynheartLogger.log(
-      '[WearModule] Started ${_subscriptions.length} wear sources',
-    );
   }
 
-  @override
-  Future<void> onStop() async {
-    SynheartLogger.log('[WearModule] Stopping wear data collection...');
-
-    // Cancel all subscriptions
+  /// Stop data collection from all sources (but keep module initialized)
+  Future<void> _stopDataCollection() async {
+    // Cancel all subscriptions to stop receiving data
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
     _subscriptions.clear();
 
     // Stop all sources to stop their internal streaming
-    // This ensures synheart_wear SDK timers are stopped
     for (final source in _sources) {
       if (source.isAvailable) {
         try {
@@ -192,6 +284,24 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
         }
       }
     }
+  }
+
+  @override
+  Future<void> onStop() async {
+    SynheartLogger.log('[WearModule] Stopping wear data collection...');
+
+    // Cancel consent subscription
+    await _consentSubscription?.cancel();
+    _consentSubscription = null;
+
+    // Stop data collection
+    await _stopDataCollection();
+  }
+
+  /// Clear all cached data
+  Future<void> clearCache() async {
+    _cache.clear();
+    SynheartLogger.log('[WearModule] Cache cleared');
   }
 
   @override
