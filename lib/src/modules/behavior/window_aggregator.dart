@@ -45,6 +45,11 @@ class WindowAggregator {
     }
   }
 
+  /// Clear all cached data
+  void clear() {
+    _windows.clear();
+  }
+
   /// Get window duration
   Duration _getWindowDuration(WindowType windowType) {
     switch (windowType) {

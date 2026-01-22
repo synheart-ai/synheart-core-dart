@@ -20,6 +20,9 @@ class SynheartConfig {
   /// Cloud connector configuration
   final CloudConfig? cloudConfig;
 
+  /// Consent service configuration
+  final ConsentConfig? consentConfig;
+
   const SynheartConfig({
     this.enableCloudSync = false,
     this.enableSyniHooks = false,
@@ -29,6 +32,7 @@ class SynheartConfig {
     this.phoneConfig,
     this.behaviorConfig,
     this.cloudConfig,
+    this.consentConfig,
   });
 
   /// Create default configuration
@@ -103,13 +107,13 @@ class CloudConfig {
   /// Base URL for Synheart Platform
   final String baseUrl;
 
-  /// Tenant ID (from app registration)
+  /// Tenant ID (from app registration) - kept for backward compatibility
   final String tenantId;
 
   /// HMAC secret for signing requests
   final String hmacSecret;
 
-  /// Subject ID (pseudonymous user identifier)
+  /// Subject ID (pseudonymous user identifier) - becomes user_id in payload
   final String subjectId;
 
   /// Subject type (default: "pseudonymous_user")
@@ -117,6 +121,12 @@ class CloudConfig {
 
   /// Instance ID (UUID for this SDK instance)
   final String instanceId;
+
+  /// API Key for X-API-Key header
+  final String apiKey;
+
+  /// Organization ID (optional) - for metadata.org_id
+  final String? orgId;
 
   /// Max upload queue size (default: 100)
   final int maxQueueSize;
@@ -138,6 +148,8 @@ class CloudConfig {
     required this.hmacSecret,
     required this.subjectId,
     required this.instanceId,
+    required this.apiKey,
+    this.orgId,
     this.baseUrl = 'https://api.synheart.com',
     this.subjectType = 'pseudonymous_user',
     this.maxQueueSize = 100,
@@ -146,4 +158,41 @@ class CloudConfig {
     this.maxRetries = 3,
     this.enableBacklog = true,
   });
+}
+
+/// Consent service configuration
+class ConsentConfig {
+  /// Base URL for consent service (defaults to dev environment)
+  final String consentServiceUrl;
+
+  /// App ID for consent service
+  final String? appId;
+
+  /// App API key for consent service authentication
+  final String? appApiKey;
+
+  /// Device ID (UUID for this device, auto-generated if not provided)
+  final String? deviceId;
+
+  /// Platform identifier ('ios', 'android', 'flutter')
+  final String platform;
+
+  /// User ID (optional, for pseudonymous identification)
+  final String? userId;
+
+  /// Region code (e.g., 'US', 'EU')
+  final String? region;
+
+  const ConsentConfig({
+    this.consentServiceUrl = 'https://consent-service-dev.synheart.io',
+    this.appId,
+    this.appApiKey,
+    this.deviceId,
+    this.platform = 'flutter',
+    this.userId,
+    this.region,
+  });
+
+  /// Check if consent service is configured
+  bool get isConfigured => appId != null && appApiKey != null;
 }

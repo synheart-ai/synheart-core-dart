@@ -391,4 +391,100 @@ extension HSI10Export on HumanStateVector {
         return const Duration(seconds: 30);
     }
   }
+
+  /// Convert FocusState to Python format for snapshot
+  /// Returns a Map matching the Python focus object structure
+  Map<String, dynamic> toFocusSnapshot() {
+    final timestamp = DateTime.fromMillisecondsSinceEpoch(
+      this.timestamp,
+    ).toUtc();
+    final timestampStr = timestamp.toIso8601String();
+
+    // Determine focus state based on score
+    String state;
+    if (focus.score >= 0.75) {
+      state = 'deep_focus';
+    } else if (focus.score >= 0.5) {
+      state = 'focused';
+    } else if (focus.score >= 0.25) {
+      state = 'neutral';
+    } else {
+      state = 'distracted';
+    }
+
+    // Determine trend based on cognitive load and distraction
+    String trend;
+    if (focus.cognitiveLoad > 0.6 && focus.distraction < 0.3) {
+      trend = 'increasing';
+    } else if (focus.distraction > 0.6 || focus.cognitiveLoad < 0.3) {
+      trend = 'decreasing';
+    } else {
+      trend = 'stable';
+    }
+
+    // Calculate confidence from clarity
+    final confidence = (focus.clarity * 0.8 + 0.2).clamp(0.0, 1.0);
+
+    return {
+      'timestamp': timestampStr,
+      'state': state,
+      'estimate': {
+        'score': focus.score.clamp(0.0, 1.0),
+        'confidence': confidence,
+      },
+      'trend': trend,
+    };
+  }
+
+  /// Convert EmotionState to Python format for snapshot
+  /// Returns a Map matching the Python emotion object structure
+  Map<String, dynamic> toEmotionSnapshot() {
+    final timestamp = DateTime.fromMillisecondsSinceEpoch(
+      this.timestamp,
+    ).toUtc();
+    final timestampStr = timestamp.toIso8601String();
+
+    // Determine primary emotion based on stress, calm, activation
+    String primaryEmotion;
+    if (emotion.stress > 0.6) {
+      primaryEmotion = 'stressed';
+    } else if (emotion.calm > 0.6) {
+      primaryEmotion = 'calm';
+    } else if (emotion.activation > 0.6) {
+      primaryEmotion = 'excited';
+    } else if (emotion.activation < 0.3) {
+      primaryEmotion = 'tired';
+    } else {
+      primaryEmotion = 'calm'; // Default
+    }
+
+    // Map activation to arousal (0.0-1.0)
+    final arousal = emotion.activation.clamp(0.0, 1.0);
+
+    // Use stress as stress_index
+    final stressIndex = emotion.stress.clamp(0.0, 1.0);
+
+    // Calculate energy level from activation and engagement
+    final energyLevel = ((emotion.activation + emotion.engagement) / 2.0).clamp(
+      0.0,
+      1.0,
+    );
+
+    return {
+      'timestamp': timestampStr,
+      'primary_emotion': primaryEmotion,
+      'valence': emotion.valence.clamp(-1.0, 1.0),
+      'arousal': arousal,
+      'stress_index': stressIndex,
+      'energy_level': energyLevel,
+    };
+  }
+
+  /// Get ISO 8601 timestamp string from HSV timestamp
+  String getTimestampString() {
+    final timestamp = DateTime.fromMillisecondsSinceEpoch(
+      this.timestamp,
+    ).toUtc();
+    return timestamp.toIso8601String();
+  }
 }

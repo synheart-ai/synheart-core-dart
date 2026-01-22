@@ -3,22 +3,26 @@ import 'package:synheart_core/src/modules/cloud/hmac_signer.dart';
 
 void main() {
   group('HMACSigner', () {
-    test('generates valid nonce format', () {
+    test('generates valid UUID v4 nonce format', () {
       final signer = HMACSigner(hmacSecret: 'test_secret');
       final nonce = signer.generateNonce();
 
-      expect(nonce, matches(RegExp(r'^\d+_[a-f0-9]{24}$')));
+      // UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+      expect(
+        nonce,
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          ),
+        ),
+      );
     });
 
     test('computes correct HMAC signature', () {
       final signer = HMACSigner(hmacSecret: 'test_secret');
 
       final signature = signer.computeSignature(
-        method: 'POST',
-        path: '/v1/ingest/hsi',
-        tenantId: 'test_tenant',
-        timestamp: 1704067200,
-        nonce: '1704067200_abc123',
+        timestamp: '1704067200',
         bodyJson: '{"test":"data"}',
       );
 
@@ -39,20 +43,12 @@ void main() {
       final signer = HMACSigner(hmacSecret: 'test_secret');
 
       final signature1 = signer.computeSignature(
-        method: 'POST',
-        path: '/v1/ingest/hsi',
-        tenantId: 'test_tenant',
-        timestamp: 1704067200,
-        nonce: '1704067200_abc123',
+        timestamp: '1704067200',
         bodyJson: '{"test":"data1"}',
       );
 
       final signature2 = signer.computeSignature(
-        method: 'POST',
-        path: '/v1/ingest/hsi',
-        tenantId: 'test_tenant',
-        timestamp: 1704067200,
-        nonce: '1704067200_abc123',
+        timestamp: '1704067200',
         bodyJson: '{"test":"data2"}',
       );
 
@@ -63,20 +59,12 @@ void main() {
       final signer = HMACSigner(hmacSecret: 'test_secret');
 
       final signature1 = signer.computeSignature(
-        method: 'POST',
-        path: '/v1/ingest/hsi',
-        tenantId: 'test_tenant',
-        timestamp: 1704067200,
-        nonce: '1704067200_abc123',
+        timestamp: '1704067200',
         bodyJson: '{"test":"data"}',
       );
 
       final signature2 = signer.computeSignature(
-        method: 'POST',
-        path: '/v1/ingest/hsi',
-        tenantId: 'test_tenant',
-        timestamp: 1704067200,
-        nonce: '1704067200_abc123',
+        timestamp: '1704067200',
         bodyJson: '{"test":"data"}',
       );
 

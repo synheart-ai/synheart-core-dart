@@ -1,0 +1,20 @@
+{
+    "labels": [
+        "LAYING",
+        "MOVING",
+        "SITTING",
+        "STANDING"
+    ],
+    "label_to_index": {
+        "LAYING": 0,
+        "MOVING": 1,
+        "SITTING": 2,
+        "STANDING": 3
+    },
+    "index_to_label": {
+        "0": "LAYING",
+        "1": "MOVING",
+        "2": "SITTING",
+        "3": "STANDING"
+    }
+}

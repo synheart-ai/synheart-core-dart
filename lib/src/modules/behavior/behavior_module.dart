@@ -107,7 +107,8 @@ class BehaviorModule extends BaseSynheartModule
         config: const sb.BehaviorConfig(
           enableInputSignals: true,
           enableAttentionSignals: true,
-          enableMotionLite: false,
+          enableMotionLite:
+              true, // Enable motion data collection for ML inference
         ),
       );
       SynheartLogger.log(
@@ -126,12 +127,25 @@ class BehaviorModule extends BaseSynheartModule
   Future<void> onStart() async {
     SynheartLogger.log('[BehaviorModule] Starting behavior tracking...');
 
+    // Check consent status
+    final consent = _consent.current();
+    SynheartLogger.log(
+      '[BehaviorModule] Behavior consent: ${consent.behavior}',
+    );
+
     // Subscribe to manual event stream
     _eventSubscription = _eventStream.events.listen(
       (event) {
         // Check consent before adding event
         if (_consent.current().behavior) {
+          SynheartLogger.log(
+            '[BehaviorModule] Manual event received: ${event.type}',
+          );
           _aggregator.addEvent(event);
+        } else {
+          SynheartLogger.log(
+            '[BehaviorModule] Event ignored (behavior consent denied): ${event.type}',
+          );
         }
       },
       onError: (e, st) => SynheartLogger.log(
@@ -150,8 +164,19 @@ class BehaviorModule extends BaseSynheartModule
             // Convert synheart_behavior event to internal BehaviorEvent
             final behaviorEvent = _convertSynheartEvent(event);
             if (behaviorEvent != null) {
+              SynheartLogger.log(
+                '[BehaviorModule] Auto event received: ${behaviorEvent.type}',
+              );
               _aggregator.addEvent(behaviorEvent);
+            } else {
+              SynheartLogger.log(
+                '[BehaviorModule] Event conversion failed for: ${event.eventType}',
+              );
             }
+          } else {
+            SynheartLogger.log(
+              '[BehaviorModule] Auto event ignored (behavior consent denied): ${event.eventType}',
+            );
           }
         },
         onError: (e, st) => SynheartLogger.log(
@@ -162,6 +187,13 @@ class BehaviorModule extends BaseSynheartModule
       );
       SynheartLogger.log(
         '[BehaviorModule] Subscribed to synheart_behavior events',
+      );
+    } else {
+      SynheartLogger.log(
+        '[BehaviorModule] Warning: synheart_behavior not initialized - automatic events will not be captured',
+      );
+      SynheartLogger.log(
+        '[BehaviorModule] Tip: Wrap your app with synheartBehavior.wrapWithGestureDetector() to enable automatic event capture',
       );
     }
 
@@ -174,33 +206,35 @@ class BehaviorModule extends BaseSynheartModule
   }
 
   /// Convert synheart_behavior event to internal BehaviorEvent format
-  BehaviorEvent? _convertSynheartEvent(dynamic event) {
+  BehaviorEvent? _convertSynheartEvent(sb.BehaviorEvent event) {
     // Map synheart_behavior events to internal event types
-    final eventType = event.eventType as String?;
-    if (eventType == null) return null;
+    final eventType = event.eventType;
 
-    switch (eventType.toLowerCase()) {
-      case 'tap':
-      case 'touch':
+    switch (eventType) {
+      case sb.BehaviorEventType.tap:
         return BehaviorEvent.tap(Offset.zero);
-      case 'scroll':
-        final delta = event.metrics?['scrollDelta'] as double? ?? 0.0;
-        return BehaviorEvent.scroll(delta);
-      case 'keydown':
-      case 'key_down':
+      case sb.BehaviorEventType.scroll:
+        // Extract velocity from metrics (synheart_behavior uses 'velocity' key)
+        final velocity = event.metrics['velocity'] as double? ?? 0.0;
+        // Use velocity as delta for scroll events
+        return BehaviorEvent.scroll(velocity);
+      case sb.BehaviorEventType.typing:
+        // Map typing to keyDown for now
         return BehaviorEvent.keyDown();
-      case 'keyup':
-      case 'key_up':
-        return BehaviorEvent.keyUp();
-      case 'app_switch':
-      case 'appswitch':
-        return BehaviorEvent.appSwitch();
-      case 'notification_received':
+      case sb.BehaviorEventType.notification:
+        // Check the action in metrics to determine if received or opened
+        final action = event.metrics['action'] as String?;
+        if (action == 'opened') {
+          return BehaviorEvent.notificationOpened();
+        } else {
+          return BehaviorEvent.notificationReceived();
+        }
+      case sb.BehaviorEventType.call:
+        // Map call events to notification received for now
         return BehaviorEvent.notificationReceived();
-      case 'notification_opened':
-        return BehaviorEvent.notificationOpened();
-      default:
-        return null;
+      case sb.BehaviorEventType.swipe:
+        // Map swipe to tap for now (could be enhanced later)
+        return BehaviorEvent.tap(Offset.zero);
     }
   }
 
@@ -216,6 +250,12 @@ class BehaviorModule extends BaseSynheartModule
 
     _cleanupTimer?.cancel();
     _cleanupTimer = null;
+  }
+
+  /// Clear all cached data
+  Future<void> clearCache() async {
+    _aggregator.clear();
+    SynheartLogger.log('[BehaviorModule] Cache cleared');
   }
 
   @override

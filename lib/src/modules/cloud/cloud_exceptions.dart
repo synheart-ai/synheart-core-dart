@@ -30,3 +30,7 @@ class SchemaValidationError extends CloudConnectorException {
 class NetworkError extends CloudConnectorException {
   NetworkError(super.message);
 }
+
+class TokenExpiredError extends CloudConnectorException {
+  TokenExpiredError(super.message);
+}

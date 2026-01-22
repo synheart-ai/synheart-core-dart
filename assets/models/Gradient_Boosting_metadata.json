@@ -1,0 +1,42 @@
+{
+  "model_id": "gradient_boosting_4class_swell_v2",
+  "task": "multiclass_classification",
+  "input_preprocessing": "subject_specific_zscore",
+  "classes": [
+    "Bored",
+    "Focused",
+    "Anxious",
+    "Overload"
+  ],
+  "performance": {
+    "accuracy": 0.4019221291276491,
+    "f1": 0.4033636683344529
+  },
+  "features": [
+    "mean_rr",
+    "std_rr",
+    "min_rr",
+    "max_rr",
+    "range_rr",
+    "rmssd",
+    "sdnn",
+    "nn50",
+    "pnn50",
+    "vlf_power",
+    "lf_power",
+    "hf_power",
+    "uhf_power",
+    "total_power",
+    "lf_hf_ratio",
+    "vlf_norm",
+    "lf_norm",
+    "hf_norm",
+    "uhf_norm",
+    "normalized_lf",
+    "skewness",
+    "kurtosis_val",
+    "median_rr",
+    "iqr"
+  ],
+  "notes": "Input data must be Z-normalized per subject before inference (subtract subject mean, divide by subject std)."
+}

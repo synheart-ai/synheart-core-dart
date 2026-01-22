@@ -7,6 +7,10 @@ import 'package:synheart_core/src/models/hsi_axes.dart';
 import 'dart:async';
 
 void main() {
+  // Initialize Flutter bindings for asset loading (required for ONNX model loading)
+  // The fallback to default model will work even if assets aren't available
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('EmotionHead', () {
     late EmotionHead emotionHead;
     late StreamController<HumanStateVector> hsvController;

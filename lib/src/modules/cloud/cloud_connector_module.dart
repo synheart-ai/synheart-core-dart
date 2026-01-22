@@ -79,9 +79,16 @@ class CloudConnectorModule extends BaseSynheartModule {
       _handleNetworkChange,
     );
 
-    // 3. Attempt to flush queue if online
+    // 3. Attempt to flush queue if online (non-blocking - don't await)
+    // This ensures initialization completes even if uploads fail
     if (_networkMonitor.isOnline) {
-      await flushQueue();
+      flushQueue().catchError((error) {
+        SynheartLogger.log(
+          '[CloudConnector] Error flushing queue during start (non-blocking): $error',
+          error: error,
+        );
+        // Don't rethrow - allow initialization to complete
+      });
     }
 
     SynheartLogger.log('[CloudConnector] Cloud Connector started');
@@ -91,8 +98,36 @@ class CloudConnectorModule extends BaseSynheartModule {
   Future<void> onStop() async {
     SynheartLogger.log('[CloudConnector] Stopping Cloud Connector...');
 
+    // Cancel subscriptions first to stop receiving new data
     await _hsvSubscription?.cancel();
     await _networkSubscription?.cancel();
+
+    // Attempt to flush remaining queue before stopping (with timeout)
+    // This ensures important data is uploaded, but doesn't block indefinitely
+    if (_uploadQueue.hasItems && _networkMonitor.isOnline) {
+      SynheartLogger.log(
+        '[CloudConnector] Attempting to flush queue before stopping...',
+      );
+      try {
+        // Flush with timeout - don't wait forever
+        await flushQueue().timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            SynheartLogger.log(
+              '[CloudConnector] Queue flush timeout reached. Remaining items will be persisted and uploaded on next start.',
+            );
+          },
+        );
+      } catch (e) {
+        SynheartLogger.log(
+          '[CloudConnector] Error flushing queue during stop: $e',
+          error: e,
+        );
+        // Continue with stop even if flush fails
+      }
+    }
+
+    SynheartLogger.log('[CloudConnector] Cloud Connector stopped');
   }
 
   @override
@@ -136,31 +171,52 @@ class CloudConnectorModule extends BaseSynheartModule {
     if (batch.isEmpty) return;
 
     try {
-      // Convert to HSI 1.0
-      final hsi10Snapshots = batch
-          .map(
-            (hsv) => hsv.toHSI10(
-              producerName: 'Synheart Core SDK',
-              producerVersion: '1.0.0',
-              instanceId: _config.instanceId,
-            ),
-          )
-          .toList();
+      // Get platform and capability level from first HSV (assuming all in batch are from same device)
+      final firstHsv = batch.first;
+      final platform = firstHsv.meta.device.platform;
+      final capabilityLevel = _capabilities.capability(Module.cloud);
+      final capabilityLevelStr = capabilityLevel
+          .toString()
+          .split('.')
+          .last; // Convert enum to string
 
-      // Create upload payload
+      // Convert to HSI 1.0 and create snapshots with focus/emotion
+      final snapshots = batch.map((hsv) {
+        final hsi10 = hsv.toHSI10(
+          producerName: 'Synheart Core SDK',
+          producerVersion: '1.0.0',
+          instanceId: _config.instanceId,
+        );
+
+        return {
+          'hsi': hsi10.toJson(),
+          'focus': hsv.toFocusSnapshot(),
+          'emotion': hsv.toEmotionSnapshot(),
+          'timestamp': hsv.getTimestampString(),
+        };
+      }).toList();
+
+      // Create upload payload with new structure
       final payload = UploadRequest(
-        subject: Subject(
-          subjectType: _config.subjectType,
-          subjectId: _config.subjectId,
+        userId: _config.subjectId,
+        metadata: UploadMetadata(
+          sdkVersion: '1.0.0',
+          platform: platform,
+          capabilityLevel: capabilityLevelStr,
+          orgId: _config.orgId,
         ),
-        snapshots: hsi10Snapshots.map((h) => h.toJson()).toList(),
+        snapshots: snapshots,
       );
+
+      // Get consent token if available
+      final consentToken = _consent.getCurrentToken();
 
       // Sign and upload
       final response = await _uploadClient.upload(
         payload: payload,
         signer: _hmacSigner,
-        tenantId: _config.tenantId,
+        apiKey: _config.apiKey,
+        consentToken: consentToken,
       );
 
       // Success - remove from queue
@@ -176,11 +232,37 @@ class CloudConnectorModule extends BaseSynheartModule {
         '[CloudConnector] Upload successful: ${response.status}',
       );
     } catch (e) {
+      // Handle token expiration - try to refresh
+      if (e is TokenExpiredError) {
+        SynheartLogger.log(
+          '[CloudConnector] Token expired, attempting refresh...',
+        );
+        try {
+          await _consent.refreshTokenIfNeeded();
+          // Retry upload with new token (will happen on next HSV update)
+          await _uploadQueue.requeueBatch(batch);
+          return;
+        } catch (refreshError) {
+          SynheartLogger.log(
+            '[CloudConnector] Token refresh failed: $refreshError',
+            error: refreshError,
+          );
+        }
+      }
+
       // Re-enqueue batch on failure
       await _uploadQueue.requeueBatch(batch);
 
       // Log error (but don't throw - this is background operation)
-      SynheartLogger.log('[CloudConnector] Upload failed: $e', error: e);
+      // Errors are logged but do not propagate to prevent blocking initialization
+      SynheartLogger.log(
+        '[CloudConnector] Upload failed (non-blocking): $e',
+        error: e,
+      );
+
+      // Don't rethrow - all errors are handled gracefully
+      // Network errors and connector exceptions are expected and handled
+      // The queue will be retried later when network conditions improve
     }
   }
 
@@ -195,10 +277,49 @@ class CloudConnectorModule extends BaseSynheartModule {
   }
 
   /// Flush entire upload queue
+  ///
+  /// This method will attempt to upload all queued items.
+  /// It handles errors gracefully and does not throw exceptions.
+  /// Upload failures are logged but do not prevent the queue from being processed.
   Future<void> flushQueue() async {
-    while (_uploadQueue.hasItems && _networkMonitor.isOnline) {
-      await _attemptUpload();
-      await Future.delayed(const Duration(milliseconds: 100)); // Throttle
+    int attempts = 0;
+    const maxAttempts = 100; // Prevent infinite loops
+    const throttleDelay = Duration(milliseconds: 100);
+
+    while (_uploadQueue.hasItems &&
+        _networkMonitor.isOnline &&
+        attempts < maxAttempts) {
+      attempts++;
+      try {
+        await _attemptUpload();
+      } catch (e) {
+        // Log error but continue processing queue
+        SynheartLogger.log(
+          '[CloudConnector] Upload attempt failed during flush (non-blocking): $e',
+          error: e,
+        );
+        // If we hit a persistent error (like network failure), break early
+        // to avoid wasting resources
+        if (e is NetworkError || e is CloudConnectorException) {
+          SynheartLogger.log(
+            '[CloudConnector] Stopping flush due to persistent error. Queue will be retried later.',
+          );
+          break;
+        }
+      }
+      await Future.delayed(throttleDelay); // Throttle between attempts
     }
+
+    if (attempts >= maxAttempts) {
+      SynheartLogger.log(
+        '[CloudConnector] Flush stopped after $maxAttempts attempts. Remaining items will be retried later.',
+      );
+    }
+  }
+
+  /// Clear upload queue
+  Future<void> clearQueue() async {
+    await _uploadQueue.clear();
+    SynheartLogger.log('[CloudConnector] Upload queue cleared');
   }
 }

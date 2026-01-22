@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **On-Demand Data Collection API**: Granular control over when data collection starts and stops
+  - `autoStart` parameter in `initialize()` to control automatic collection start (defaults to `true` for backward compatibility)
+  - `startDataCollection()` / `stopDataCollection()` for global collection control
+  - Module-specific start/stop methods: `startWearCollection()`, `stopWearCollection()`, `startBehaviorCollection()`, `stopBehaviorCollection()`, `startPhoneCollection()`, `stopPhoneCollection()`
+  - Status getters: `isWearCollecting`, `isBehaviorCollecting`, `isPhoneCollecting`
+  - Custom collection intervals for wear module via `startWearCollection(interval: Duration)` (e.g., 1s for games, 5s for normal use)
+  - `updateCollectionInterval()` method on `WearModule` to change collection frequency at runtime
+  
+- **Raw Data Stream Access**: Direct access to raw samples and events
+  - `Synheart.wearSampleStream` - Stream of raw `WearSample` data (HR, HRV, RR intervals, motion, timestamp)
+  - `Synheart.behaviorEventStream` - Stream of raw `BehaviorEvent` data (taps, keystrokes, scrolls, app switches, notifications)
+  - `WearModule.rawSampleStream` - Direct access to wear samples from the module
+  - Streams respect consent - no data emitted without consent
+  - Broadcast streams support multiple subscribers
+  
+- **Behavior Session Management**: Track and analyze behavior sessions
+  - `startBehaviorSession()` - Start a behavior tracking session and get session ID
+  - `stopBehaviorSession(sessionId)` - End session and get aggregated results
+  - `BehaviorSessionResults` class with simplified access to key metrics:
+    - `tapRate`, `keystrokeRate`, `focusHint`, `interactionIntensity`, `burstiness`
+    - `totalEvents`, `durationMs`, `sessionId`
+    - Full `BehaviorSessionSummary` available via `summary` property
+  
+- **On-Demand Feature Queries**: Query aggregated features without subscribing to streams
+  - `getWearFeatures(WindowType)` - Query wear features for specific time windows
+  - `getBehaviorFeatures(WindowType)` - Query behavior features for specific time windows
+  - `getPhoneFeatures(WindowType)` - Query phone features for specific time windows
+  - Supports all window types: `window30s`, `window5m`, `window1h`, `window24h`
+  - Returns `null` if no data available for the requested window
+
+### Changed
+- **Initialization**: `Synheart.initialize()` now accepts optional `autoStart` parameter (defaults to `true` for backward compatibility)
+  - When `autoStart: false`, modules are initialized but not started
+  - Call `startDataCollection()` or individual module start methods when ready
+  - Existing apps continue to work without changes (backward compatible)
+  
+- **Consent Enforcement**: Enhanced consent checks throughout the SDK
+  - **Wear Module**: Multi-layer consent enforcement
+    - Consent checked before starting collection
+    - Consent checked before processing samples
+    - Consent checked before emitting to raw sample stream
+    - Collection stops immediately if consent is revoked
+  - **Behavior Module**: Consent checked before processing events
+  - **Phone Module**: Consent checked before processing motion data
+  - All raw data streams respect consent - no data emitted without consent
+  
+- **WearModule**: Added `rawSampleStream` getter for direct sample access
+  - Broadcast stream supports multiple subscribers
+  - Automatically forwards samples from all active sources
+  - Respects consent at every level
+
+### Documentation
+- **README.md**: Comprehensive updates
+  - Added "On-Demand Data Collection" section with complete API documentation
+  - Updated "Consent Management" section with all available consent APIs
+  - Added use case examples (game apps, focus sessions)
+  - Fixed incorrect `SynheartConfig` examples (removed non-existent `enableWear`/`enablePhone`/`enableBehavior` properties)
+  - Added examples for all new APIs (raw streams, sessions, feature queries)
+  - Enhanced privacy & security section with consent enforcement details
+
+### Example App
+- Added new `OnDemandScreen` demonstrating all on-demand collection features
+  - Module start/stop controls with status indicators
+  - Raw data stream viewers (wear samples and behavior events)
+  - Behavior session management UI
+  - On-demand feature query interface
+  - Game scenario demo with real-time HR display
+- Added reusable widgets:
+  - `ModuleControlCard` - Toggle individual modules on/off
+  - `RawDataViewer` - Display live wear samples and behavior events
+  - `SessionControlPanel` - Manage behavior sessions and view results
+- Updated `SynheartProvider` with comprehensive state management:
+  - Collection status tracking
+  - Raw data stream subscriptions
+  - Behavior session management
+  - On-demand query methods
+  - Game session simulation
+- Updated initialization to use `autoStart: false` for demonstration purposes
 
 ## [0.0.2] - 2025-12-29
 

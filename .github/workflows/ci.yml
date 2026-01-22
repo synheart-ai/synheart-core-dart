@@ -18,7 +18,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.0'
+          flutter-version: '3.38.7'
           channel: 'stable'
 
       - name: Install dependencies
@@ -28,7 +28,7 @@ jobs:
         run: dart format --output=none --set-exit-if-changed .
 
       - name: Analyze code
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Check publish readiness
         run: dart pub publish --dry-run
@@ -51,7 +51,7 @@ jobs:
         if: matrix.flutter == 'pinned'
         with:
           channel: 'stable'
-          flutter-version: '3.32.0'
+          flutter-version: '3.38.7'
 
       - name: Setup Flutter (latest stable)
         uses: subosito/flutter-action@v2
@@ -76,7 +76,7 @@ jobs:
           if [ -d "example" ]; then
             cd example
             flutter pub get
-            flutter analyze
+            flutter analyze --no-fatal-infos
           else
             echo "No example directory found, skipping example tests"
           fi

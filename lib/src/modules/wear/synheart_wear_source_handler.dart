@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:synheart_wear/synheart_wear.dart' as wear;
+import '../../core/logger.dart';
 import 'wear_source_handler.dart';
 
 /// WearSourceHandler implementation using synheart_wear package
@@ -20,9 +21,16 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   StreamSubscription<wear.WearMetrics>? _hrvSubscription;
 
   bool _isInitialized = false;
+  bool _focusEnabled = false;
+  bool _emotionEnabled = false;
 
-  SynheartWearSourceHandler({wear.SynheartWearConfig? config})
-    : _config = config;
+  SynheartWearSourceHandler({
+    wear.SynheartWearConfig? config,
+    bool focusEnabled = false,
+    bool emotionEnabled = false,
+  }) : _config = config,
+       _focusEnabled = focusEnabled,
+       _emotionEnabled = emotionEnabled;
 
   @override
   WearSourceType get sourceType {
@@ -47,31 +55,83 @@ class SynheartWearSourceHandler implements WearSourceHandler {
 
   @override
   Future<void> initialize() async {
-    if (_isInitialized) {
+    // If already initialized and SDK exists, skip
+    if (_isInitialized && _synheartWear != null) {
       return;
     }
 
-    // Initialize synheart_wear SDK
-    _synheartWear = wear.SynheartWear(
-      config:
-          _config ??
-          const wear.SynheartWearConfig(
-            enabledAdapters: {wear.DeviceAdapter.appleHealthKit},
-            enableLocalCaching: true,
-            enableEncryption: true,
-            streamInterval: Duration(seconds: 1),
-          ),
-    );
+    // If SDK was disposed (e.g., after stop()), we need to recreate it
+    if (_synheartWear == null) {
+      // Initialize synheart_wear SDK with config or default
+      _synheartWear = wear.SynheartWear(
+        config:
+            _config ??
+            wear.SynheartWearConfig.withAdapters({
+              wear.DeviceAdapter.appleHealthKit,
+            }),
+      );
 
-    await _synheartWear!.initialize();
+      // Step 1: Request permissions explicitly (recommended pattern from README)
+      // This allows providing a custom reason for better UX
+      try {
+        final permissionResult = await _synheartWear!.requestPermissions(
+          permissions: {
+            wear.PermissionType.heartRate,
+            wear.PermissionType.heartRateVariability,
+            wear.PermissionType.steps,
+            wear.PermissionType.calories,
+          },
+          reason:
+              'Synheart Core needs access to your health data to provide personalized insights.',
+        );
 
-    // Create stream controller
-    _controller = StreamController<WearSample>.broadcast();
+        // Step 2: Check if permissions were granted before initializing
+        if (permissionResult.values.any(
+          (s) => s == wear.ConsentStatus.granted,
+        )) {
+          // Step 3: Initialize SDK (validates permissions and data availability)
+          await _synheartWear!.initialize();
+        } else {
+          // Permissions were denied - throw error
+          throw Exception(
+            'Health data permissions were not granted. Please grant permissions to use wearable features.',
+          );
+        }
+      } on wear.SynheartWearError {
+        // Re-throw synheart_wear errors as-is
+        rethrow;
+      } catch (e) {
+        // Wrap other errors
+        throw Exception('Failed to initialize synheart_wear: $e');
+      }
+    }
 
-    // Start streaming data
-    _startStreaming();
+    // Create stream controller if it doesn't exist
+    _controller ??= StreamController<WearSample>.broadcast();
+
+    // Note: Don't start streaming here - let the caller control when to start
+    // Streaming will be started explicitly via _startStreaming() when needed
 
     _isInitialized = true;
+  }
+
+  /// Start streaming HR data
+  ///
+  /// This should be called explicitly after initialization and consent check
+  /// to ensure we only stream when consent is granted
+  void startStreaming() {
+    if (_hrSubscription == null &&
+        _synheartWear != null &&
+        _controller != null) {
+      SynheartLogger.log(
+        '[SynheartWearSourceHandler] Starting HR streaming...',
+      );
+      _startStreaming();
+    } else {
+      SynheartLogger.log(
+        '[SynheartWearSourceHandler] Cannot start streaming: hrSubscription=${_hrSubscription != null}, sdk=${_synheartWear != null}, controller=${_controller != null}',
+      );
+    }
   }
 
   void _startStreaming() {
@@ -79,9 +139,13 @@ class SynheartWearSourceHandler implements WearSourceHandler {
       return;
     }
 
-    // Stream HR data (every 1 second)
+    // Determine optimal interval based on enabled modules
+    // If Focus or Emotion enabled, use 1s (required for 30+ HR points in 60s window)
+    // For HSV-only, 2-3s is sufficient (20-30 calls/min, still accurate for HRV)
+    final hrInterval = _getOptimalInterval();
+
     _hrSubscription = _synheartWear!
-        .streamHR(interval: const Duration(seconds: 1))
+        .streamHR(interval: hrInterval)
         .listen(
           (wearMetrics) {
             _emitSample(wearMetrics);
@@ -91,17 +155,94 @@ class SynheartWearSourceHandler implements WearSourceHandler {
           },
         );
 
-    // Stream HRV data (every 5 seconds for better accuracy)
-    _hrvSubscription = _synheartWear!
-        .streamHRV(windowSize: const Duration(seconds: 5))
-        .listen(
-          (wearMetrics) {
-            _emitSample(wearMetrics);
-          },
-          onError: (error) {
-            _controller?.addError(error);
-          },
-        );
+    // Removed HRV stream subscription - HR stream already includes HRV data
+    // Note: readMetrics() returns all available metrics including HRV, so we don't need
+    // a separate HRV stream subscription. Using a single stream reduces Health Connect
+    // API calls and prevents rate limiting issues.
+  }
+
+  /// Get optimal collection interval based on enabled modules
+  ///
+  /// - Focus/Emotion enabled: 1s (60 calls/min) - required for 30+ HR points in 60s window
+  /// - HSV-only: 5s (12 calls/min) - sufficient for accurate HRV, significantly reduces API calls
+  Duration _getOptimalInterval() {
+    // Use custom interval override if set
+    if (_customInterval != null) {
+      return _customInterval!;
+    }
+
+    // Use config override if provided
+    if (_config?.streamInterval != null) {
+      return _config!.streamInterval;
+    }
+
+    // If Focus or Emotion enabled, use 1s (required)
+    if (_focusEnabled || _emotionEnabled) {
+      return const Duration(seconds: 1);
+    }
+
+    // For HSV-only, 5s is sufficient (12 calls/min)
+    // This provides:
+    // - 12 HR points/min (enough for accurate HRV calculations over longer windows)
+    // - 6 points in 30s window (sufficient for window aggregation)
+    // - 80% reduction in API calls vs 1s interval
+    // - Well within Health Connect limits (12 calls/min << 30-60 limit)
+    return const Duration(seconds: 5);
+  }
+
+  /// Update module enablement status and restart streaming if needed
+  ///
+  /// This allows dynamic adjustment of collection frequency when
+  /// Focus/Emotion modules are enabled or disabled at runtime.
+  Future<void> updateModuleStatus({
+    bool? focusEnabled,
+    bool? emotionEnabled,
+  }) async {
+    final oldFocus = _focusEnabled;
+    final oldEmotion = _emotionEnabled;
+
+    // Calculate old interval before updating values
+    final oldInterval = (oldFocus || oldEmotion)
+        ? const Duration(seconds: 1)
+        : const Duration(seconds: 5);
+
+    if (focusEnabled != null) {
+      _focusEnabled = focusEnabled;
+    }
+    if (emotionEnabled != null) {
+      _emotionEnabled = emotionEnabled;
+    }
+
+    // If status changed and we're already streaming, restart with new interval
+    if (_isInitialized &&
+        _hrSubscription != null &&
+        (oldFocus != _focusEnabled || oldEmotion != _emotionEnabled)) {
+      final newInterval = _getOptimalInterval();
+
+      // Only restart if interval actually changed
+      if (oldInterval != newInterval) {
+        await _hrSubscription?.cancel();
+        _hrSubscription = null;
+        _startStreaming();
+      }
+    }
+  }
+
+  Duration? _customInterval; // Store custom interval override
+
+  /// Update collection interval
+  ///
+  /// Changes the collection frequency. If already streaming, restarts with new interval.
+  Future<void> updateCollectionInterval(Duration interval) async {
+    // Store custom interval override
+    _customInterval = interval;
+
+    // If already streaming, restart with new interval
+    if (_isInitialized && _hrSubscription != null) {
+      await _hrSubscription?.cancel();
+      _hrSubscription = null;
+      _startStreaming();
+    }
   }
 
   void _emitSample(wear.WearMetrics wearMetrics) {
@@ -128,8 +269,7 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     final motionLevel = _estimateMotionFromSteps(steps);
 
     final sample = WearSample(
-      timestamp:
-          DateTime.now(), // Use current time, or extract from metrics if available
+      timestamp: wearMetrics.timestamp, // Use timestamp from metrics
       hr: hr,
       hrvRmssd: hrv,
       respRate: null, // Not provided by synheart_wear yet
@@ -159,15 +299,38 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   }
 
   @override
-  Future<void> dispose() async {
+  Future<void> stop() async {
+    SynheartLogger.log('[SynheartWearSourceHandler] Stopping HR streaming...');
+
+    // Cancel subscriptions to stop receiving data
     await _hrSubscription?.cancel();
+    _hrSubscription = null;
     await _hrvSubscription?.cancel();
+    _hrvSubscription = null;
 
-    // Note: synheart_wear may not have a dispose() method
-    // The SDK handles cleanup internally when streams are cancelled
-    _synheartWear = null;
+    // Explicitly dispose synheart_wear SDK to stop its internal timers
+    // This ensures streaming stops immediately, not waiting for timer checks
+    // The SDK will be re-initialized if needed when restarting
+    if (_synheartWear != null) {
+      _synheartWear!.dispose();
+      _synheartWear = null;
+      SynheartLogger.log(
+        '[SynheartWearSourceHandler] synheart_wear SDK disposed',
+      );
+    }
 
+    // Note: _isInitialized remains true to allow checking if re-init is needed
+    // The controller stays open for potential restart
+  }
+
+  @override
+  Future<void> dispose() async {
+    // Stop streaming first
+    await stop();
+
+    // Close the stream controller
     await _controller?.close();
+    _controller = null;
     _isInitialized = false;
   }
 }
