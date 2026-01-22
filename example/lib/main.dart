@@ -1,6 +1,6 @@
-import 'package:example/providers/synheart_provider.dart';
-import 'package:example/screens/consent_screen.dart';
-import 'package:example/screens/home_screen.dart';
+import './providers/synheart_provider.dart';
+import './screens/consent_screen.dart';
+import './screens/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:synheart_core/synheart_core.dart';

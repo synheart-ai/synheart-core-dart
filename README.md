@@ -103,9 +103,9 @@ import 'package:synheart_core/synheart_core.dart';
 await Synheart.initialize(
   userId: 'anon_user_123',
   config: SynheartConfig(
-    enableWear: true,
-    enablePhone: true,
-    enableBehavior: true,
+    wearConfig: WearConfig(),
+    phoneConfig: PhoneConfig(),
+    behaviorConfig: BehaviorConfig(),
   ),
 );
 
@@ -128,6 +128,170 @@ Synheart.onEmotionUpdate.listen((emotion) {
 
 // Optional: Enable cloud sync (requires consent)
 await Synheart.enableCloud();
+```
+
+### On-Demand Data Collection
+
+The SDK supports granular control over when data collection starts and stops, allowing apps to collect data only when needed (e.g., during gameplay, focus sessions, etc.).
+
+#### Manual Initialization
+
+By default, `initialize()` automatically starts all data collection modules. To control when collection starts:
+
+```dart
+// Initialize without auto-starting collection
+await Synheart.initialize(
+  userId: 'anon_user_123',
+  autoStart: false, // Don't start collection automatically
+  config: SynheartConfig(
+    wearConfig: WearConfig(),
+    phoneConfig: PhoneConfig(),
+    behaviorConfig: BehaviorConfig(),
+  ),
+);
+
+// Start collection when needed (e.g., when game starts)
+await Synheart.startDataCollection();
+
+// Stop collection when done (e.g., when game ends)
+await Synheart.stopDataCollection();
+```
+
+#### Module-Level Control
+
+Start and stop individual modules independently:
+
+```dart
+// Start/stop individual modules
+await Synheart.startWearCollection();
+await Synheart.stopWearCollection();
+
+await Synheart.startBehaviorCollection();
+await Synheart.stopBehaviorCollection();
+
+await Synheart.startPhoneCollection();
+await Synheart.stopPhoneCollection();
+
+// Check if modules are collecting
+bool isWearCollecting = Synheart.isWearCollecting;
+bool isBehaviorCollecting = Synheart.isBehaviorCollecting;
+bool isPhoneCollecting = Synheart.isPhoneCollecting;
+```
+
+#### Custom Collection Intervals
+
+For high-frequency use cases (e.g., games), you can set custom collection intervals:
+
+```dart
+// Start wear collection with 1-second interval for real-time gameplay
+await Synheart.startWearCollection(
+  interval: Duration(seconds: 1),
+);
+
+// Later, stop when game ends
+await Synheart.stopWearCollection();
+```
+
+#### Raw Data Streams
+
+Access raw data samples and events in real-time:
+
+```dart
+// Stream of raw wear samples
+Synheart.wearSampleStream.listen((sample) {
+  print('HR: ${sample.hr} BPM');
+  print('RR Intervals: ${sample.rrIntervals}');
+  print('HRV RMSSD: ${sample.hrvRmssd} ms');
+});
+
+// Stream of raw behavior events
+Synheart.behaviorEventStream.listen((event) {
+  print('Event: ${event.type} at ${event.timestamp}');
+});
+```
+
+**Note**: Streams respect consent - no data is emitted if consent is denied.
+
+#### Behavior Session Management
+
+Start and stop behavior tracking sessions and get aggregated results:
+
+```dart
+// Start a behavior session
+final sessionId = await Synheart.startBehaviorSession();
+print('Session ID: $sessionId');
+
+// ... user interacts with app ...
+
+// Stop session and get results
+final results = await Synheart.stopBehaviorSession(sessionId);
+print('Tap Rate: ${results.tapRate}');
+print('Keystroke Rate: ${results.keystrokeRate}');
+print('Focus Hint: ${results.focusHint}');
+print('Interaction Intensity: ${results.interactionIntensity}');
+```
+
+#### On-Demand Feature Queries
+
+Query aggregated features for specific time windows without subscribing to streams:
+
+```dart
+// Get wear features for last 30 seconds
+final wearFeatures = await Synheart.getWearFeatures(WindowType.window30s);
+if (wearFeatures != null) {
+  print('Average HR: ${wearFeatures.hrAverage} BPM');
+  print('HRV RMSSD: ${wearFeatures.hrvRmssd} ms');
+  print('Motion Index: ${wearFeatures.motionIndex}');
+}
+
+// Get behavior features for last 5 minutes
+final behaviorFeatures = await Synheart.getBehaviorFeatures(WindowType.window5m);
+if (behaviorFeatures != null) {
+  print('Tap Rate: ${behaviorFeatures.tapRateNorm}');
+  print('Focus Hint: ${behaviorFeatures.focusHint}');
+  print('Distraction Score: ${behaviorFeatures.distractionScore}');
+}
+
+// Get phone features for last hour
+final phoneFeatures = await Synheart.getPhoneFeatures(WindowType.window1h);
+if (phoneFeatures != null) {
+  print('Motion Level: ${phoneFeatures.motionLevel}');
+  print('Screen On Ratio: ${phoneFeatures.screenOnRatio}');
+}
+```
+
+#### Use Cases
+
+**Game App Example:**
+```dart
+// Initialize without auto-start
+await Synheart.initialize(userId: 'user', autoStart: false);
+
+// When game starts
+await Synheart.startWearCollection(interval: Duration(seconds: 1));
+Synheart.wearSampleStream.listen((sample) {
+  // Adjust game difficulty based on HR
+  if (sample.hr != null && sample.hr! > 100) {
+    // Increase difficulty
+  }
+});
+
+// When game ends
+await Synheart.stopWearCollection();
+```
+
+**Focus Session Example:**
+```dart
+// Start behavior session when focus session begins
+final sessionId = await Synheart.startBehaviorSession();
+
+// ... user works ...
+
+// End session and analyze focus
+final results = await Synheart.stopBehaviorSession(sessionId);
+if (results.focusHint > 0.7) {
+  print('High focus session!');
+}
 ```
 
 ### HSI 1.0 Export
@@ -166,66 +330,204 @@ See the [hsi_export_example.dart](example/hsi_export_example.dart) for a complet
 
 ### Consent Management
 
-The SDK requires explicit user consent for data collection:
+The SDK requires explicit user consent for data collection. **All data collection respects consent** - no data is collected or streamed without explicit user consent.
+
+#### Granting Consent
 
 ```dart
-// Grant consent for specific data types
-await Synheart.grantConsent('biosignals');
-await Synheart.grantConsent('behavior');
-await Synheart.grantConsent('phoneContext');
-
-// Check consent status
-bool hasConsent = await Synheart.hasConsent('biosignals');
-
-// Revoke consent
-await Synheart.revokeConsent('biosignals');
-
-// Alternatively, update all consents at once
-await Synheart.updateConsent(ConsentSnapshot(
+// Grant consent for specific data types (all parameters required)
+await Synheart.grantConsent(
   biosignals: true,
   behavior: true,
   motion: true,
   cloudUpload: false,  // User must explicitly opt-in
-  syni: false,
-));
+  profileId: 'profile-123', // Optional: for consent service integration
+);
+
+// If using consent service with profiles
+final profiles = await Synheart.getAvailableConsentProfiles();
+final selectedProfile = profiles.first; // User selects a profile
+await Synheart.grantConsent(
+  biosignals: true,
+  behavior: true,
+  motion: true,
+  cloudUpload: true,
+  profileId: selectedProfile.id,
+);
 ```
+
+#### Checking Consent Status
+
+```dart
+// Get current consent status map
+final consentStatus = Synheart.getConsentStatusMap();
+bool hasBiosignalsConsent = consentStatus['biosignals'] ?? false;
+bool hasBehaviorConsent = consentStatus['behavior'] ?? false;
+bool hasMotionConsent = consentStatus['motion'] ?? false;
+bool hasCloudUploadConsent = consentStatus['cloudUpload'] ?? false;
+
+// Check if consent is needed (user hasn't been asked yet)
+if (await Synheart.needsConsent()) {
+  // Show consent UI
+  final consentInfo = await Synheart.getConsentInfo();
+  // consentInfo contains descriptions for each data type
+}
+```
+
+#### Requesting Consent (Consent Service)
+
+If using the consent service (requires `ConsentConfig` with `appId` and `appApiKey`):
+
+```dart
+// Request consent using consent service UI
+final token = await Synheart.requestConsent();
+if (token != null && token.isValid) {
+  print('Consent granted with token: ${token.token}');
+}
+
+// Or use a consent profile
+final profiles = await Synheart.getAvailableConsentProfiles();
+final selectedProfile = profiles.first; // User selects
+await Synheart.grantConsent(
+  biosignals: true,
+  behavior: true,
+  motion: true,
+  cloudUpload: true,
+  profileId: selectedProfile.id,
+);
+```
+
+#### Revoking Consent
+
+```dart
+// Revoke consent for a specific type (stops data collection immediately)
+await Synheart.revokeConsentType('biosignals');
+await Synheart.revokeConsentType('behavior');
+await Synheart.revokeConsentType('motion');
+await Synheart.revokeConsentType('cloudUpload');
+
+// Revoke all consent
+await Synheart.revokeConsent();
+```
+
+**Important**: 
+- Consent is checked before starting any data collection
+- If consent is revoked, data collection stops immediately
+- Raw data streams (`wearSampleStream`, `behaviorEventStream`) only emit data when consent is granted
+- All module start methods respect consent - they won't start if consent is denied
+- `syni` consent is always `false` (not user-configurable)
 
 ## Prerequisites
 
-### Wearable Data Collection
+### Platform Configuration
 
-The Core SDK uses the [synheart_wear](https://pub.dev/packages/synheart_wear) package for wearable data collection. This package handles all device integrations (Apple Watch, Fitbit, Garmin, etc.) and provides a unified API.
+The Core SDK requires platform-specific configuration for data collection modules. The example app includes all required configurations - use it as a reference.
 
-### iOS - HealthKit Permissions
+#### iOS Configuration
 
-The `synheart_wear` package handles HealthKit permissions automatically. Add the following to your `Info.plist`:
+**Info.plist** - Add HealthKit usage descriptions (required for synheart-wear-dart):
 
 ```xml
+<!-- HealthKit Permissions (Required for Wear Module) -->
 <key>NSHealthShareUsageDescription</key>
-<string>This app needs access to your health data to monitor your wellbeing</string>
+<string>Synheart Core needs access to your health data to provide personalized insights and track your biometric metrics.</string>
 <key>NSHealthUpdateUsageDescription</key>
-<string>This app needs to update your health data</string>
+<string>Synheart Core needs to update your health data to sync wearable device information.</string>
 ```
 
-### Android - Health Connect
+**Note**: The behavior module doesn't require additional Info.plist entries - it uses runtime permission requests.
 
-The `synheart_wear` package handles Health Connect permissions automatically. Add permissions to your `AndroidManifest.xml`:
+#### Android Configuration
+
+**AndroidManifest.xml** - Add the following permissions and services:
 
 ```xml
-<uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
+<!-- Basic permissions -->
+<uses-permission android:name="android.permission.INTERNET"/>
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+<!-- Health Connect Permissions (Required for Wear Module) -->
 <uses-permission android:name="android.permission.health.READ_HEART_RATE"/>
+<uses-permission android:name="android.permission.health.WRITE_HEART_RATE"/>
+<uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY"/>
+<uses-permission android:name="android.permission.health.WRITE_HEART_RATE_VARIABILITY"/>
+<uses-permission android:name="android.permission.health.READ_STEPS"/>
+<uses-permission android:name="android.permission.health.WRITE_STEPS"/>
+<uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>
+<uses-permission android:name="android.permission.health.WRITE_ACTIVE_CALORIES_BURNED"/>
+<uses-permission android:name="android.permission.health.READ_DISTANCE"/>
+<uses-permission android:name="android.permission.health.WRITE_DISTANCE"/>
+<uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY"/>
+
+<!-- Behavior Module Permissions -->
+<uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+<!-- Health Connect Queries -->
+<queries>
+    <package android:name="com.google.android.apps.healthdata" />
+    <intent>
+        <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+    </intent>
+</queries>
+
+<!-- In <application> tag: Health Connect Intent Filter -->
+<activity android:name=".MainActivity" ...>
+    <intent-filter>
+        <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+    </intent-filter>
+</activity>
+
+<!-- Health Connect Privacy Policy Activity Alias -->
+<activity-alias
+    android:name="ViewPermissionUsageActivity"
+    android:exported="true"
+    android:targetActivity=".MainActivity"
+    android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+        <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+    </intent-filter>
+</activity-alias>
+
+<!-- Notification Listener Service (Required for Behavior Module) -->
+<service
+    android:name="ai.synheart.behavior.SynheartNotificationListenerService"
+    android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+    </intent-filter>
+</service>
+```
+
+**MainActivity.kt** - Must extend `FlutterFragmentActivity` (required for Health Connect on Android 14+):
+
+```kotlin
+import io.flutter.embedding.android.FlutterFragmentActivity
+
+class MainActivity : FlutterFragmentActivity()
 ```
 
 ### Supported Devices
 
-The Core SDK supports all devices that [synheart_wear](https://pub.dev/packages/synheart_wear) supports.
+The Core SDK supports all devices that [synheart_wear](https://pub.dev/packages/synheart_wear) supports (Apple Watch, Fitbit, Garmin, etc.).
+
+### Quick Start
+
+The example app (`example/`) includes all required configurations. You can copy the relevant sections from:
+- `example/ios/Runner/Info.plist` for iOS
+- `example/android/app/src/main/AndroidManifest.xml` for Android
+- `example/android/app/src/main/kotlin/com/example/synheart_core/MainActivity.kt` for MainActivity
 
 ## Privacy & Security
 
 - All processing is **on-device** by default
 - No raw biosignals leave the device without explicit consent
+- **Consent is enforced at every level** - collection, caching, and streaming all respect consent
 - Cloud sync uses **aggregated HSV** only
 - HSI is strictly **non-medical**; no diagnoses or clinical labels
+- **On-demand collection** allows apps to minimize data collection to only when needed
 
 ## 📚 Documentation
 

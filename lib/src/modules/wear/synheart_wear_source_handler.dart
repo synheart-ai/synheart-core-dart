@@ -162,6 +162,11 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   /// - Focus/Emotion enabled: 1s (60 calls/min) - required for 30+ HR points in 60s window
   /// - HSV-only: 5s (12 calls/min) - sufficient for accurate HRV, significantly reduces API calls
   Duration _getOptimalInterval() {
+    // Use custom interval override if set
+    if (_customInterval != null) {
+      return _customInterval!;
+    }
+
     // Use config override if provided
     if (_config?.streamInterval != null) {
       return _config!.streamInterval;
@@ -216,6 +221,23 @@ class SynheartWearSourceHandler implements WearSourceHandler {
         _hrSubscription = null;
         _startStreaming();
       }
+    }
+  }
+
+  Duration? _customInterval; // Store custom interval override
+
+  /// Update collection interval
+  ///
+  /// Changes the collection frequency. If already streaming, restarts with new interval.
+  Future<void> updateCollectionInterval(Duration interval) async {
+    // Store custom interval override
+    _customInterval = interval;
+
+    // If already streaming, restart with new interval
+    if (_isInitialized && _hrSubscription != null) {
+      await _hrSubscription?.cancel();
+      _hrSubscription = null;
+      _startStreaming();
     }
   }
 

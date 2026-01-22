@@ -14,8 +14,13 @@ import 'modules/consent/consent_module.dart';
 import 'modules/consent/consent_storage.dart';
 import 'modules/interfaces/consent_provider.dart';
 import 'modules/wear/wear_module.dart';
+import 'modules/wear/wear_source_handler.dart';
 import 'modules/phone/phone_module.dart';
 import 'modules/behavior/behavior_module.dart';
+import 'modules/behavior/behavior_events.dart';
+import 'modules/interfaces/feature_providers.dart';
+import 'models/behavior_session_results.dart';
+import 'package:synheart_behavior/synheart_behavior.dart' as sb;
 import 'modules/hsi_runtime/hsi_runtime_module.dart';
 import 'modules/hsi_runtime/channel_collector.dart';
 import 'modules/cloud/cloud_connector_module.dart';
@@ -101,6 +106,9 @@ class Synheart {
   StreamSubscription? _focusSubscription;
   StreamSubscription? _hsvSubscription;
 
+  // Behavior session tracking
+  final Map<String, sb.BehaviorSession> _activeBehaviorSessions = {};
+
   // Services
   final AuthService _authService = MockAuthService();
 
@@ -163,15 +171,26 @@ class Synheart {
   ///   ),
   /// );
   /// ```
+  ///
+  /// To initialize without automatically starting data collection:
+  /// ```dart
+  /// await Synheart.initialize(
+  ///   userId: 'anon_user_123',
+  ///   autoStart: false, // Don't start collection automatically
+  /// );
+  /// await Synheart.startDataCollection(); // Start when needed
+  /// ```
   static Future<void> initialize({
     required String userId,
     SynheartConfig? config,
     String? appKey,
+    bool autoStart = true, // Default to true for backward compatibility
   }) async {
     return shared._configure(
       appKey: appKey ?? 'mock_app_key',
       userId: userId,
       config: config,
+      autoStart: autoStart,
     );
   }
 
@@ -179,6 +198,7 @@ class Synheart {
     required String appKey,
     required String userId,
     SynheartConfig? config,
+    bool autoStart = true,
   }) async {
     if (_isConfigured) {
       throw StateError('Synheart already configured');
@@ -283,12 +303,19 @@ class Synheart {
         ),
       );
 
-      // 10. Start modules
-      SynheartLogger.log('[Synheart] Starting all modules...');
-      await _moduleManager.startAll();
+      // 10. Start modules (if autoStart is enabled)
+      if (autoStart) {
+        SynheartLogger.log('[Synheart] Starting all modules...');
+        await _moduleManager.startAll();
+        _isRunning = true;
+      } else {
+        SynheartLogger.log(
+          '[Synheart] Modules initialized but not started (autoStart=false). Call startDataCollection() when ready.',
+        );
+        _isRunning = false;
+      }
 
       _isConfigured = true;
-      _isRunning = true;
       SynheartLogger.log('[Synheart] Initialization complete');
     } catch (e, stack) {
       SynheartLogger.log(
@@ -298,6 +325,242 @@ class Synheart {
       );
       rethrow;
     }
+  }
+
+  /// Start all data collection modules
+  ///
+  /// Starts wear, phone, and behavior data collection if not already running.
+  /// This is useful when you initialized with `autoStart: false`.
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.initialize(userId: 'user', autoStart: false);
+  /// // ... later when you need data collection
+  /// await Synheart.startDataCollection();
+  /// ```
+  static Future<void> startDataCollection() async {
+    return shared._startDataCollection();
+  }
+
+  /// Stop all data collection modules
+  ///
+  /// Stops wear, phone, and behavior data collection but keeps modules initialized.
+  /// Useful for saving battery when data collection is not needed.
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.stopDataCollection(); // Stop collecting
+  /// // ... later
+  /// await Synheart.startDataCollection(); // Resume collecting
+  /// ```
+  static Future<void> stopDataCollection() async {
+    return shared._stopDataCollection();
+  }
+
+  /// Start wear data collection
+  ///
+  /// Starts collecting biosignals from wearables.
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.startWearCollection();
+  /// ```
+  static Future<void> startWearCollection({Duration? interval}) async {
+    return shared._startWearCollection(interval: interval);
+  }
+
+  /// Stop wear data collection
+  ///
+  /// Stops collecting biosignals but keeps wear module initialized.
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.stopWearCollection();
+  /// ```
+  static Future<void> stopWearCollection() async {
+    return shared._stopWearCollection();
+  }
+
+  /// Start behavior data collection
+  ///
+  /// Starts collecting behavioral interaction patterns.
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.startBehaviorCollection();
+  /// ```
+  static Future<void> startBehaviorCollection() async {
+    return shared._startBehaviorCollection();
+  }
+
+  /// Stop behavior data collection
+  ///
+  /// Stops collecting behavioral data but keeps behavior module initialized.
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.stopBehaviorCollection();
+  /// ```
+  static Future<void> stopBehaviorCollection() async {
+    return shared._stopBehaviorCollection();
+  }
+
+  /// Start phone context data collection
+  ///
+  /// Starts collecting phone motion and context data.
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.startPhoneCollection();
+  /// ```
+  static Future<void> startPhoneCollection() async {
+    return shared._startPhoneCollection();
+  }
+
+  /// Stop phone context data collection
+  ///
+  /// Stops collecting phone data but keeps phone module initialized.
+  ///
+  /// Example:
+  /// ```dart
+  /// await Synheart.stopPhoneCollection();
+  /// ```
+  static Future<void> stopPhoneCollection() async {
+    return shared._stopPhoneCollection();
+  }
+
+  /// Check if wear module is collecting data
+  static bool get isWearCollecting => shared._isWearCollecting;
+
+  /// Check if behavior module is collecting data
+  static bool get isBehaviorCollecting => shared._isBehaviorCollecting;
+
+  /// Check if phone module is collecting data
+  static bool get isPhoneCollecting => shared._isPhoneCollecting;
+
+  /// Stream of raw wear samples
+  ///
+  /// Subscribe to this stream to receive real-time biosignal data.
+  /// The stream respects consent - no data is emitted if consent is denied.
+  ///
+  /// Example:
+  /// ```dart
+  /// Synheart.wearSampleStream.listen((sample) {
+  ///   print('HR: ${sample.hr} BPM');
+  ///   print('RR Intervals: ${sample.rrIntervals}');
+  /// });
+  /// ```
+  static Stream<WearSample> get wearSampleStream {
+    if (shared._wearModule == null) {
+      throw StateError('Wear module not initialized. Call initialize() first.');
+    }
+    return shared._wearModule!.rawSampleStream;
+  }
+
+  /// Stream of raw behavior events
+  ///
+  /// Subscribe to this stream to receive real-time behavioral interaction events.
+  /// The stream respects consent - no data is emitted if consent is denied.
+  ///
+  /// Example:
+  /// ```dart
+  /// Synheart.behaviorEventStream.listen((event) {
+  ///   print('Event: ${event.type} at ${event.timestamp}');
+  /// });
+  /// ```
+  static Stream<BehaviorEvent> get behaviorEventStream {
+    if (shared._behaviorModule == null) {
+      throw StateError(
+        'Behavior module not initialized. Call initialize() first.',
+      );
+    }
+    return shared._behaviorModule!.eventStream.events;
+  }
+
+  /// Start a behavior session
+  ///
+  /// Starts tracking behavioral interactions and returns a session ID.
+  /// Use this session ID when stopping the session to get results.
+  ///
+  /// Example:
+  /// ```dart
+  /// final sessionId = await Synheart.startBehaviorSession();
+  /// // ... user interacts with app ...
+  /// final results = await Synheart.stopBehaviorSession(sessionId);
+  /// print('Focus Hint: ${results.focusHint}');
+  /// ```
+  static Future<String> startBehaviorSession() async {
+    return shared._startBehaviorSession();
+  }
+
+  /// Stop a behavior session and get results
+  ///
+  /// Ends the session and returns aggregated results including tap rate,
+  /// keystroke rate, focus hint, and other behavioral metrics.
+  ///
+  /// Example:
+  /// ```dart
+  /// final results = await Synheart.stopBehaviorSession(sessionId);
+  /// print('Tap Rate: ${results.tapRate}');
+  /// print('Keystroke Rate: ${results.keystrokeRate}');
+  /// print('Focus Hint: ${results.focusHint}');
+  /// ```
+  static Future<BehaviorSessionResults> stopBehaviorSession(
+    String sessionId,
+  ) async {
+    return shared._stopBehaviorSession(sessionId);
+  }
+
+  /// Get wear features for a specific time window
+  ///
+  /// Queries aggregated wear features (HR, HRV, etc.) for the specified window.
+  ///
+  /// Example:
+  /// ```dart
+  /// final features = await Synheart.getWearFeatures(WindowType.window30s);
+  /// if (features != null) {
+  ///   print('Average HR: ${features.hrAverage} BPM');
+  ///   print('HRV RMSSD: ${features.hrvRmssd} ms');
+  /// }
+  /// ```
+  static Future<WearWindowFeatures?> getWearFeatures(WindowType window) async {
+    return shared._getWearFeatures(window);
+  }
+
+  /// Get behavior features for a specific time window
+  ///
+  /// Queries aggregated behavior features (tap rate, keystroke rate, etc.) for the specified window.
+  ///
+  /// Example:
+  /// ```dart
+  /// final features = await Synheart.getBehaviorFeatures(WindowType.window30s);
+  /// if (features != null) {
+  ///   print('Tap Rate: ${features.tapRateNorm}');
+  ///   print('Focus Hint: ${features.focusHint}');
+  /// }
+  /// ```
+  static Future<BehaviorWindowFeatures?> getBehaviorFeatures(
+    WindowType window,
+  ) async {
+    return shared._getBehaviorFeatures(window);
+  }
+
+  /// Get phone features for a specific time window
+  ///
+  /// Queries aggregated phone context features (motion, screen state, etc.) for the specified window.
+  ///
+  /// Example:
+  /// ```dart
+  /// final features = await Synheart.getPhoneFeatures(WindowType.window30s);
+  /// if (features != null) {
+  ///   print('Motion Level: ${features.motionLevel}');
+  ///   print('Screen On Ratio: ${features.screenOnRatio}');
+  /// }
+  /// ```
+  static Future<PhoneWindowFeatures?> getPhoneFeatures(
+    WindowType window,
+  ) async {
+    return shared._getPhoneFeatures(window);
   }
 
   /// Enable focus interpretation module
@@ -613,6 +876,313 @@ class Synheart {
 
   /// Get behavior module for recording events
   BehaviorModule? get behaviorModule => _behaviorModule;
+
+  // Collection status getters
+  bool get _isWearCollecting {
+    return _wearModule?.status == ModuleStatus.running;
+  }
+
+  bool get _isBehaviorCollecting {
+    return _behaviorModule?.status == ModuleStatus.running;
+  }
+
+  bool get _isPhoneCollecting {
+    return _phoneModule?.status == ModuleStatus.running;
+  }
+
+  /// Start all data collection modules
+  Future<void> _startDataCollection() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before starting data collection',
+      );
+    }
+
+    if (_isRunning) {
+      SynheartLogger.log('[Synheart] Data collection already running');
+      return;
+    }
+
+    SynheartLogger.log('[Synheart] Starting all data collection modules...');
+    await _moduleManager.startAll();
+    _isRunning = true;
+    SynheartLogger.log('[Synheart] Data collection started');
+  }
+
+  /// Stop all data collection modules
+  Future<void> _stopDataCollection() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before stopping data collection',
+      );
+    }
+
+    if (!_isRunning) {
+      SynheartLogger.log('[Synheart] Data collection already stopped');
+      return;
+    }
+
+    SynheartLogger.log('[Synheart] Stopping all data collection modules...');
+    await _moduleManager.stopAll();
+    _isRunning = false;
+    SynheartLogger.log('[Synheart] Data collection stopped');
+  }
+
+  /// Start wear data collection
+  Future<void> _startWearCollection({Duration? interval}) async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before starting wear collection',
+      );
+    }
+
+    if (_wearModule == null) {
+      throw StateError('Wear module not initialized');
+    }
+
+    if (_isWearCollecting) {
+      SynheartLogger.log('[Synheart] Wear collection already running');
+      // If interval changed, update it
+      if (interval != null) {
+        await _wearModule!.updateCollectionInterval(interval);
+      }
+      return;
+    }
+
+    SynheartLogger.log('[Synheart] Starting wear data collection...');
+    if (interval != null) {
+      await _wearModule!.updateCollectionInterval(interval);
+    }
+    await _wearModule!.start();
+    SynheartLogger.log('[Synheart] Wear data collection started');
+  }
+
+  /// Stop wear data collection
+  Future<void> _stopWearCollection() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before stopping wear collection',
+      );
+    }
+
+    if (_wearModule == null) {
+      throw StateError('Wear module not initialized');
+    }
+
+    if (!_isWearCollecting) {
+      SynheartLogger.log('[Synheart] Wear collection already stopped');
+      return;
+    }
+
+    SynheartLogger.log('[Synheart] Stopping wear data collection...');
+    await _wearModule!.stop();
+    SynheartLogger.log('[Synheart] Wear data collection stopped');
+  }
+
+  /// Start behavior data collection
+  Future<void> _startBehaviorCollection() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before starting behavior collection',
+      );
+    }
+
+    if (_behaviorModule == null) {
+      throw StateError('Behavior module not initialized');
+    }
+
+    if (_isBehaviorCollecting) {
+      SynheartLogger.log('[Synheart] Behavior collection already running');
+      return;
+    }
+
+    SynheartLogger.log('[Synheart] Starting behavior data collection...');
+    await _behaviorModule!.start();
+    SynheartLogger.log('[Synheart] Behavior data collection started');
+  }
+
+  /// Stop behavior data collection
+  Future<void> _stopBehaviorCollection() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before stopping behavior collection',
+      );
+    }
+
+    if (_behaviorModule == null) {
+      throw StateError('Behavior module not initialized');
+    }
+
+    if (!_isBehaviorCollecting) {
+      SynheartLogger.log('[Synheart] Behavior collection already stopped');
+      return;
+    }
+
+    SynheartLogger.log('[Synheart] Stopping behavior data collection...');
+    await _behaviorModule!.stop();
+    SynheartLogger.log('[Synheart] Behavior data collection stopped');
+  }
+
+  /// Start phone context data collection
+  Future<void> _startPhoneCollection() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before starting phone collection',
+      );
+    }
+
+    if (_phoneModule == null) {
+      throw StateError('Phone module not initialized');
+    }
+
+    if (_isPhoneCollecting) {
+      SynheartLogger.log('[Synheart] Phone collection already running');
+      return;
+    }
+
+    SynheartLogger.log('[Synheart] Starting phone data collection...');
+    await _phoneModule!.start();
+    SynheartLogger.log('[Synheart] Phone data collection started');
+  }
+
+  /// Stop phone context data collection
+  Future<void> _stopPhoneCollection() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before stopping phone collection',
+      );
+    }
+
+    if (_phoneModule == null) {
+      throw StateError('Phone module not initialized');
+    }
+
+    if (!_isPhoneCollecting) {
+      SynheartLogger.log('[Synheart] Phone collection already stopped');
+      return;
+    }
+
+    SynheartLogger.log('[Synheart] Stopping phone data collection...');
+    await _phoneModule!.stop();
+    SynheartLogger.log('[Synheart] Phone data collection stopped');
+  }
+
+  /// Start a behavior session
+  Future<String> _startBehaviorSession() async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before starting behavior session',
+      );
+    }
+
+    if (_behaviorModule == null) {
+      throw StateError('Behavior module not initialized');
+    }
+
+    final synheartBehavior = _behaviorModule!.synheartBehavior;
+    if (synheartBehavior == null) {
+      throw StateError(
+        'synheart_behavior not initialized. Behavior module must be started first.',
+      );
+    }
+
+    SynheartLogger.log('[Synheart] Starting behavior session...');
+    final session = await synheartBehavior.startSession();
+
+    // Track the session so we can end it later
+    _activeBehaviorSessions[session.sessionId] = session;
+
+    SynheartLogger.log(
+      '[Synheart] Behavior session started: ${session.sessionId}',
+    );
+    return session.sessionId;
+  }
+
+  /// Stop a behavior session and get results
+  Future<BehaviorSessionResults> _stopBehaviorSession(String sessionId) async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before stopping behavior session',
+      );
+    }
+
+    if (_behaviorModule == null) {
+      throw StateError('Behavior module not initialized');
+    }
+
+    final synheartBehavior = _behaviorModule!.synheartBehavior;
+    if (synheartBehavior == null) {
+      throw StateError(
+        'synheart_behavior not initialized. Behavior module must be started first.',
+      );
+    }
+
+    // Get the tracked session
+    final session = _activeBehaviorSessions[sessionId];
+    if (session == null) {
+      throw StateError(
+        'Session not found: $sessionId. Make sure you started the session using startBehaviorSession().',
+      );
+    }
+
+    SynheartLogger.log('[Synheart] Stopping behavior session: $sessionId...');
+
+    // End the session and get summary
+    final summary = await session.end();
+
+    // Remove from tracking
+    _activeBehaviorSessions.remove(sessionId);
+
+    SynheartLogger.log('[Synheart] Behavior session stopped: $sessionId');
+    return BehaviorSessionResults.fromSummary(summary);
+  }
+
+  /// Get wear features for a specific time window
+  Future<WearWindowFeatures?> _getWearFeatures(WindowType window) async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before querying wear features',
+      );
+    }
+
+    if (_wearModule == null) {
+      throw StateError('Wear module not initialized');
+    }
+
+    return _wearModule!.features(window);
+  }
+
+  /// Get behavior features for a specific time window
+  Future<BehaviorWindowFeatures?> _getBehaviorFeatures(
+    WindowType window,
+  ) async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before querying behavior features',
+      );
+    }
+
+    if (_behaviorModule == null) {
+      throw StateError('Behavior module not initialized');
+    }
+
+    return _behaviorModule!.features(window);
+  }
+
+  /// Get phone features for a specific time window
+  Future<PhoneWindowFeatures?> _getPhoneFeatures(WindowType window) async {
+    if (!_isConfigured) {
+      throw StateError(
+        'Synheart must be initialized before querying phone features',
+      );
+    }
+
+    if (_phoneModule == null) {
+      throw StateError('Phone module not initialized');
+    }
+
+    return _phoneModule!.features(window);
+  }
 
   /// Wrap a widget with behavior gesture detector if behavior consent is granted
   ///

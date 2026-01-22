@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:synheart_core/synheart_core.dart';
+import 'package:synheart_core/src/modules/wear/wear_source_handler.dart';
+import 'package:synheart_core/src/modules/behavior/behavior_events.dart';
+import 'package:synheart_core/src/models/behavior_session_results.dart';
 
 /// Unified provider for all Synheart SDK state management
 class SynheartProvider extends ChangeNotifier {
@@ -37,6 +40,20 @@ class SynheartProvider extends ChangeNotifier {
   // Config
   SynheartConfig? sdkConfig;
 
+  // On-demand collection state
+  List<WearSample> _recentWearSamples = [];
+  List<BehaviorEvent> _recentBehaviorEvents = [];
+  String? _activeBehaviorSessionId;
+  BehaviorSessionResults? _lastSessionResults;
+  WindowType? _selectedWindow;
+  Map<String, dynamic>? _queriedFeatures;
+  bool _isGameActive = false;
+  double? _latestGameHR;
+  
+  // Stream subscriptions for raw data
+  StreamSubscription<WearSample>? _wearSampleSubscription;
+  StreamSubscription<BehaviorEvent>? _behaviorEventSubscription;
+
   // Getters
   bool get isInitialized => _isInitialized;
   bool get isInitializing => _isInitializing;
@@ -60,6 +77,16 @@ class SynheartProvider extends ChangeNotifier {
   bool get hasConsentToken => _currentToken != null && _currentToken!.isValid;
   bool get needsConsent => _needsConsent;
   Map<String, String> get consentInfo => _consentInfo;
+
+  // On-demand collection getters
+  List<WearSample> get recentWearSamples => _recentWearSamples;
+  List<BehaviorEvent> get recentBehaviorEvents => _recentBehaviorEvents;
+  String? get activeBehaviorSessionId => _activeBehaviorSessionId;
+  BehaviorSessionResults? get lastSessionResults => _lastSessionResults;
+  WindowType? get selectedWindow => _selectedWindow;
+  Map<String, dynamic>? get queriedFeatures => _queriedFeatures;
+  bool get isGameActive => _isGameActive;
+  double? get latestGameHR => _latestGameHR;
 
   /// Get current consent status map
   Map<String, bool> get consentStatusMap {
@@ -102,32 +129,33 @@ class SynheartProvider extends ChangeNotifier {
 
     try {
       // Create config with ConsentConfig and CloudConfig if not provided
+      // NOTE: To use consent service features, you must provide your own appId and appApiKey.
+      // See EXAMPLE_APP_SETUP.md for instructions on how to obtain these credentials.
       final finalConfig =
           config ??
           SynheartConfig(
             wearConfig: WearConfig(),
             phoneConfig: PhoneConfig(),
             behaviorConfig: BehaviorConfig(),
-            
-            consentConfig: ConsentConfig(
-              consentServiceUrl: 'https://consent-service-dev.synheart.io',
-              appId: 'test-app-123',
-              appApiKey:
-                  'synheart_sk_live_3lzNKf-4kSqOzX5L6qQatecmI614brZGJqo6NO3Q5Tw',
-              deviceId:
-                  'example_device_${DateTime.now().millisecondsSinceEpoch}',
-              platform: 'flutter',
-              userId: userId,
-              region: 'US',
-            ),
-            cloudConfig: CloudConfig(
-              baseUrl: 'https://api.synheart.com',
-              tenantId: 'example_tenant',
-              hmacSecret: 'example_hmac_secret',
-              subjectId: userId,
-              instanceId:
-                  'example_instance_${DateTime.now().millisecondsSinceEpoch}',
-            ),
+            // // ConsentConfig now defaults to dev consent service URL
+            // // To enable consent service features, provide your own appId and appApiKey:
+            // consentConfig: ConsentConfig(
+            //   appId: 'app-123',
+            //   appApiKey: 'synheart_sk_live_3lzNKf-4kSqOzX5L6qQatecmI614brZGJqo6NO3Q5Tw',
+            //   platform: 'flutter',
+            //   userId: userId,
+            //   region: 'US',
+            // ),
+            // // CloudConfig is optional - only needed for cloud sync features
+            // // To enable cloud sync, provide your own credentials:
+            // cloudConfig: CloudConfig(
+            //   baseUrl: 'https://api.synheart.com',  // Or your custom API endpoint
+            //   tenantId: 'your-tenant-id',           // Your tenant identifier (kept for backward compatibility)
+            //   hmacSecret: 'your-hmac-secret',        // HMAC secret for request signing
+            //   subjectId: userId,                     // Pseudonymous user identifier (becomes user_id in payload)
+            //   instanceId: 'unique-instance-id',      // Unique instance identifier
+            //   apiKey: 'your-api-key',
+            // ),
           );
 
       sdkConfig = finalConfig;
@@ -136,6 +164,7 @@ class SynheartProvider extends ChangeNotifier {
         userId: userId,
         appKey: appKey ?? 'mock_app_key',
         config: finalConfig,
+        autoStart: false, // Don't start automatically for demo
       );
 
       _userId = userId;
@@ -145,6 +174,9 @@ class SynheartProvider extends ChangeNotifier {
 
       // Start listening to HSV updates
       _startHSVListening();
+
+      // Start listening to raw data streams
+      _startRawDataListening();
 
       // Check consent status
       _checkConsentStatus();
@@ -170,6 +202,43 @@ class SynheartProvider extends ChangeNotifier {
       _latestAxes = hsv.meta.axes;
       notifyListeners();
     });
+  }
+
+  /// Start listening to raw data streams
+  void _startRawDataListening() {
+    // Listen to wear samples
+    _wearSampleSubscription?.cancel();
+    try {
+      _wearSampleSubscription = Synheart.wearSampleStream.listen((sample) {
+        _recentWearSamples.add(sample);
+        // Keep only last 100 samples
+        if (_recentWearSamples.length > 100) {
+          _recentWearSamples.removeAt(0);
+        }
+        // Update game HR if game is active
+        if (_isGameActive && sample.hr != null) {
+          _latestGameHR = sample.hr;
+        }
+        notifyListeners();
+      });
+    } catch (e) {
+      // Stream not available yet (module not started)
+    }
+
+    // Listen to behavior events
+    _behaviorEventSubscription?.cancel();
+    try {
+      _behaviorEventSubscription = Synheart.behaviorEventStream.listen((event) {
+        _recentBehaviorEvents.add(event);
+        // Keep only last 100 events
+        if (_recentBehaviorEvents.length > 100) {
+          _recentBehaviorEvents.removeAt(0);
+        }
+        notifyListeners();
+      });
+    } catch (e) {
+      // Stream not available yet (module not started)
+    }
   }
 
   /// Enable cloud sync (requires consent)
@@ -489,11 +558,227 @@ class SynheartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // On-demand collection methods
+  Future<void> startWearCollection({Duration? interval}) async {
+    try {
+      await Synheart.startWearCollection(interval: interval);
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to start wear collection: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> stopWearCollection() async {
+    try {
+      await Synheart.stopWearCollection();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to stop wear collection: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> startBehaviorCollection() async {
+    try {
+      await Synheart.startBehaviorCollection();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to start behavior collection: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> stopBehaviorCollection() async {
+    try {
+      await Synheart.stopBehaviorCollection();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to stop behavior collection: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> startPhoneCollection() async {
+    try {
+      await Synheart.startPhoneCollection();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to start phone collection: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> stopPhoneCollection() async {
+    try {
+      await Synheart.stopPhoneCollection();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to stop phone collection: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<String> startBehaviorSession() async {
+    try {
+      final sessionId = await Synheart.startBehaviorSession();
+      _activeBehaviorSessionId = sessionId;
+      notifyListeners();
+      return sessionId;
+    } catch (e) {
+      _errorMessage = 'Failed to start behavior session: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<BehaviorSessionResults> stopBehaviorSession() async {
+    if (_activeBehaviorSessionId == null) {
+      throw StateError('No active behavior session');
+    }
+    try {
+      final results = await Synheart.stopBehaviorSession(_activeBehaviorSessionId!);
+      _lastSessionResults = results;
+      _activeBehaviorSessionId = null;
+      notifyListeners();
+      return results;
+    } catch (e) {
+      _errorMessage = 'Failed to stop behavior session: $e';
+      _activeBehaviorSessionId = null;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  void setSelectedWindow(WindowType window) {
+    _selectedWindow = window;
+    notifyListeners();
+  }
+
+  Future<void> queryWearFeatures() async {
+    final window = _selectedWindow ?? WindowType.window30s;
+    try {
+      final features = await Synheart.getWearFeatures(window);
+      if (features != null) {
+        _queriedFeatures = {
+          'hrAverage': features.hrAverage,
+          'hrMin': features.hrMin,
+          'hrMax': features.hrMax,
+          'hrvRmssd': features.hrvRmssd,
+          'hrvSdnn': features.hrvSdnn,
+          'pnn50': features.pnn50,
+          'meanRrMs': features.meanRrMs,
+          'motionIndex': features.motionIndex,
+          'respRate': features.respRate,
+        };
+      } else {
+        _queriedFeatures = {'error': 'No features available'};
+      }
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to query wear features: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> queryBehaviorFeatures() async {
+    final window = _selectedWindow ?? WindowType.window30s;
+    try {
+      final features = await Synheart.getBehaviorFeatures(window);
+      if (features != null) {
+        _queriedFeatures = {
+          'tapRateNorm': features.tapRateNorm,
+          'keystrokeRateNorm': features.keystrokeRateNorm,
+          'scrollVelocityNorm': features.scrollVelocityNorm,
+          'idleRatio': features.idleRatio,
+          'switchRateNorm': features.switchRateNorm,
+          'burstiness': features.burstiness,
+          'sessionFragmentation': features.sessionFragmentation,
+          'notificationLoad': features.notificationLoad,
+          'distractionScore': features.distractionScore,
+          'focusHint': features.focusHint,
+        };
+      } else {
+        _queriedFeatures = {'error': 'No features available'};
+      }
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to query behavior features: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> queryPhoneFeatures() async {
+    final window = _selectedWindow ?? WindowType.window30s;
+    try {
+      final features = await Synheart.getPhoneFeatures(window);
+      if (features != null) {
+        _queriedFeatures = {
+          'motionLevel': features.motionLevel,
+          'appSwitchRate': features.appSwitchRate,
+          'screenOnRatio': features.screenOnRatio,
+          'notificationRate': features.notificationRate,
+        };
+      } else {
+        _queriedFeatures = {'error': 'No features available'};
+      }
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to query phone features: $e';
+      notifyListeners();
+    }
+  }
+
+  void clearWearSamples() {
+    _recentWearSamples.clear();
+    notifyListeners();
+  }
+
+  void clearBehaviorEvents() {
+    _recentBehaviorEvents.clear();
+    notifyListeners();
+  }
+
+  Future<void> startGameSession() async {
+    try {
+      // Start wear collection at 1s interval for game
+      await Synheart.startWearCollection(interval: const Duration(seconds: 1));
+      _isGameActive = true;
+      _latestGameHR = null;
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to start game session: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> stopGameSession() async {
+    try {
+      await Synheart.stopWearCollection();
+      _isGameActive = false;
+      _latestGameHR = null;
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to stop game session: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   @override
   void dispose() {
     _hsvSubscription?.cancel();
     _emotionSubscription?.cancel();
     _focusSubscription?.cancel();
+    _wearSampleSubscription?.cancel();
+    _behaviorEventSubscription?.cancel();
     // Only dispose SDK if it's still initialized
     // (if stop() was called, it already disposed the SDK)
     if (_isInitialized) {

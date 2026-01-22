@@ -3,26 +3,44 @@ import 'package:json_annotation/json_annotation.dart';
 part 'upload_models.g.dart';
 
 @JsonSerializable()
-class Subject {
-  @JsonKey(name: 'subject_type')
-  final String subjectType;
+class UploadMetadata {
+  @JsonKey(name: 'sdk_version')
+  final String sdkVersion;
 
-  @JsonKey(name: 'subject_id')
-  final String subjectId;
+  final String platform;
 
-  Subject({required this.subjectType, required this.subjectId});
+  @JsonKey(name: 'capability_level')
+  final String capabilityLevel;
 
-  factory Subject.fromJson(Map<String, dynamic> json) =>
-      _$SubjectFromJson(json);
-  Map<String, dynamic> toJson() => _$SubjectToJson(this);
+  @JsonKey(name: 'org_id')
+  final String? orgId;
+
+  UploadMetadata({
+    required this.sdkVersion,
+    required this.platform,
+    required this.capabilityLevel,
+    this.orgId,
+  });
+
+  factory UploadMetadata.fromJson(Map<String, dynamic> json) =>
+      _$UploadMetadataFromJson(json);
+  Map<String, dynamic> toJson() => _$UploadMetadataToJson(this);
 }
 
 @JsonSerializable(explicitToJson: true)
 class UploadRequest {
-  final Subject subject;
-  final List<Map<String, dynamic>> snapshots; // Array of HSI 1.0 payloads
+  @JsonKey(name: 'user_id')
+  final String userId;
 
-  UploadRequest({required this.subject, required this.snapshots});
+  final UploadMetadata metadata;
+  final List<Map<String, dynamic>>
+  snapshots; // Array of snapshot objects with hsi, focus, emotion, timestamp
+
+  UploadRequest({
+    required this.userId,
+    required this.metadata,
+    required this.snapshots,
+  });
 
   factory UploadRequest.fromJson(Map<String, dynamic> json) =>
       _$UploadRequestFromJson(json);

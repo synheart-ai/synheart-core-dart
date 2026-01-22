@@ -15,9 +15,22 @@ void main() {
     setUp(() {
       signer = HMACSigner(hmacSecret: 'test_secret');
       testPayload = UploadRequest(
-        subject: Subject(subjectType: 'test_user', subjectId: 'user_123'),
+        userId: 'user_123',
+        metadata: UploadMetadata(
+          sdkVersion: '1.0.0',
+          platform: 'android',
+          capabilityLevel: 'core',
+        ),
         snapshots: [
-          {'hsi_version': '1.0', 'test': 'data'},
+          {
+            'hsi': {'hsi_version': '1.0', 'test': 'data'},
+            'focus': {'timestamp': '2025-01-01T00:00:00Z', 'state': 'neutral'},
+            'emotion': {
+              'timestamp': '2025-01-01T00:00:00Z',
+              'primary_emotion': 'calm',
+            },
+            'timestamp': '2025-01-01T00:00:00Z',
+          },
         ],
       );
     });
@@ -43,7 +56,7 @@ void main() {
       final response = await client.upload(
         payload: testPayload,
         signer: signer,
-        tenantId: 'test_tenant',
+        apiKey: 'test_api_key',
       );
 
       expect(response.status, equals('success'));
@@ -73,7 +86,7 @@ void main() {
         () => client.upload(
           payload: testPayload,
           signer: signer,
-          tenantId: 'test_tenant',
+          apiKey: 'test_api_key',
         ),
         throwsA(isA<InvalidSignatureError>()),
       );
@@ -101,7 +114,7 @@ void main() {
         () => client.upload(
           payload: testPayload,
           signer: signer,
-          tenantId: 'test_tenant',
+          apiKey: 'test_api_key',
         ),
         throwsA(isA<InvalidTenantError>()),
       );
@@ -129,7 +142,7 @@ void main() {
         () => client.upload(
           payload: testPayload,
           signer: signer,
-          tenantId: 'test_tenant',
+          apiKey: 'test_api_key',
         ),
         throwsA(isA<SchemaValidationError>()),
       );
@@ -158,7 +171,7 @@ void main() {
         () => client.upload(
           payload: testPayload,
           signer: signer,
-          tenantId: 'test_tenant',
+          apiKey: 'test_api_key',
         ),
         throwsA(isA<RateLimitExceededError>()),
       );
@@ -184,7 +197,7 @@ void main() {
       await client.upload(
         payload: testPayload,
         signer: signer,
-        tenantId: 'test_tenant',
+        apiKey: 'test_api_key',
       );
 
       expect(capturedRequest, isNotNull);
@@ -192,17 +205,10 @@ void main() {
         capturedRequest!.headers['Content-Type'],
         equals('application/json'),
       );
-      expect(
-        capturedRequest!.headers['X-Synheart-Tenant'],
-        equals('test_tenant'),
-      );
+      expect(capturedRequest!.headers['X-API-Key'], equals('test_api_key'));
       expect(capturedRequest!.headers['X-Synheart-Signature'], isNotNull);
       expect(capturedRequest!.headers['X-Synheart-Nonce'], isNotNull);
       expect(capturedRequest!.headers['X-Synheart-Timestamp'], isNotNull);
-      expect(
-        capturedRequest!.headers['X-Synheart-SDK-Version'],
-        equals('1.0.0'),
-      );
     });
 
     test('retries on transient errors up to max attempts', () async {
@@ -228,7 +234,7 @@ void main() {
       final response = await client.upload(
         payload: testPayload,
         signer: signer,
-        tenantId: 'test_tenant',
+        apiKey: 'test_api_key',
       );
 
       expect(attemptCount, equals(3));
@@ -249,7 +255,7 @@ void main() {
         () => client.upload(
           payload: testPayload,
           signer: signer,
-          tenantId: 'test_tenant',
+          apiKey: 'test_api_key',
         ),
         throwsA(isA<NetworkError>()),
       );

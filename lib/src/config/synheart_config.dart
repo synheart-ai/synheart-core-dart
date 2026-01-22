@@ -107,13 +107,13 @@ class CloudConfig {
   /// Base URL for Synheart Platform
   final String baseUrl;
 
-  /// Tenant ID (from app registration)
+  /// Tenant ID (from app registration) - kept for backward compatibility
   final String tenantId;
 
   /// HMAC secret for signing requests
   final String hmacSecret;
 
-  /// Subject ID (pseudonymous user identifier)
+  /// Subject ID (pseudonymous user identifier) - becomes user_id in payload
   final String subjectId;
 
   /// Subject type (default: "pseudonymous_user")
@@ -121,6 +121,12 @@ class CloudConfig {
 
   /// Instance ID (UUID for this SDK instance)
   final String instanceId;
+
+  /// API Key for X-API-Key header
+  final String apiKey;
+
+  /// Organization ID (optional) - for metadata.org_id
+  final String? orgId;
 
   /// Max upload queue size (default: 100)
   final int maxQueueSize;
@@ -142,6 +148,8 @@ class CloudConfig {
     required this.hmacSecret,
     required this.subjectId,
     required this.instanceId,
+    required this.apiKey,
+    this.orgId,
     this.baseUrl = 'https://api.synheart.com',
     this.subjectType = 'pseudonymous_user',
     this.maxQueueSize = 100,
@@ -154,8 +162,8 @@ class CloudConfig {
 
 /// Consent service configuration
 class ConsentConfig {
-  /// Base URL for consent service (defaults to cloud baseUrl if not provided)
-  final String? consentServiceUrl;
+  /// Base URL for consent service (defaults to dev environment)
+  final String consentServiceUrl;
 
   /// App ID for consent service
   final String? appId;
@@ -176,7 +184,7 @@ class ConsentConfig {
   final String? region;
 
   const ConsentConfig({
-    this.consentServiceUrl,
+    this.consentServiceUrl = 'https://consent-service-dev.synheart.io',
     this.appId,
     this.appApiKey,
     this.deviceId,

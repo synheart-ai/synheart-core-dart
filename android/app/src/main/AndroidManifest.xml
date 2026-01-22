@@ -3,6 +3,12 @@
     <!-- Basic permissions -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    
+    <!-- Behavior Module Permissions -->
+    <!-- Permission for notification listener service (for behavior tracking) -->
+    <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+    <!-- Permission for detecting phone call state (for behavior tracking) -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
     <!-- Health Connect Permissions -->
     <!-- Heart Rate -->
@@ -89,6 +95,17 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+
+        <!-- Notification Listener Service for Behavior Module -->
+        <!-- This service is required for synheart-behavior-dart to detect notifications -->
+        <service
+            android:name="ai.synheart.behavior.SynheartNotificationListenerService"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

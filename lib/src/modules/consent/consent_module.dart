@@ -53,8 +53,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
     if (consentConfig?.isConfigured ?? false) {
       _tokenStorage = ConsentTokenStorage();
       _apiClient = ConsentAPIClient(
-        baseUrl: consentConfig!.consentServiceUrl ??
-            'https://consent-service-dev.synheart.io',
+        baseUrl: consentConfig!.consentServiceUrl,
         appId: consentConfig.appId!,
         appApiKey: consentConfig.appApiKey!,
       );

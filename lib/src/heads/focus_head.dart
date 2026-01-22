@@ -285,7 +285,8 @@ class FocusHead {
 
       // Initialize with ONNX model
       await _engine!.initialize(
-        modelPath: 'assets/models/Gradient_Boosting.onnx',
+        modelPath:
+            'packages/synheart_focus/assets/models/Gradient_Boosting.onnx',
         backend: 'onnx',
       );
 

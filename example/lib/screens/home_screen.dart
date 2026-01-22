@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'package:example/behavior_metrics/session_results_screen.dart';
 import 'package:flutter/material.dart';
+import '../behavior_metrics/session_results_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:synheart_core/synheart_core.dart';
 import 'package:synheart_behavior/synheart_behavior.dart' as sb;
@@ -13,6 +13,7 @@ import 'emotion_screen.dart';
 import 'focus_screen.dart';
 import 'consent_screen.dart';
 import 'settings_screen.dart';
+import 'on_demand_screen.dart';
 
 /// Home screen with feature overview and toggles
 class HomeScreen extends StatefulWidget {
@@ -542,6 +543,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                _buildNavigationCard(
+                  context,
+                  'On-Demand Collection',
+                  'Control modules, view raw data, manage sessions',
+                  Icons.tune,
+                  Colors.orange,
+                  () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const OnDemandScreen()),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 _buildNavigationCard(

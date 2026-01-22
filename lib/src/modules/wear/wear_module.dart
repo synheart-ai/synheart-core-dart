@@ -24,6 +24,9 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
 
   final List<StreamSubscription<WearSample>> _subscriptions = [];
   StreamSubscription<ConsentSnapshot>? _consentSubscription;
+  
+  // Stream controller for raw samples (broadcast for multiple subscribers)
+  StreamController<WearSample>? _rawSampleController;
 
   WearModule({
     required CapabilityProvider capabilities,
@@ -60,6 +63,23 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
           focusEnabled: focusEnabled,
           emotionEnabled: emotionEnabled,
         );
+      }
+    }
+  }
+
+  /// Update collection interval
+  ///
+  /// Changes the collection frequency for wear data.
+  /// This will restart streaming with the new interval if already running.
+  ///
+  /// Example:
+  /// ```dart
+  /// await wearModule.updateCollectionInterval(Duration(seconds: 1));
+  /// ```
+  Future<void> updateCollectionInterval(Duration interval) async {
+    for (final source in _sources) {
+      if (source is SynheartWearSourceHandler) {
+        await source.updateCollectionInterval(interval);
       }
     }
   }
@@ -240,7 +260,7 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
       if (source.isAvailable) {
         final subscription = source.sampleStream.listen(
           (sample) {
-            // Check consent before caching - don't cache if consent is denied
+            // Check consent before caching or streaming - don't process if consent is denied
             if (!_consent.current().biosignals) {
               SynheartLogger.log(
                 '[WearModule] Sample ignored: biosignals consent denied',
@@ -249,12 +269,24 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
             }
             // Add to cache only if consent is granted
             _cache.addSample(sample);
+            
+            // Emit to raw sample stream only if consent is granted and controller exists
+            // Double-check consent here for extra safety
+            if (_consent.current().biosignals &&
+                _rawSampleController != null &&
+                !_rawSampleController!.isClosed) {
+              _rawSampleController!.add(sample);
+            }
           },
           onError: (error) {
             SynheartLogger.log(
               '[WearModule] Error from ${source.sourceType.name}: $error',
               error: error,
             );
+            // Forward error to raw sample stream
+            if (_rawSampleController != null && !_rawSampleController!.isClosed) {
+              _rawSampleController!.addError(error);
+            }
           },
         );
 
@@ -304,9 +336,30 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
     SynheartLogger.log('[WearModule] Cache cleared');
   }
 
+  /// Stream of raw wear samples
+  ///
+  /// Subscribe to this stream to receive real-time biosignal data.
+  /// The stream respects consent - no data is emitted if consent is denied.
+  ///
+  /// Example:
+  /// ```dart
+  /// wearModule.rawSampleStream.listen((sample) {
+  ///   print('HR: ${sample.hr} BPM');
+  ///   print('RR Intervals: ${sample.rrIntervals}');
+  /// });
+  /// ```
+  Stream<WearSample> get rawSampleStream {
+    _rawSampleController ??= StreamController<WearSample>.broadcast();
+    return _rawSampleController!.stream;
+  }
+
   @override
   Future<void> onDispose() async {
     SynheartLogger.log('[WearModule] Disposing wear module...');
+
+    // Close raw sample stream controller
+    await _rawSampleController?.close();
+    _rawSampleController = null;
 
     // Dispose all sources
     for (final source in _sources) {

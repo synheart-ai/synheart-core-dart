@@ -6,19 +6,28 @@ part of 'upload_models.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-Subject _$SubjectFromJson(Map<String, dynamic> json) => Subject(
-  subjectType: json['subject_type'] as String,
-  subjectId: json['subject_id'] as String,
-);
+UploadMetadata _$UploadMetadataFromJson(Map<String, dynamic> json) =>
+    UploadMetadata(
+      sdkVersion: json['sdk_version'] as String,
+      platform: json['platform'] as String,
+      capabilityLevel: json['capability_level'] as String,
+      orgId: json['org_id'] as String?,
+    );
 
-Map<String, dynamic> _$SubjectToJson(Subject instance) => <String, dynamic>{
-  'subject_type': instance.subjectType,
-  'subject_id': instance.subjectId,
-};
+Map<String, dynamic> _$UploadMetadataToJson(UploadMetadata instance) =>
+    <String, dynamic>{
+      'sdk_version': instance.sdkVersion,
+      'platform': instance.platform,
+      'capability_level': instance.capabilityLevel,
+      'org_id': instance.orgId,
+    };
 
 UploadRequest _$UploadRequestFromJson(Map<String, dynamic> json) =>
     UploadRequest(
-      subject: Subject.fromJson(json['subject'] as Map<String, dynamic>),
+      userId: json['user_id'] as String,
+      metadata: UploadMetadata.fromJson(
+        json['metadata'] as Map<String, dynamic>,
+      ),
       snapshots: (json['snapshots'] as List<dynamic>)
           .map((e) => e as Map<String, dynamic>)
           .toList(),
@@ -26,7 +35,8 @@ UploadRequest _$UploadRequestFromJson(Map<String, dynamic> json) =>
 
 Map<String, dynamic> _$UploadRequestToJson(UploadRequest instance) =>
     <String, dynamic>{
-      'subject': instance.subject.toJson(),
+      'user_id': instance.userId,
+      'metadata': instance.metadata.toJson(),
       'snapshots': instance.snapshots,
     };
 

@@ -171,24 +171,41 @@ class CloudConnectorModule extends BaseSynheartModule {
     if (batch.isEmpty) return;
 
     try {
-      // Convert to HSI 1.0
-      final hsi10Snapshots = batch
-          .map(
-            (hsv) => hsv.toHSI10(
-              producerName: 'Synheart Core SDK',
-              producerVersion: '1.0.0',
-              instanceId: _config.instanceId,
-            ),
-          )
-          .toList();
+      // Get platform and capability level from first HSV (assuming all in batch are from same device)
+      final firstHsv = batch.first;
+      final platform = firstHsv.meta.device.platform;
+      final capabilityLevel = _capabilities.capability(Module.cloud);
+      final capabilityLevelStr = capabilityLevel
+          .toString()
+          .split('.')
+          .last; // Convert enum to string
 
-      // Create upload payload
+      // Convert to HSI 1.0 and create snapshots with focus/emotion
+      final snapshots = batch.map((hsv) {
+        final hsi10 = hsv.toHSI10(
+          producerName: 'Synheart Core SDK',
+          producerVersion: '1.0.0',
+          instanceId: _config.instanceId,
+        );
+
+        return {
+          'hsi': hsi10.toJson(),
+          'focus': hsv.toFocusSnapshot(),
+          'emotion': hsv.toEmotionSnapshot(),
+          'timestamp': hsv.getTimestampString(),
+        };
+      }).toList();
+
+      // Create upload payload with new structure
       final payload = UploadRequest(
-        subject: Subject(
-          subjectType: _config.subjectType,
-          subjectId: _config.subjectId,
+        userId: _config.subjectId,
+        metadata: UploadMetadata(
+          sdkVersion: '1.0.0',
+          platform: platform,
+          capabilityLevel: capabilityLevelStr,
+          orgId: _config.orgId,
         ),
-        snapshots: hsi10Snapshots.map((h) => h.toJson()).toList(),
+        snapshots: snapshots,
       );
 
       // Get consent token if available
@@ -198,7 +215,7 @@ class CloudConnectorModule extends BaseSynheartModule {
       final response = await _uploadClient.upload(
         payload: payload,
         signer: _hmacSigner,
-        tenantId: _config.tenantId,
+        apiKey: _config.apiKey,
         consentToken: consentToken,
       );
 
