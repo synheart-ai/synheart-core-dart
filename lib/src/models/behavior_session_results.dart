@@ -44,11 +44,16 @@ class BehaviorSessionResults {
   });
 
   /// Create from BehaviorSessionSummary
-  factory BehaviorSessionResults.fromSummary(sb.BehaviorSessionSummary summary) {
+  factory BehaviorSessionResults.fromSummary(
+    sb.BehaviorSessionSummary summary,
+  ) {
     // Extract tap rate from activity summary
     // Normalize based on typical values (assume max 10 taps/sec = 1.0)
-    final tapRate = (summary.activitySummary.totalEvents / 
-        (summary.durationMs / 1000.0) / 10.0).clamp(0.0, 1.0);
+    final tapRate =
+        (summary.activitySummary.totalEvents /
+                (summary.durationMs / 1000.0) /
+                10.0)
+            .clamp(0.0, 1.0);
 
     // Extract keystroke rate from typing summary if available
     double keystrokeRate = 0.0;
@@ -71,4 +76,3 @@ class BehaviorSessionResults {
     );
   }
 }
-

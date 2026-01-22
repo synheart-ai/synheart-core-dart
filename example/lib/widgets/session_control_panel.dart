@@ -106,8 +106,8 @@ class SessionControlPanel extends StatelessWidget {
                   Text(
                     'Active Session',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text('Session ID: $activeSessionId'),
@@ -130,17 +130,38 @@ class SessionControlPanel extends StatelessWidget {
                   Text(
                     'Last Session Results',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  _buildResultRow('Duration', '${(lastSessionResults!.durationMs / 1000).toStringAsFixed(1)}s'),
-                  _buildResultRow('Tap Rate', lastSessionResults!.tapRate.toStringAsFixed(2)),
-                  _buildResultRow('Keystroke Rate', lastSessionResults!.keystrokeRate.toStringAsFixed(2)),
-                  _buildResultRow('Focus Hint', lastSessionResults!.focusHint.toStringAsFixed(2)),
-                  _buildResultRow('Interaction Intensity', lastSessionResults!.interactionIntensity.toStringAsFixed(2)),
-                  _buildResultRow('Burstiness', lastSessionResults!.burstiness.toStringAsFixed(2)),
-                  _buildResultRow('Total Events', lastSessionResults!.totalEvents.toString()),
+                  _buildResultRow(
+                    'Duration',
+                    '${(lastSessionResults!.durationMs / 1000).toStringAsFixed(1)}s',
+                  ),
+                  _buildResultRow(
+                    'Tap Rate',
+                    lastSessionResults!.tapRate.toStringAsFixed(2),
+                  ),
+                  _buildResultRow(
+                    'Keystroke Rate',
+                    lastSessionResults!.keystrokeRate.toStringAsFixed(2),
+                  ),
+                  _buildResultRow(
+                    'Focus Hint',
+                    lastSessionResults!.focusHint.toStringAsFixed(2),
+                  ),
+                  _buildResultRow(
+                    'Interaction Intensity',
+                    lastSessionResults!.interactionIntensity.toStringAsFixed(2),
+                  ),
+                  _buildResultRow(
+                    'Burstiness',
+                    lastSessionResults!.burstiness.toStringAsFixed(2),
+                  ),
+                  _buildResultRow(
+                    'Total Events',
+                    lastSessionResults!.totalEvents.toString(),
+                  ),
                 ],
               ),
             ),
@@ -157,13 +178,9 @@ class SessionControlPanel extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label),
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
 }
-

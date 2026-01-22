@@ -16,9 +16,9 @@ class RawDataViewer extends StatelessWidget {
     this.behaviorEvents,
     required this.onClear,
   }) : assert(
-          (wearSamples != null) != (behaviorEvents != null),
-          'Must provide either wearSamples or behaviorEvents',
-        );
+         (wearSamples != null) != (behaviorEvents != null),
+         'Must provide either wearSamples or behaviorEvents',
+       );
 
   @override
   Widget build(BuildContext context) {
@@ -34,8 +34,8 @@ class RawDataViewer extends StatelessWidget {
                 Text(
                   title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 TextButton.icon(
                   onPressed: onClear,
@@ -45,10 +45,7 @@ class RawDataViewer extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            SizedBox(
-              height: 200,
-              child: _buildDataList(context),
-            ),
+            SizedBox(height: 200, child: _buildDataList(context)),
           ],
         ),
       ),
@@ -148,4 +145,3 @@ class RawDataViewer extends StatelessWidget {
     }
   }
 }
-

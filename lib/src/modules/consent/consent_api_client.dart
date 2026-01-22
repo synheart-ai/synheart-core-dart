@@ -25,14 +25,11 @@ class ConsentAPIClient {
     bool activeOnly = true,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/api/v1/apps/$appId/consent-profiles')
-          .replace(queryParameters: {
-        'active_only': activeOnly.toString(),
-      });
+      final uri = Uri.parse(
+        '$baseUrl/api/v1/apps/$appId/consent-profiles',
+      ).replace(queryParameters: {'active_only': activeOnly.toString()});
 
-      SynheartLogger.log(
-        '[ConsentAPI] Fetching profiles from: $uri',
-      );
+      SynheartLogger.log('[ConsentAPI] Fetching profiles from: $uri');
       SynheartLogger.log(
         '[ConsentAPI] Request headers: Authorization=Bearer ***, Content-Type=application/json',
       );
@@ -58,12 +55,12 @@ class ConsentAPIClient {
         SynheartLogger.log(
           '[ConsentAPI] Response body length: ${response.body.length} bytes',
         );
-        
+
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         SynheartLogger.log(
           '[ConsentAPI] Parsed response body keys: ${body.keys.join(", ")}',
         );
-        
+
         final profilesJson = body['profiles'] as List<dynamic>?;
         if (profilesJson == null) {
           SynheartLogger.log(
@@ -74,52 +71,42 @@ class ConsentAPIClient {
           );
           throw ConsentAPIException('Invalid response: missing "profiles" key');
         }
-        
+
         SynheartLogger.log(
           '[ConsentAPI] Found ${profilesJson.length} profiles in response',
         );
-        
+
         final profiles = profilesJson
             .map((p) => ConsentProfile.fromJson(p as Map<String, dynamic>))
             .toList();
-        
+
         SynheartLogger.log(
           '[ConsentAPI] Successfully parsed ${profiles.length} profiles',
         );
-        
+
         return profiles;
       } else if (response.statusCode == 401) {
         SynheartLogger.log(
           '[ConsentAPI] ERROR: 401 Unauthorized - Invalid app API key',
         );
-        SynheartLogger.log(
-          '[ConsentAPI] Response body: ${response.body}',
-        );
+        SynheartLogger.log('[ConsentAPI] Response body: ${response.body}');
         throw ConsentAPIException('Invalid app API key');
       } else if (response.statusCode == 404) {
-        SynheartLogger.log(
-          '[ConsentAPI] ERROR: 404 Not Found - App not found',
-        );
-        SynheartLogger.log(
-          '[ConsentAPI] Response body: ${response.body}',
-        );
+        SynheartLogger.log('[ConsentAPI] ERROR: 404 Not Found - App not found');
+        SynheartLogger.log('[ConsentAPI] Response body: ${response.body}');
         throw ConsentAPIException('App not found');
       } else {
         SynheartLogger.log(
           '[ConsentAPI] ERROR: Unexpected status code ${response.statusCode}',
         );
-        SynheartLogger.log(
-          '[ConsentAPI] Response body: ${response.body}',
-        );
+        SynheartLogger.log('[ConsentAPI] Response body: ${response.body}');
         throw ConsentAPIException(
           'Failed to fetch profiles: ${response.statusCode}',
         );
       }
     } catch (e, stackTrace) {
       if (e is ConsentAPIException) {
-        SynheartLogger.log(
-          '[ConsentAPI] ConsentAPIException: ${e.message}',
-        );
+        SynheartLogger.log('[ConsentAPI] ConsentAPIException: ${e.message}');
         rethrow;
       }
       SynheartLogger.log(
@@ -127,9 +114,7 @@ class ConsentAPIClient {
         error: e,
         stackTrace: stackTrace,
       );
-      SynheartLogger.log(
-        '[ConsentAPI] Stack trace: $stackTrace',
-      );
+      SynheartLogger.log('[ConsentAPI] Stack trace: $stackTrace');
       throw ConsentAPIException('Network error: $e');
     }
   }
@@ -169,15 +154,13 @@ class ConsentAPIClient {
         SynheartLogger.log(
           '[ConsentAPI] Token response received: statusCode=${response.statusCode}',
         );
-        SynheartLogger.log(
-          '[ConsentAPI] Response body: ${response.body}',
-        );
-        
+        SynheartLogger.log('[ConsentAPI] Response body: ${response.body}');
+
         final bodyJson = jsonDecode(response.body) as Map<String, dynamic>;
         SynheartLogger.log(
           '[ConsentAPI] Parsed response keys: ${bodyJson.keys.join(", ")}',
         );
-        
+
         // Log each field before parsing
         SynheartLogger.log(
           '[ConsentAPI] token field: ${bodyJson['token']} (type: ${bodyJson['token']?.runtimeType})',
@@ -203,7 +186,7 @@ class ConsentAPIClient {
         SynheartLogger.log(
           '[ConsentAPI] scopes field: ${bodyJson['scopes']} (type: ${bodyJson['scopes']?.runtimeType})',
         );
-        
+
         try {
           final token = ConsentToken.fromJson(bodyJson);
           SynheartLogger.log(
@@ -237,10 +220,7 @@ class ConsentAPIClient {
       if (e is ConsentAPIException) {
         rethrow;
       }
-      SynheartLogger.log(
-        '[ConsentAPI] Error issuing token: $e',
-        error: e,
-      );
+      SynheartLogger.log('[ConsentAPI] Error issuing token: $e', error: e);
       throw ConsentAPIException('Network error: $e');
     }
   }
@@ -277,10 +257,7 @@ class ConsentAPIClient {
         // Don't throw - revocation is best-effort
       }
     } catch (e) {
-      SynheartLogger.log(
-        '[ConsentAPI] Error revoking consent: $e',
-        error: e,
-      );
+      SynheartLogger.log('[ConsentAPI] Error revoking consent: $e', error: e);
       // Don't throw - revocation is best-effort
     }
   }
@@ -299,4 +276,3 @@ class ConsentAPIException implements Exception {
   @override
   String toString() => 'ConsentAPIException: $message';
 }
-

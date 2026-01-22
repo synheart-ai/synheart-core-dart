@@ -40,9 +40,11 @@ class ConsentProfile {
       channels: ConsentChannels.fromJson(
         json['channels'] as Map<String, dynamic>,
       ),
-      cloudEnabled: json['cloud'] as bool? ?? json['cloudEnabled'] as bool? ?? false,
+      cloudEnabled:
+          json['cloud'] as bool? ?? json['cloudEnabled'] as bool? ?? false,
       vendorSyncEnabled: json['vendorSyncEnabled'] as bool? ?? false,
-      isDefault: json['is_default'] as bool? ?? json['isDefault'] as bool? ?? false,
+      isDefault:
+          json['is_default'] as bool? ?? json['isDefault'] as bool? ?? false,
     );
   }
 
@@ -118,10 +120,7 @@ class BiosignalsConsent {
   /// Consent for sleep data
   final bool sleep;
 
-  BiosignalsConsent({
-    required this.vitals,
-    required this.sleep,
-  });
+  BiosignalsConsent({required this.vitals, required this.sleep});
 
   factory BiosignalsConsent.fromJson(Map<String, dynamic> json) {
     return BiosignalsConsent(
@@ -131,10 +130,7 @@ class BiosignalsConsent {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'vitals': vitals,
-      'sleep': sleep,
-    };
+    return {'vitals': vitals, 'sleep': sleep};
   }
 }
 
@@ -146,10 +142,7 @@ class PhoneContextConsent {
   /// Consent for screen state
   final bool screenState;
 
-  PhoneContextConsent({
-    required this.motion,
-    required this.screenState,
-  });
+  PhoneContextConsent({required this.motion, required this.screenState});
 
   factory PhoneContextConsent.fromJson(Map<String, dynamic> json) {
     return PhoneContextConsent(
@@ -159,10 +152,7 @@ class PhoneContextConsent {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'motion': motion,
-      'screenState': screenState,
-    };
+    return {'motion': motion, 'screenState': screenState};
   }
 }
 
@@ -174,15 +164,11 @@ class BehaviorConsent {
   BehaviorConsent({required this.enabled});
 
   factory BehaviorConsent.fromJson(Map<String, dynamic> json) {
-    return BehaviorConsent(
-      enabled: json['enabled'] as bool? ?? false,
-    );
+    return BehaviorConsent(enabled: json['enabled'] as bool? ?? false);
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'enabled': enabled,
-    };
+    return {'enabled': enabled};
   }
 }
 
@@ -213,4 +199,3 @@ class InterpretationConsent {
     };
   }
 }
-

@@ -21,18 +21,14 @@ class StatusIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 16,
-          color: isActive ? activeColor : inactiveColor,
-        ),
+        Icon(icon, size: 16, color: isActive ? activeColor : inactiveColor),
         const SizedBox(width: 8),
         Text(
           label,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: isActive ? activeColor : inactiveColor,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-              ),
+            color: isActive ? activeColor : inactiveColor,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+          ),
         ),
       ],
     );
@@ -81,4 +77,3 @@ class StatusBadge extends StatelessWidget {
     );
   }
 }
-

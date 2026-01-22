@@ -45,11 +45,9 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
   final FlutterSecureStorage _deviceIdStorage = const FlutterSecureStorage();
   final Uuid _uuid = const Uuid();
 
-  ConsentModule({
-    ConsentStorage? storage,
-    ConsentConfig? consentConfig,
-  })  : _storage = storage ?? ConsentStorage(),
-        _consentConfig = consentConfig {
+  ConsentModule({ConsentStorage? storage, ConsentConfig? consentConfig})
+    : _storage = storage ?? ConsentStorage(),
+      _consentConfig = consentConfig {
     if (consentConfig?.isConfigured ?? false) {
       _tokenStorage = ConsentTokenStorage();
       _apiClient = ConsentAPIClient(
@@ -207,7 +205,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
   /// Returns cached profiles if available and not expired, otherwise fetches from API.
   Future<List<ConsentProfile>> getAvailableProfiles() async {
     SynheartLogger.log('[ConsentModule] getAvailableProfiles() called');
-    
+
     if (_apiClient == null) {
       SynheartLogger.log(
         '[ConsentModule] ERROR: API client not initialized. ConsentConfig missing or not configured.',
@@ -236,7 +234,9 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       return cached;
     }
 
-    SynheartLogger.log('[ConsentModule] No valid cached profiles, fetching from API...');
+    SynheartLogger.log(
+      '[ConsentModule] No valid cached profiles, fetching from API...',
+    );
 
     // Fetch from API
     try {
@@ -244,11 +244,11 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
         '[ConsentModule] Calling API: GET /api/v1/apps/${_consentConfig!.appId}/consent-profiles',
       );
       final profiles = await _apiClient!.getAvailableProfiles();
-      
+
       SynheartLogger.log(
         '[ConsentModule] Successfully fetched ${profiles.length} profiles from API',
       );
-      
+
       for (final profile in profiles) {
         SynheartLogger.log(
           '[ConsentModule] Profile: id=${profile.id}, name=${profile.name}, description=${profile.description}, isDefault=${profile.isDefault}',
@@ -257,12 +257,12 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
           '[ConsentModule] Profile channels: biosignals.vitals=${profile.channels.biosignals.vitals}, biosignals.sleep=${profile.channels.biosignals.sleep}, behavior=${profile.channels.behavior.enabled}, cloudEnabled=${profile.cloudEnabled}',
         );
       }
-      
+
       // Cache the profiles
       SynheartLogger.log('[ConsentModule] Caching profiles...');
       await _tokenStorage?.cacheProfiles(profiles);
       SynheartLogger.log('[ConsentModule] Profiles cached successfully');
-      
+
       return profiles;
     } catch (e, stackTrace) {
       SynheartLogger.log(
@@ -270,9 +270,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
         error: e,
         stackTrace: stackTrace,
       );
-      SynheartLogger.log(
-        '[ConsentModule] Stack trace: $stackTrace',
-      );
+      SynheartLogger.log('[ConsentModule] Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -366,7 +364,8 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
   Future<void> revokeConsent() async {
     if (_currentToken != null && _apiClient != null && _consentConfig != null) {
       try {
-        final deviceId = _consentConfig!.deviceId ?? await _getOrGenerateDeviceId();
+        final deviceId =
+            _consentConfig!.deviceId ?? await _getOrGenerateDeviceId();
         await _apiClient!.revokeConsent(
           deviceId: deviceId,
           profileId: _currentToken!.profileId,
@@ -397,9 +396,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       );
     } else {
       // If no consent snapshot exists, create one with explicit denial
-      await updateConsent(
-        ConsentSnapshot.none(explicitlyDenied: true),
-      );
+      await updateConsent(ConsentSnapshot.none(explicitlyDenied: true));
     }
 
     SynheartLogger.log('[ConsentModule] Consent revoked');
@@ -417,9 +414,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
     _tokenRefreshTimer = null;
 
     // Update consent snapshot to mark as explicitly denied
-    await updateConsent(
-      ConsentSnapshot.none(explicitlyDenied: true),
-    );
+    await updateConsent(ConsentSnapshot.none(explicitlyDenied: true));
 
     SynheartLogger.log('[ConsentModule] Consent explicitly denied by user');
   }
@@ -461,10 +456,12 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
   /// Update local consent snapshot from profile
   Future<void> _updateConsentFromProfile(ConsentProfile profile) async {
     final snapshot = ConsentSnapshot(
-      biosignals: profile.channels.biosignals.vitals ||
+      biosignals:
+          profile.channels.biosignals.vitals ||
           profile.channels.biosignals.sleep,
       behavior: profile.channels.behavior.enabled,
-      motion: profile.channels.phoneContext.motion ||
+      motion:
+          profile.channels.phoneContext.motion ||
           profile.channels.phoneContext.screenState,
       cloudUpload: profile.cloudEnabled,
       syni: false, // Not in profile yet
@@ -527,28 +524,23 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
     );
 
     // Schedule next check
-    _tokenRefreshTimer = Timer(
-      checkInterval,
-      () async {
-        // Check if token needs refresh
-        final refreshed = await refreshTokenIfNeeded();
-        if (refreshed != null && refreshed != _currentToken) {
-          // Token was refreshed, restart timer with new token
-          _currentToken = refreshed;
-          _startTokenRefreshTimer();
-        } else if (_currentToken?.isExpired == true) {
-          // Token expired and couldn't refresh
-          SynheartLogger.log(
-            '[ConsentModule] Token expired and refresh failed',
-          );
-          _tokenRefreshTimer?.cancel();
-          _tokenRefreshTimer = null;
-        } else {
-          // Token still valid, schedule next check
-          _startTokenRefreshTimer();
-        }
-      },
-    );
+    _tokenRefreshTimer = Timer(checkInterval, () async {
+      // Check if token needs refresh
+      final refreshed = await refreshTokenIfNeeded();
+      if (refreshed != null && refreshed != _currentToken) {
+        // Token was refreshed, restart timer with new token
+        _currentToken = refreshed;
+        _startTokenRefreshTimer();
+      } else if (_currentToken?.isExpired == true) {
+        // Token expired and couldn't refresh
+        SynheartLogger.log('[ConsentModule] Token expired and refresh failed');
+        _tokenRefreshTimer?.cancel();
+        _tokenRefreshTimer = null;
+      } else {
+        // Token still valid, schedule next check
+        _startTokenRefreshTimer();
+      }
+    });
   }
 
   /// Get or generate persistent device ID (UUID v4 format)
@@ -564,14 +556,13 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
 
     // Generate new UUID v4
     final deviceId = _uuid.v4();
-    
+
     // Store in secure storage for persistence
     await _deviceIdStorage.write(key: _deviceIdKey, value: deviceId);
-    
+
     SynheartLogger.log('[ConsentModule] Generated new device ID: $deviceId');
     return deviceId;
   }
-
 
   @override
   Future<void> onInitialize() async {

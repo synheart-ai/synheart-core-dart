@@ -6,9 +6,8 @@ import 'consent_profile.dart';
 /// Apps can provide their own UI implementation. The callback receives
 /// available consent profiles and should return the selected profile,
 /// or null if user declined.
-typedef ConsentUIProvider = Future<ConsentProfile?> Function(
-  List<ConsentProfile> availableProfiles,
-);
+typedef ConsentUIProvider =
+    Future<ConsentProfile?> Function(List<ConsentProfile> availableProfiles);
 
 /// Manager for consent UI hooks
 ///
@@ -28,9 +27,7 @@ class ConsentUIManager {
     List<ConsentProfile> profiles,
   ) async {
     if (profiles.isEmpty) {
-      SynheartLogger.log(
-        '[ConsentUI] No consent profiles available',
-      );
+      SynheartLogger.log('[ConsentUI] No consent profiles available');
       return null;
     }
 
@@ -71,4 +68,3 @@ class ConsentUIManager {
     }
   }
 }
-

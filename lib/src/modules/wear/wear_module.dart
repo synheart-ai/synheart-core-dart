@@ -24,7 +24,7 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
 
   final List<StreamSubscription<WearSample>> _subscriptions = [];
   StreamSubscription<ConsentSnapshot>? _consentSubscription;
-  
+
   // Stream controller for raw samples (broadcast for multiple subscribers)
   StreamController<WearSample>? _rawSampleController;
 
@@ -269,7 +269,7 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
             }
             // Add to cache only if consent is granted
             _cache.addSample(sample);
-            
+
             // Emit to raw sample stream only if consent is granted and controller exists
             // Double-check consent here for extra safety
             if (_consent.current().biosignals &&
@@ -284,7 +284,8 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
               error: error,
             );
             // Forward error to raw sample stream
-            if (_rawSampleController != null && !_rawSampleController!.isClosed) {
+            if (_rawSampleController != null &&
+                !_rawSampleController!.isClosed) {
               _rawSampleController!.addError(error);
             }
           },

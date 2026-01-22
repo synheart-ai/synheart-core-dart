@@ -25,10 +25,7 @@ class _OnDemandScreenState extends State<OnDemandScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('On-Demand Collection'),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('On-Demand Collection'), elevation: 0),
       body: Consumer<SynheartProvider>(
         builder: (context, provider, child) {
           return ListView(
@@ -131,9 +128,9 @@ class _OnDemandScreenState extends State<OnDemandScreen> {
           children: [
             Text(
               title,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             child,
@@ -222,8 +219,8 @@ class _OnDemandScreenState extends State<OnDemandScreen> {
                   Text(
                     entry.value?.toString() ?? 'N/A',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -281,8 +278,8 @@ class _OnDemandScreenState extends State<OnDemandScreen> {
                   Text(
                     'Game Active',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   if (provider.latestGameHR != null)
@@ -312,4 +309,3 @@ class _OnDemandScreenState extends State<OnDemandScreen> {
     }
   }
 }
-

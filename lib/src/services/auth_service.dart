@@ -71,7 +71,8 @@ class MockAuthService implements AuthService {
   }) {
     // Message format: orgId:projectId:environment:capabilities:issuedAt:expiresAt
     final capabilitiesStr = json.encode(capabilities);
-    final message = '$orgId:$projectId:$environment:'
+    final message =
+        '$orgId:$projectId:$environment:'
         '$capabilitiesStr:${issuedAt.millisecondsSinceEpoch}:'
         '${expiresAt.millisecondsSinceEpoch}';
 

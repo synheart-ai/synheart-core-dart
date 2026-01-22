@@ -12,9 +12,7 @@ class HSIExportViewer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (hsv == null) {
-      return const Center(
-        child: Text('No HSV data available'),
-      );
+      return const Center(child: Text('No HSV data available'));
     }
 
     try {
@@ -35,9 +33,9 @@ class HSIExportViewer extends StatelessWidget {
             children: [
               Text(
                 'HSI 1.0 Export',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               IconButton(
                 icon: const Icon(Icons.copy),
@@ -90,9 +88,9 @@ class HSIExportViewer extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               e.toString(),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey),
               textAlign: TextAlign.center,
             ),
           ],
@@ -101,4 +99,3 @@ class HSIExportViewer extends StatelessWidget {
     }
   }
 }
-

@@ -8,13 +8,14 @@ import 'consent_profile.dart';
 class ConsentTokenStorage {
   static const _tokenKey = 'synheart_consent_token';
   static const _profilesCacheKey = 'synheart_consent_profiles_cache';
-  static const _profilesCacheTimestampKey = 'synheart_consent_profiles_cache_ts';
+  static const _profilesCacheTimestampKey =
+      'synheart_consent_profiles_cache_ts';
   static const _profilesCacheTTL = Duration(hours: 24);
 
   final FlutterSecureStorage _storage;
 
   ConsentTokenStorage({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const FlutterSecureStorage();
 
   /// Save consent token
   Future<void> saveToken(ConsentToken token) async {
@@ -138,4 +139,3 @@ class ConsentTokenStorage {
     await clearProfilesCache();
   }
 }
-

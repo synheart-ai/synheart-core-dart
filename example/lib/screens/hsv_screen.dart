@@ -57,9 +57,8 @@ class HSVScreen extends StatelessWidget {
                             const SizedBox(width: 8),
                             Text(
                               'Affect Axes',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -95,9 +94,8 @@ class HSVScreen extends StatelessWidget {
                             const SizedBox(width: 8),
                             Text(
                               'Engagement Axes',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -129,13 +127,15 @@ class HSVScreen extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.directions_run, color: Colors.orange.shade700),
+                            Icon(
+                              Icons.directions_run,
+                              color: Colors.orange.shade700,
+                            ),
                             const SizedBox(width: 8),
                             Text(
                               'Activity Axes',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -167,13 +167,15 @@ class HSVScreen extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.phone_android, color: Colors.cyan.shade700),
+                            Icon(
+                              Icons.phone_android,
+                              color: Colors.cyan.shade700,
+                            ),
                             const SizedBox(width: 8),
                             Text(
                               'Context Axes',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -229,4 +231,3 @@ class HSVScreen extends StatelessWidget {
     );
   }
 }
-

@@ -49,7 +49,7 @@ class SynheartProvider extends ChangeNotifier {
   Map<String, dynamic>? _queriedFeatures;
   bool _isGameActive = false;
   double? _latestGameHR;
-  
+
   // Stream subscriptions for raw data
   StreamSubscription<WearSample>? _wearSampleSubscription;
   StreamSubscription<BehaviorEvent>? _behaviorEventSubscription;
@@ -643,7 +643,9 @@ class SynheartProvider extends ChangeNotifier {
       throw StateError('No active behavior session');
     }
     try {
-      final results = await Synheart.stopBehaviorSession(_activeBehaviorSessionId!);
+      final results = await Synheart.stopBehaviorSession(
+        _activeBehaviorSessionId!,
+      );
       _lastSessionResults = results;
       _activeBehaviorSessionId = null;
       notifyListeners();

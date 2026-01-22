@@ -97,19 +97,20 @@ class ConsentToken {
       '=',
     );
     final decodedBytes = base64Url.decode(normalizedPayload);
-    final claims = jsonDecode(utf8.decode(decodedBytes)) as Map<String, dynamic>;
+    final claims =
+        jsonDecode(utf8.decode(decodedBytes)) as Map<String, dynamic>;
 
     // Extract profile ID - API may return either "profile_id" or "consent_profile_id"
-    final profileId = json['profile_id'] as String? ??
+    final profileId =
+        json['profile_id'] as String? ??
         json['consent_profile_id'] as String? ??
         claims['profile_id'] as String? ??
         claims['consent_profile_id'] as String? ??
         '';
 
     // Extract scopes - may be in response or in JWT claims
-    final scopes = (json['scopes'] as List<dynamic>?)
-            ?.map((e) => e.toString())
-            .toList() ??
+    final scopes =
+        (json['scopes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
         (claims['scopes'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
@@ -163,4 +164,3 @@ enum ConsentStatus {
   /// Token expired
   expired,
 }
-

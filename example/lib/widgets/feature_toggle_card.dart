@@ -27,9 +27,7 @@ class FeatureToggleCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: enabled ? 2 : 1,
-      color: enabled
-          ? enabledColor.withOpacity(0.1)
-          : Colors.grey.shade50,
+      color: enabled ? enabledColor.withOpacity(0.1) : Colors.grey.shade50,
       child: InkWell(
         onTap: onToggle,
         borderRadius: BorderRadius.circular(12),
@@ -60,16 +58,16 @@ class FeatureToggleCard extends StatelessWidget {
                     Text(
                       title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: enabled ? enabledColor : Colors.grey.shade700,
-                          ),
+                        fontWeight: FontWeight.bold,
+                        color: enabled ? enabledColor : Colors.grey.shade700,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       description,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey.shade600,
-                          ),
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   ],
                 ),
@@ -92,4 +90,3 @@ class FeatureToggleCard extends StatelessWidget {
     );
   }
 }
-

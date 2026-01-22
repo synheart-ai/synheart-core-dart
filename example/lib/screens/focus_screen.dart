@@ -21,7 +21,11 @@ class FocusScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.center_focus_strong_outlined, size: 64, color: Colors.grey),
+                  Icon(
+                    Icons.center_focus_strong_outlined,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
                   SizedBox(height: 16),
                   Text(
                     'Focus module not enabled',
@@ -42,7 +46,11 @@ class FocusScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.center_focus_strong_outlined, size: 64, color: Colors.grey),
+                  Icon(
+                    Icons.center_focus_strong_outlined,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
                   SizedBox(height: 16),
                   Text(
                     'No focus data available',
@@ -74,13 +82,15 @@ class FocusScreen extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.center_focus_strong, color: Colors.blue.shade700),
+                            Icon(
+                              Icons.center_focus_strong,
+                              color: Colors.blue.shade700,
+                            ),
                             const SizedBox(width: 8),
                             Text(
                               'Focus Score',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -130,12 +140,15 @@ class FocusScreen extends StatelessWidget {
                       children: [
                         Text(
                           'Distraction',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 8),
-                        _buildFocusBar('Distraction', focus.distraction, Colors.red),
+                        _buildFocusBar(
+                          'Distraction',
+                          focus.distraction,
+                          Colors.red,
+                        ),
                       ],
                     ),
                   ),
@@ -176,4 +189,3 @@ class FocusScreen extends StatelessWidget {
     );
   }
 }
-

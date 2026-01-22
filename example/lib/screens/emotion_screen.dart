@@ -75,13 +75,15 @@ class EmotionScreen extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.psychology, color: Colors.purple.shade700),
+                            Icon(
+                              Icons.psychology,
+                              color: Colors.purple.shade700,
+                            ),
                             const SizedBox(width: 8),
                             Text(
                               'Primary Emotions',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -90,7 +92,11 @@ class EmotionScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         _buildEmotionBar('Calm', emotion.calm, Colors.blue),
                         const SizedBox(height: 12),
-                        _buildEmotionBar('Engagement', emotion.engagement, Colors.green),
+                        _buildEmotionBar(
+                          'Engagement',
+                          emotion.engagement,
+                          Colors.green,
+                        ),
                       ],
                     ),
                   ),
@@ -112,7 +118,9 @@ class EmotionScreen extends StatelessWidget {
                       child: MetricCard(
                         label: 'Valence',
                         value: emotion.valence,
-                        color: emotion.valence >= 0 ? Colors.purple : Colors.pink,
+                        color: emotion.valence >= 0
+                            ? Colors.purple
+                            : Colors.pink,
                       ),
                     ),
                   ],
@@ -153,4 +161,3 @@ class EmotionScreen extends StatelessWidget {
     );
   }
 }
-

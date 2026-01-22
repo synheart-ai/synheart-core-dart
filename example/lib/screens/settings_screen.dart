@@ -23,9 +23,9 @@ class SettingsScreen extends StatelessWidget {
               // Feature Toggles
               Text(
                 'Features',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
               // Cloud Sync - only show if cloud config is provided
@@ -62,9 +62,9 @@ class SettingsScreen extends StatelessWidget {
               // SDK Status
               Text(
                 'SDK Status',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
               Card(
@@ -88,9 +88,8 @@ class SettingsScreen extends StatelessWidget {
                             provider.isInitialized
                                 ? 'SDK Initialized'
                                 : 'SDK Not Initialized',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
@@ -110,9 +109,9 @@ class SettingsScreen extends StatelessWidget {
               // HSI Export
               Text(
                 'HSI Export',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
               Card(
@@ -203,4 +202,3 @@ class SettingsScreen extends StatelessWidget {
     }
   }
 }
-

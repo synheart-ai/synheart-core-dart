@@ -28,9 +28,9 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     wear.SynheartWearConfig? config,
     bool focusEnabled = false,
     bool emotionEnabled = false,
-  })  : _config = config,
-        _focusEnabled = focusEnabled,
-        _emotionEnabled = emotionEnabled;
+  }) : _config = config,
+       _focusEnabled = focusEnabled,
+       _emotionEnabled = emotionEnabled;
 
   @override
   WearSourceType get sourceType {
@@ -120,8 +120,12 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   /// This should be called explicitly after initialization and consent check
   /// to ensure we only stream when consent is granted
   void startStreaming() {
-    if (_hrSubscription == null && _synheartWear != null && _controller != null) {
-      SynheartLogger.log('[SynheartWearSourceHandler] Starting HR streaming...');
+    if (_hrSubscription == null &&
+        _synheartWear != null &&
+        _controller != null) {
+      SynheartLogger.log(
+        '[SynheartWearSourceHandler] Starting HR streaming...',
+      );
       _startStreaming();
     } else {
       SynheartLogger.log(
@@ -297,7 +301,7 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   @override
   Future<void> stop() async {
     SynheartLogger.log('[SynheartWearSourceHandler] Stopping HR streaming...');
-    
+
     // Cancel subscriptions to stop receiving data
     await _hrSubscription?.cancel();
     _hrSubscription = null;
@@ -309,8 +313,10 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     // The SDK will be re-initialized if needed when restarting
     if (_synheartWear != null) {
       _synheartWear!.dispose();
-    _synheartWear = null;
-      SynheartLogger.log('[SynheartWearSourceHandler] synheart_wear SDK disposed');
+      _synheartWear = null;
+      SynheartLogger.log(
+        '[SynheartWearSourceHandler] synheart_wear SDK disposed',
+      );
     }
 
     // Note: _isInitialized remains true to allow checking if re-init is needed
