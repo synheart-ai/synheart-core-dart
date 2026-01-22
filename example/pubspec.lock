@@ -505,7 +505,7 @@ packages:
     source: hosted
     version: "3.9.1"
   provider:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: provider
       sha256: "4e82183fa20e5ca25703ead7e05de9e4cceed1fbd1eadc1ac3cb6f565a09f272"
@@ -614,7 +614,7 @@ packages:
     source: hosted
     version: "1.4.1"
   synheart_behavior:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: synheart_behavior
       sha256: "7c7414a53a7a99541b724d36aeaefaed389f243032893fca3e4d79235d6cb769"

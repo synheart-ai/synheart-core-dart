@@ -42,6 +42,12 @@ dependencies:
   # Permission handler for runtime permissions
   permission_handler: ^11.3.1
 
+  # State management
+  provider: ^6.1.1
+
+  # Synheart behavior SDK (for behavior metrics)
+  synheart_behavior: ^0.1.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

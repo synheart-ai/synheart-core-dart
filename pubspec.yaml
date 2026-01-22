@@ -50,6 +50,9 @@ dependencies:
   # Preferences storage
   shared_preferences: ^2.2.2
 
+  # UUID generation for consent tokens
+  uuid: ^4.5.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
