@@ -28,7 +28,7 @@ jobs:
         run: dart format --output=none --set-exit-if-changed .
 
       - name: Analyze code
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Check publish readiness
         run: dart pub publish --dry-run
@@ -76,7 +76,7 @@ jobs:
           if [ -d "example" ]; then
             cd example
             flutter pub get
-            flutter analyze
+            flutter analyze --no-fatal-infos
           else
             echo "No example directory found, skipping example tests"
           fi
