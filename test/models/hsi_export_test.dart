@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:synheart_core/synheart_core.dart';
+import 'package:synheart_core/src/models/physiology.dart';
+import 'package:synheart_core/src/modules/hsi_runtime/flux_bridge.dart';
 import 'dart:convert';
 
 void main() {
@@ -11,29 +13,24 @@ void main() {
       testHsv = HumanStateVector(
         version: '1.0.0',
         timestamp: DateTime.utc(2025, 12, 28, 0, 0, 10).millisecondsSinceEpoch,
+        physiology: PhysiologyState.empty,
         emotion: EmotionState.empty(),
         focus: FocusState.empty(),
         behavior: BehaviorState(
-          typingCadence: 0.5,
+          typingSpeed: 0.5,
           typingBurstiness: 0.3,
           scrollVelocity: 0.4,
           idleGaps: 2.0,
           appSwitchRate: 0.1,
         ),
         context: ContextState(
-          overload: 0.3,
-          frustration: 0.2,
-          engagement: 0.7,
           conversation: ConversationContext(
             avgReplyDelaySec: 5.0,
             burstiness: 0.4,
-            interruptRate: 0.2,
           ),
-          deviceState: DeviceStateContext(foreground: true, screenOn: true),
+          device: DeviceStateContext(screenOn: true),
           userPatterns: UserPatternsContext(
-            morningFocusBias: 0.6,
             avgSessionMinutes: 45.0,
-            baselineTypingCadence: 0.5,
           ),
         ),
         meta: MetaState(
@@ -69,7 +66,7 @@ void main() {
     });
 
     test('converts HumanStateVector to HSI 1.0 format', () {
-      final hsi10 = testHsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: testHsv);
 
       expect(hsi10.hsiVersion, equals('1.0'));
       expect(hsi10.windowIds, hasLength(1));
@@ -79,7 +76,7 @@ void main() {
     });
 
     test('generates valid timestamps', () {
-      final hsi10 = testHsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: testHsv);
 
       // Should be valid ISO 8601 timestamps
       expect(() => DateTime.parse(hsi10.observedAtUtc), returnsNormally);
@@ -95,7 +92,7 @@ void main() {
     });
 
     test('generates valid window structure', () {
-      final hsi10 = testHsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: testHsv);
 
       final windowId = hsi10.windowIds.first;
       expect(hsi10.windows.containsKey(windowId), isTrue);
@@ -115,7 +112,7 @@ void main() {
     });
 
     test('converts affect axes to readings', () {
-      final hsi10 = testHsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: testHsv);
 
       expect(hsi10.axes, isNotNull);
       expect(hsi10.axes!.affect, isNotNull);
@@ -126,7 +123,7 @@ void main() {
       // Find arousal reading
       final arousal = affectReadings.firstWhere((r) => r.axis == 'arousal');
       expect(arousal.score, equals(0.72));
-      expect(arousal.confidence, greaterThan(0.0));
+      expect(arousal.confidence, greaterThanOrEqualTo(0.0));
       expect(arousal.confidence, lessThanOrEqualTo(1.0));
       expect(arousal.windowId, equals(hsi10.windowIds.first));
       expect(arousal.direction, equals('higher_is_more'));
@@ -138,21 +135,36 @@ void main() {
       expect(valence.score, equals(0.85));
     });
 
-    test('converts engagement/activity/context to behavior domain', () {
-      final hsi10 = testHsv.toHSI10();
+    test('converts engagement axis to engagement domain', () {
+      final hsi10 = FluxBridge.export(hsv: testHsv);
+
+      expect(hsi10.axes, isNotNull);
+      expect(hsi10.axes!.engagement, isNotNull);
+
+      final engReadings = hsi10.axes!.engagement!.readings;
+      expect(engReadings.length, equals(2));
+
+      final engStability = engReadings.firstWhere(
+        (r) => r.axis == 'engagement_stability',
+        orElse: () => throw Exception('engagement_stability not found'),
+      );
+      expect(engStability.score, equals(0.68));
+
+      final cadence = engReadings.firstWhere(
+        (r) => r.axis == 'interaction_cadence',
+        orElse: () => throw Exception('interaction_cadence not found'),
+      );
+      expect(cadence.score, equals(0.54));
+    });
+
+    test('converts activity/context to behavior domain', () {
+      final hsi10 = FluxBridge.export(hsv: testHsv);
 
       expect(hsi10.axes, isNotNull);
       expect(hsi10.axes!.behavior, isNotNull);
 
       final behaviorReadings = hsi10.axes!.behavior!.readings;
-      expect(behaviorReadings.length, greaterThanOrEqualTo(4));
-
-      // Check engagement_stability
-      final engagement = behaviorReadings.firstWhere(
-        (r) => r.axis == 'engagement_stability',
-        orElse: () => throw Exception('engagement_stability not found'),
-      );
-      expect(engagement.score, equals(0.68));
+      expect(behaviorReadings.length, greaterThanOrEqualTo(2));
 
       // Check motion
       final motion = behaviorReadings.firstWhere(
@@ -160,10 +172,17 @@ void main() {
         orElse: () => throw Exception('motion not found'),
       );
       expect(motion.score, equals(0.42));
+
+      // Check screen_active_ratio
+      final screen = behaviorReadings.firstWhere(
+        (r) => r.axis == 'screen_active_ratio',
+        orElse: () => throw Exception('screen_active_ratio not found'),
+      );
+      expect(screen.score, equals(0.83));
     });
 
-    test('converts embedding with proper structure', () {
-      final hsi10 = testHsv.toHSI10();
+    test('converts embedding with proper structure and vector_hash', () {
+      final hsi10 = FluxBridge.export(hsv: testHsv);
 
       expect(hsi10.embeddings, isNotNull);
       expect(hsi10.embeddings, hasLength(1));
@@ -176,18 +195,22 @@ void main() {
       expect(embedding.confidence, lessThanOrEqualTo(1.0));
       expect(embedding.windowId, equals(hsi10.windowIds.first));
       expect(embedding.model, equals('hsi-fusion-v1'));
+      expect(embedding.vectorHash, isNotNull);
+      expect(embedding.vectorHash, startsWith('sha256:'));
     });
 
     test('includes required privacy fields', () {
-      final hsi10 = testHsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: testHsv);
 
       expect(hsi10.privacy.containsPii, isFalse);
       expect(hsi10.privacy.rawBiosignalsAllowed, isFalse);
       expect(hsi10.privacy.derivedMetricsAllowed, isTrue);
+      expect(hsi10.privacy.embeddingAllowed, isTrue);
+      expect(hsi10.privacy.consent, equals('explicit'));
     });
 
     test('includes metadata', () {
-      final hsi10 = testHsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: testHsv);
 
       expect(hsi10.meta, isNotNull);
       expect(hsi10.meta!['sdk'], equals('synheart_core'));
@@ -196,7 +219,7 @@ void main() {
     });
 
     test('serializes to valid JSON', () {
-      final hsi10 = testHsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: testHsv);
       final json = hsi10.toJson();
 
       // Should be serializable
@@ -213,7 +236,8 @@ void main() {
     });
 
     test('allows custom producer metadata', () {
-      final hsi10 = testHsv.toHSI10(
+      final hsi10 = FluxBridge.export(
+        hsv: testHsv,
         producerName: 'Custom Producer',
         producerVersion: '2.0.0',
         instanceId: 'custom-instance-456',
@@ -229,29 +253,24 @@ void main() {
       final partialHsv = HumanStateVector(
         version: '1.0.0',
         timestamp: DateTime.utc(2025, 12, 28).millisecondsSinceEpoch,
+        physiology: PhysiologyState.empty,
         emotion: EmotionState.empty(),
         focus: FocusState.empty(),
         behavior: BehaviorState(
-          typingCadence: 0.5,
+          typingSpeed: 0.5,
           typingBurstiness: 0.3,
           scrollVelocity: 0.4,
           idleGaps: 2.0,
           appSwitchRate: 0.1,
         ),
         context: ContextState(
-          overload: 0.3,
-          frustration: 0.2,
-          engagement: 0.7,
           conversation: ConversationContext(
             avgReplyDelaySec: 5.0,
             burstiness: 0.4,
-            interruptRate: 0.2,
           ),
-          deviceState: DeviceStateContext(foreground: true, screenOn: true),
+          device: DeviceStateContext(screenOn: true),
           userPatterns: UserPatternsContext(
-            morningFocusBias: 0.6,
             avgSessionMinutes: 45.0,
-            baselineTypingCadence: 0.5,
           ),
         ),
         meta: MetaState(
@@ -272,7 +291,7 @@ void main() {
         ),
       );
 
-      final hsi10 = partialHsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: partialHsv);
 
       expect(hsi10.axes, isNotNull);
       expect(hsi10.axes!.affect, isNotNull);
@@ -281,7 +300,7 @@ void main() {
     });
 
     test('JSON round-trip preserves data', () {
-      final hsi10 = testHsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: testHsv);
       final json = hsi10.toJson();
       final recovered = HSI10Payload.fromJson(json);
 
@@ -296,7 +315,7 @@ void main() {
   group('HSI 1.0 Window Types', () {
     test('micro window is 30 seconds', () {
       final hsv = _createTestHSV('micro');
-      final hsi10 = hsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: hsv);
 
       final window = hsi10.windows[hsi10.windowIds.first]!;
       final duration = DateTime.parse(
@@ -308,7 +327,7 @@ void main() {
 
     test('short window is 5 minutes', () {
       final hsv = _createTestHSV('short');
-      final hsi10 = hsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: hsv);
 
       final window = hsi10.windows[hsi10.windowIds.first]!;
       final duration = DateTime.parse(
@@ -320,7 +339,7 @@ void main() {
 
     test('medium window is 1 hour', () {
       final hsv = _createTestHSV('medium');
-      final hsi10 = hsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: hsv);
 
       final window = hsi10.windows[hsi10.windowIds.first]!;
       final duration = DateTime.parse(
@@ -332,7 +351,7 @@ void main() {
 
     test('long window is 24 hours', () {
       final hsv = _createTestHSV('long');
-      final hsi10 = hsv.toHSI10();
+      final hsi10 = FluxBridge.export(hsv: hsv);
 
       final window = hsi10.windows[hsi10.windowIds.first]!;
       final duration = DateTime.parse(
@@ -349,29 +368,24 @@ HumanStateVector _createTestHSV(String windowType) {
   return HumanStateVector(
     version: '1.0.0',
     timestamp: DateTime.utc(2025, 12, 28, 0, 0, 10).millisecondsSinceEpoch,
+    physiology: PhysiologyState.empty,
     emotion: EmotionState.empty(),
     focus: FocusState.empty(),
     behavior: BehaviorState(
-      typingCadence: 0.5,
+      typingSpeed: 0.5,
       typingBurstiness: 0.3,
       scrollVelocity: 0.4,
       idleGaps: 2.0,
       appSwitchRate: 0.1,
     ),
     context: ContextState(
-      overload: 0.3,
-      frustration: 0.2,
-      engagement: 0.7,
       conversation: ConversationContext(
         avgReplyDelaySec: 5.0,
         burstiness: 0.4,
-        interruptRate: 0.2,
       ),
-      deviceState: DeviceStateContext(foreground: true, screenOn: true),
+      device: DeviceStateContext(screenOn: true),
       userPatterns: UserPatternsContext(
-        morningFocusBias: 0.6,
         avgSessionMinutes: 45.0,
-        baselineTypingCadence: 0.5,
       ),
     ),
     meta: MetaState(

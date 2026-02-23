@@ -7,6 +7,7 @@ import 'package:synheart_behavior/synheart_behavior.dart' as sb;
 import '../providers/synheart_provider.dart';
 import '../widgets/feature_toggle_card.dart';
 import '../widgets/metric_card.dart';
+import '../widgets/session_summary_dialog.dart';
 import '../widgets/status_indicator.dart';
 import 'hsv_screen.dart';
 import 'emotion_screen.dart';
@@ -14,6 +15,15 @@ import 'focus_screen.dart';
 import 'consent_screen.dart';
 import 'settings_screen.dart';
 import 'on_demand_screen.dart';
+
+/// Helper to find a reading score from an HSI domain by axis name
+double _findReading(HSI10Domain? domain, String axis) {
+  if (domain == null) return 0.0;
+  for (final r in domain.readings) {
+    if (r.axis == axis) return r.score;
+  }
+  return 0.0;
+}
 
 /// Home screen with feature overview and toggles
 class HomeScreen extends StatefulWidget {
@@ -409,9 +419,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   FeatureToggleCard(
                     title: 'Motion & Phone Context',
                     description:
-                        provider.consentInfo['motion'] ??
+                        provider.consentInfo['phoneContext'] ??
                         'Collect motion and phone context data',
-                    enabled: provider.consentStatusMap['motion'] ?? false,
+                    enabled: provider.consentStatusMap['phoneContext'] ?? false,
                     icon: Icons.phone_android,
                     enabledColor: Colors.green,
                     onToggle: () => _handleMotionToggle(context, provider),
@@ -455,7 +465,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 24),
 
                 // Quick Metrics Preview
-                if (provider.isInitialized && provider.latestHSV != null) ...[
+                if (provider.isInitialized && provider.latestHSI != null) ...[
                   Text(
                     'Current State',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -468,21 +478,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(
                         child: MetricCard(
                           label: 'Arousal',
-                          value:
-                              provider.latestAxes?.affect.arousalIndex ?? 0.0,
+                          value: _findReading(provider.latestHSI?.axes?.affect, 'arousal'),
                           color: Colors.red,
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: MetricCard(
-                          label: 'Engagement',
-                          value:
-                              provider
-                                  .latestAxes
-                                  ?.engagement
-                                  .engagementStability ??
-                              0.0,
+                          label: 'Focus',
+                          value: _findReading(provider.latestHSI?.axes?.engagement, 'focus_score'),
                           color: Colors.green,
                         ),
                       ),
@@ -642,7 +646,22 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           return FloatingActionButton(
-            onPressed: () => provider.stop(),
+            onPressed: () async {
+              final lastHSI = provider.latestHSI;
+              final lastEmotion = provider.latestEmotion;
+              final lastFocus = provider.latestFocus;
+              await provider.stop();
+              if (context.mounted) {
+                showDialog(
+                  context: context,
+                  builder: (_) => SessionSummaryDialog(
+                    hsi: lastHSI,
+                    emotion: lastEmotion,
+                    focus: lastFocus,
+                  ),
+                );
+              }
+            },
             backgroundColor: Colors.red,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -777,8 +796,8 @@ class _HomeScreenState extends State<HomeScreen> {
               runSpacing: 8,
               children: [
                 StatusIndicator(
-                  label: 'HSV',
-                  isActive: provider.latestHSV != null,
+                  label: 'HSI',
+                  isActive: provider.latestHSI != null,
                   icon: Icons.analytics,
                 ),
                 if (provider.emotionEnabled)
@@ -890,13 +909,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleMotionToggle(BuildContext context, SynheartProvider provider) {
-    final hasConsent = provider.consentStatusMap['motion'] ?? false;
+    final hasConsent = provider.consentStatusMap['phoneContext'] ?? false;
     if (hasConsent) {
       // Revoke consent (disable feature)
       _showRevokeConsentDialog(
         context,
         provider,
-        'motion',
+        'phoneContext',
         'Motion & Phone Context',
         'This will stop collecting motion and phone context data.',
       );
@@ -905,9 +924,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _showGrantConsentDialog(
         context,
         provider,
-        'motion',
+        'phoneContext',
         'Motion & Phone Context',
-        provider.consentInfo['motion'] ??
+        provider.consentInfo['phoneContext'] ??
             'Collect motion and phone context data',
       );
     }
@@ -996,9 +1015,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   behavior: consentType == 'behavior'
                       ? true
                       : currentConsent.behavior,
-                  motion: consentType == 'motion'
+                  phoneContext: consentType == 'phoneContext'
                       ? true
-                      : currentConsent.motion,
+                      : currentConsent.phoneContext,
                   cloudUpload: currentConsent
                       .cloudUpload, // Keep existing cloud upload consent
                   profileId:

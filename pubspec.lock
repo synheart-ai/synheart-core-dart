@@ -776,11 +776,10 @@ packages:
   synheart_behavior:
     dependency: "direct main"
     description:
-      name: synheart_behavior
-      sha256: "7c7414a53a7a99541b724d36aeaefaed389f243032893fca3e4d79235d6cb769"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.3"
+      path: "../synheart-behavior-dart"
+      relative: true
+    source: path
+    version: "0.2.1"
   synheart_emotion:
     dependency: "direct main"
     description:
@@ -797,14 +796,20 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.0"
+  synheart_session:
+    dependency: "direct main"
+    description:
+      path: "../synheart-session-dart"
+      relative: true
+    source: path
+    version: "0.2.0"
   synheart_wear:
     dependency: "direct main"
     description:
-      name: synheart_wear
-      sha256: "5292879af49cdc2ed659a5796f25d95a7447a0c4362281aeddb998f3904286f5"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.2"
+      path: "../synheart-wear-dart"
+      relative: true
+    source: path
+    version: "0.3.1"
   term_glyph:
     dependency: transitive
     description:

@@ -72,6 +72,9 @@ HSI10Axes _$HSI10AxesFromJson(Map<String, dynamic> json) => HSI10Axes(
   affect: json['affect'] == null
       ? null
       : HSI10Domain.fromJson(json['affect'] as Map<String, dynamic>),
+  engagement: json['engagement'] == null
+      ? null
+      : HSI10Domain.fromJson(json['engagement'] as Map<String, dynamic>),
   behavior: json['behavior'] == null
       ? null
       : HSI10Domain.fromJson(json['behavior'] as Map<String, dynamic>),
@@ -79,6 +82,7 @@ HSI10Axes _$HSI10AxesFromJson(Map<String, dynamic> json) => HSI10Axes(
 
 Map<String, dynamic> _$HSI10AxesToJson(HSI10Axes instance) => <String, dynamic>{
   'affect': instance.affect?.toJson(),
+  'engagement': instance.engagement?.toJson(),
   'behavior': instance.behavior?.toJson(),
 };
 
@@ -121,6 +125,7 @@ HSI10Embedding _$HSI10EmbeddingFromJson(Map<String, dynamic> json) =>
       encoding: json['encoding'] as String,
       confidence: (json['confidence'] as num).toDouble(),
       windowId: json['window_id'] as String,
+      vectorHash: json['vector_hash'] as String?,
       model: json['model'] as String?,
       notes: json['notes'] as String?,
     );
@@ -132,6 +137,7 @@ Map<String, dynamic> _$HSI10EmbeddingToJson(HSI10Embedding instance) =>
       'encoding': instance.encoding,
       'confidence': instance.confidence,
       'window_id': instance.windowId,
+      'vector_hash': instance.vectorHash,
       'model': instance.model,
       'notes': instance.notes,
     };
@@ -140,6 +146,8 @@ HSI10Privacy _$HSI10PrivacyFromJson(Map<String, dynamic> json) => HSI10Privacy(
   containsPii: json['contains_pii'] as bool,
   rawBiosignalsAllowed: json['raw_biosignals_allowed'] as bool,
   derivedMetricsAllowed: json['derived_metrics_allowed'] as bool,
+  embeddingAllowed: json['embedding_allowed'] as bool? ?? false,
+  consent: json['consent'] as String? ?? 'explicit',
   notes: json['notes'] as String?,
 );
 
@@ -148,5 +156,7 @@ Map<String, dynamic> _$HSI10PrivacyToJson(HSI10Privacy instance) =>
       'contains_pii': instance.containsPii,
       'raw_biosignals_allowed': instance.rawBiosignalsAllowed,
       'derived_metrics_allowed': instance.derivedMetricsAllowed,
+      'embedding_allowed': instance.embeddingAllowed,
+      'consent': instance.consent,
       'notes': instance.notes,
     };

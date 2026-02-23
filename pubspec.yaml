@@ -1,6 +1,6 @@
 name: synheart_core
 description: Synheart Core SDK - The unified SDK for HSI-compatible data collection, on-device state representation, optional interpretation modules (Focus, Emotion), and Syni integration. Includes HSI Runtime, Wear, Phone, Behavior, Consent, Cloud Connector, and Syni Hooks modules.
-version: 0.0.2
+version: 1.0.0
 homepage: https://github.com/synheart-ai/synheart-core-dart
 repository: https://github.com/synheart-ai/synheart-core-dart
 issue_tracker: https://github.com/synheart-ai/synheart-core-dart/issues
@@ -11,6 +11,7 @@ topics:
   - biosignals
   - hsi
   - behavior
+license: Apache-2.0
 
 environment:
   sdk: ">=3.8.0 <4.0.0"
@@ -21,11 +22,18 @@ dependencies:
     sdk: flutter
 
   # Synheart interpretation SDKs (local)
-  synheart_wear: ^0.2.2
+  synheart_wear:
+    path: ../synheart-wear-dart
+  synheart_session:
+    path: ../synheart-session-dart
   synheart_emotion: ^0.3.0
   synheart_focus: ^0.1.0
-  synheart_behavior: ^0.1.3
+  synheart_behavior:
+    path: ../synheart-behavior-dart
 
+
+  # FFI for Flux native library
+  ffi: ^2.1.0
 
   # Core dependencies
   rxdart: ^0.28.0
@@ -52,6 +60,12 @@ dependencies:
 
   # UUID generation for consent tokens
   uuid: ^4.5.1
+
+dependency_overrides:
+  synheart_wear:
+    path: ../synheart-wear-dart
+  synheart_behavior:
+    path: ../synheart-behavior-dart
 
 dev_dependencies:
   flutter_test:

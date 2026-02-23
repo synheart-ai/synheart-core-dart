@@ -5,24 +5,18 @@ import 'dart:convert';
 
 /// HSI export viewer widget
 class HSIExportViewer extends StatelessWidget {
-  final HumanStateVector? hsv;
+  final HSI10Payload? hsv;
 
   const HSIExportViewer({super.key, this.hsv});
 
   @override
   Widget build(BuildContext context) {
     if (hsv == null) {
-      return const Center(child: Text('No HSV data available'));
+      return const Center(child: Text('No HSI data available'));
     }
 
     try {
-      final hsi10 = hsv!.toHSI10(
-        producerName: 'Synheart Example App',
-        producerVersion: '1.0.0',
-        instanceId: 'example-instance-${DateTime.now().millisecondsSinceEpoch}',
-      );
-
-      final json = hsi10.toJson();
+      final json = hsv!.toJson();
       final jsonString = JsonEncoder.withIndent('  ').convert(json);
 
       return Column(
@@ -82,7 +76,7 @@ class HSIExportViewer extends StatelessWidget {
             const Icon(Icons.error_outline, color: Colors.red, size: 48),
             const SizedBox(height: 16),
             Text(
-              'Failed to export HSI',
+              'Failed to display HSI',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),

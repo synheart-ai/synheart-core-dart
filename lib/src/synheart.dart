@@ -1,17 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:rxdart/rxdart.dart';
-import 'models/hsv.dart';
 import 'models/emotion.dart';
 import 'models/focus.dart';
 import 'config/synheart_config.dart';
 import 'core/logger.dart';
-import 'services/auth_service.dart';
 import 'modules/base/module_manager.dart';
 import 'modules/base/synheart_module.dart';
 import 'modules/capabilities/capability_module.dart';
 import 'modules/consent/consent_module.dart';
 import 'modules/consent/consent_storage.dart';
+import 'modules/interfaces/capability_provider.dart';
 import 'modules/interfaces/consent_provider.dart';
 import 'modules/wear/wear_module.dart';
 import 'modules/wear/wear_source_handler.dart';
@@ -21,11 +20,14 @@ import 'modules/behavior/behavior_events.dart';
 import 'modules/interfaces/feature_providers.dart';
 import 'models/behavior_session_results.dart';
 import 'package:synheart_behavior/synheart_behavior.dart' as sb;
-import 'modules/hsi_runtime/hsi_runtime_module.dart';
-import 'modules/hsi_runtime/channel_collector.dart';
+import 'modules/runtime/runtime_bridge.dart';
+import 'modules/runtime/runtime_module.dart';
+import 'modules/srm/srm_module.dart';
 import 'modules/cloud/cloud_connector_module.dart';
 import 'heads/emotion_head.dart';
 import 'heads/focus_head.dart';
+import 'config/synheart_feature.dart';
+import 'config/activation_manager.dart';
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
 import 'modules/consent/consent_ui.dart';
@@ -60,10 +62,9 @@ import 'modules/consent/consent_ui.dart';
 ///   ),
 /// );
 ///
-/// // Subscribe to HSV updates (core state representation)
-/// Synheart.onHSVUpdate.listen((hsv) {
-///   print('Arousal Index: ${hsv.meta.axes.affect.arousalIndex}');
-///   print('Engagement Stability: ${hsv.meta.axes.engagement.engagementStability}');
+/// // Subscribe to HSI updates (core state representation)
+/// Synheart.onHSIUpdate.listen((hsi) {
+///   print('HSI Version: ${hsi.hsiVersion}');
 /// });
 ///
 /// // Optional: Enable interpretation modules
@@ -95,7 +96,8 @@ class Synheart {
   WearModule? _wearModule;
   PhoneModule? _phoneModule;
   BehaviorModule? _behaviorModule;
-  HSIRuntimeModule? _hsiRuntimeModule;
+  RuntimeModule? _runtimeModule;
+  SRMModule? _srmModule;
   CloudConnectorModule? _cloudConnector;
   // TODO: SyniHooksModule? _syniHooks;
 
@@ -106,28 +108,33 @@ class Synheart {
   StreamSubscription? _focusSubscription;
   StreamSubscription? _hsvSubscription;
 
+  // Activation manager (RFC-0005 four-authority model)
+  ActivationManager? _activationManager;
+
   // Behavior session tracking
   final Map<String, sb.BehaviorSession> _activeBehaviorSessions = {};
-
-  // Services
-  final AuthService _authService = MockAuthService();
 
   // State
   bool _isConfigured = false;
   bool _isRunning = false;
+  Completer<void>? _initCompleter; // guards concurrent init
   String? _userId;
   SynheartConfig? _config;
+  ConsentSnapshot? _previousConsent;
+
+  // Pending consent (set before init completes, applied after)
+  _PendingConsent? _pendingConsent;
 
   // Streams
-  final BehaviorSubject<HumanStateVector> _hsvStream =
-      BehaviorSubject<HumanStateVector>();
+  final BehaviorSubject<String> _hsvStream =
+      BehaviorSubject<String>();
   final BehaviorSubject<EmotionState> _emotionStream =
       BehaviorSubject<EmotionState>();
   final BehaviorSubject<FocusState> _focusStream =
       BehaviorSubject<FocusState>();
 
-  /// Static stream of HSV updates (core state representation)
-  static Stream<HumanStateVector> get onHSVUpdate => shared._hsvStream.stream;
+  /// Static stream of HSI updates (core state representation, raw HSI JSON)
+  static Stream<String> get onHSIUpdate => shared._hsvStream.stream;
 
   /// Static stream of emotion updates (optional interpretation)
   static Stream<EmotionState> get onEmotionUpdate =>
@@ -136,15 +143,15 @@ class Synheart {
   /// Static stream of focus updates (optional interpretation)
   static Stream<FocusState> get onFocusUpdate => shared._focusStream.stream;
 
-  /// Stream of HSV updates (core state representation)
+  /// Stream of HSI updates (core state representation, raw HSI JSON)
   ///
-  /// HSV (Human State Vector) contains:
+  /// HSI (Human State Interface) contains:
   /// - State axes (affect, engagement, activity, context)
   /// - State indices (arousalIndex, engagementStability, etc.)
   /// - 64D state embedding
   ///
-  /// HSV does NOT contain interpretation (emotion, focus) unless enabled.
-  Stream<HumanStateVector> get hsvUpdates => _hsvStream.stream;
+  /// Consumers receive raw HSI JSON strings from the synheart-runtime C ABI.
+  Stream<String> get hsiUpdates => _hsvStream.stream;
 
   /// Stream of emotion updates (optional interpretation)
   ///
@@ -155,6 +162,31 @@ class Synheart {
   ///
   /// Only emits if focus module is enabled via enableFocus().
   Stream<FocusState> get focusUpdates => _focusStream.stream;
+
+  // Activation API (RFC-0005)
+
+  /// Activate a feature. If all four authorities are satisfied
+  /// (activation, consent, capability, session), the feature's module starts.
+  static void activate(SynheartFeature feature) {
+    shared._activationManager?.activate(feature);
+    shared._reevaluateFeature(feature);
+  }
+
+  /// Deactivate a feature. Stops the feature's module if running.
+  static void deactivate(SynheartFeature feature) {
+    shared._activationManager?.deactivate(feature);
+    shared._reevaluateFeature(feature);
+  }
+
+  /// Check whether a feature is currently activated by the developer.
+  static bool isActivated(SynheartFeature feature) {
+    return shared._activationManager?.isActivated(feature) ?? false;
+  }
+
+  /// Return the set of all currently activated features.
+  static Set<SynheartFeature> activatedFeatures() {
+    return shared._activationManager?.activatedFeatures() ?? {};
+  }
 
   /// Initialize Synheart Core SDK
   ///
@@ -172,19 +204,21 @@ class Synheart {
   /// );
   /// ```
   ///
-  /// To initialize without automatically starting data collection:
+  /// To initialize and then start a session:
   /// ```dart
   /// await Synheart.initialize(
   ///   userId: 'anon_user_123',
-  ///   autoStart: false, // Don't start collection automatically
   /// );
-  /// await Synheart.startDataCollection(); // Start when needed
+  /// await Synheart.startSession(); // Start when ready
   /// ```
+  /// Whether the SDK has been initialized via [initialize].
+  static bool get isInitialized => shared._isConfigured;
+
   static Future<void> initialize({
     required String userId,
     SynheartConfig? config,
     String? appKey,
-    bool autoStart = true, // Default to true for backward compatibility
+    bool autoStart = false, // Changed: RFC §3.3 — no collection before startSession()
   }) async {
     return shared._configure(
       appKey: appKey ?? 'mock_app_key',
@@ -198,37 +232,48 @@ class Synheart {
     required String appKey,
     required String userId,
     SynheartConfig? config,
-    bool autoStart = true,
+    bool autoStart = false,
   }) async {
-    if (_isConfigured) {
-      throw StateError('Synheart already configured');
+    // Already done — no-op.
+    if (_isConfigured) return;
+
+    // Another call is in progress — wait for it instead of racing.
+    if (_initCompleter != null) {
+      return _initCompleter!.future;
     }
+
+    _initCompleter = Completer<void>();
 
     _userId = userId;
     _config = config ?? SynheartConfig.defaults();
 
     try {
-      // 1. Authenticate & get capabilities
-      SynheartLogger.log('[Synheart] Authenticating...');
-      final token = await _authService.authenticate(
-        appKey: appKey,
-        userId: userId,
-      );
-
-      // 2. Initialize capability module
       SynheartLogger.log('[Synheart] Initializing capability module...');
       _capabilityModule = CapabilityModule();
-      await _capabilityModule!.loadFromToken(token, 'mock_secret');
+      final resolvedConfig = config ?? SynheartConfig.defaults();
+      if (resolvedConfig.capabilityToken != null &&
+          resolvedConfig.capabilitySecret != null) {
+        await _capabilityModule!.loadFromToken(
+          resolvedConfig.capabilityToken!,
+          resolvedConfig.capabilitySecret!,
+        );
+      } else if (resolvedConfig.allowUnsignedCapabilities) {
+        SynheartLogger.log(
+          '[Synheart] WARNING: Running with unsigned default capabilities. Do not use in production.',
+        );
+        await _capabilityModule!.loadDefaults();
+      } else {
+        throw StateError(
+          'Capability token and secret are required. Set allowUnsignedCapabilities: true for debug/testing.',
+        );
+      }
 
-      // 3. Initialize consent module
       SynheartLogger.log('[Synheart] Initializing consent module...');
       _consentModule = ConsentModule(consentConfig: _config?.consentConfig);
 
-      // 4. Register modules with manager
       _moduleManager.registerModule(_capabilityModule!);
       _moduleManager.registerModule(_consentModule!);
 
-      // 5. Initialize data collection modules
       SynheartLogger.log('[Synheart] Initializing data modules...');
       _wearModule = WearModule(
         capabilities: _capabilityModule!,
@@ -258,26 +303,35 @@ class Synheart {
         dependsOn: ['capabilities', 'consent'],
       );
 
-      // 6. Initialize HSI Runtime (produces HSV - NO emotion/focus here, they're optional)
-      SynheartLogger.log('[Synheart] Initializing HSI Runtime...');
-      final collector = ChannelCollector(
-        wear: _wearModule!,
-        phone: _phoneModule!,
-        behavior: _behaviorModule!,
-      );
-      _hsiRuntimeModule = HSIRuntimeModule(collector: collector);
+      SynheartLogger.log('[Synheart] Initializing SRM...');
+      _srmModule = SRMModule();
       _moduleManager.registerModule(
-        _hsiRuntimeModule!,
-        dependsOn: ['wear', 'phone', 'behavior'],
+        _srmModule!,
+        dependsOn: ['capabilities', 'consent'],
       );
 
-      // 7. Initialize Cloud Connector (optional, depends on consent and config)
+      SynheartLogger.log('[Synheart] Initializing Runtime...');
+      _runtimeModule = RuntimeModule(
+        runtime: RuntimeBridge.createIfAvailable(
+          RuntimeConfig(
+            subjectId: _userId!,
+            sessionId: 'sess_${DateTime.now().millisecondsSinceEpoch}',
+          ),
+        ),
+        wearSampleStream: _wearModule!.rawSampleStream,
+        behaviorEventStream: _behaviorModule!.eventStream.events,
+      );
+      _moduleManager.registerModule(
+        _runtimeModule!,
+        dependsOn: ['wear', 'behavior'],
+      );
+
       if (_config?.cloudConfig != null) {
         SynheartLogger.log('[Synheart] Initializing Cloud Connector...');
         _cloudConnector = CloudConnectorModule(
           capabilities: _capabilityModule!,
           consent: _consentModule!,
-          hsiRuntime: _hsiRuntimeModule!,
+          hsiRuntime: _runtimeModule!,
           config: _config!.cloudConfig!,
         );
         _moduleManager.registerModule(
@@ -286,38 +340,57 @@ class Synheart {
         );
       }
 
-      // 8. Initialize all modules
       SynheartLogger.log('[Synheart] Initializing all modules...');
       await _moduleManager.initializeAll();
 
-      // 8. Set up consent change listeners
+      _previousConsent = _consentModule!.current();
       _consentModule!.addListener(_onConsentChanged);
 
-      // 9. Subscribe to HSV stream (core state only)
-      _hsvSubscription = _hsiRuntimeModule!.hsiStream.listen(
-        _hsvStream.add,
+      _hsvSubscription = _runtimeModule!.hsiStream.listen(
+        (hsiJson) {
+          // hsiJson is already HSI 1.1 — emit as raw string for now
+          // TODO: parse into HSI10Payload if needed by downstream
+          _hsvStream.add(hsiJson);
+        },
         onError: (e, st) => SynheartLogger.log(
-          '[Synheart] HSV stream error: $e',
+          '[Synheart] HSI stream error: $e',
           error: e,
           stackTrace: st,
         ),
       );
 
-      // 10. Start modules (if autoStart is enabled)
+      _activationManager = ActivationManager();
+      _activationManager!.activateFromConfig(resolvedConfig);
+
       if (autoStart) {
         SynheartLogger.log('[Synheart] Starting all modules...');
         await _moduleManager.startAll();
         _isRunning = true;
       } else {
         SynheartLogger.log(
-          '[Synheart] Modules initialized but not started (autoStart=false). Call startDataCollection() when ready.',
+          '[Synheart] Modules initialized but not started (autoStart=false). Call startSession() when ready.',
         );
         _isRunning = false;
       }
 
       _isConfigured = true;
+      _initCompleter?.complete();
       SynheartLogger.log('[Synheart] Initialization complete');
+
+      // Apply any consent queued before init finished.
+      if (_pendingConsent != null) {
+        final pc = _pendingConsent!;
+        _pendingConsent = null;
+        SynheartLogger.log('[Synheart] Applying pending consent...');
+        await _grantConsent(
+          biosignals: pc.biosignals,
+          behavior: pc.behavior,
+          phoneContext: pc.phoneContext,
+          cloudUpload: pc.cloudUpload,
+        );
+      }
     } catch (e, stack) {
+      _initCompleter?.completeError(e, stack);
       SynheartLogger.log(
         '[Synheart] Initialization failed: $e',
         error: e,
@@ -327,32 +400,31 @@ class Synheart {
     }
   }
 
-  /// Start all data collection modules
+  /// Start a session — activates permitted modules and begins signal collection.
   ///
-  /// Starts wear, phone, and behavior data collection if not already running.
-  /// This is useful when you initialized with `autoStart: false`.
+  /// Per RFC §5.2: Core must activate permitted modules, route normalized
+  /// signals to Flux, enable HSV updates, and enable optional HSI export.
   ///
-  /// Example:
-  /// ```dart
-  /// await Synheart.initialize(userId: 'user', autoStart: false);
-  /// // ... later when you need data collection
-  /// await Synheart.startDataCollection();
-  /// ```
+  /// Must be called after initialize(). No data collection occurs until
+  /// this method is called (RFC §3.3).
+  static Future<void> startSession() async {
+    return shared._startDataCollection();
+  }
+
+  /// @Deprecated: Use [startSession] instead.
   static Future<void> startDataCollection() async {
     return shared._startDataCollection();
   }
 
-  /// Stop all data collection modules
+  /// Stop the current session — halts module streaming and clears ephemeral buffers.
   ///
-  /// Stops wear, phone, and behavior data collection but keeps modules initialized.
-  /// Useful for saving battery when data collection is not needed.
-  ///
-  /// Example:
-  /// ```dart
-  /// await Synheart.stopDataCollection(); // Stop collecting
-  /// // ... later
-  /// await Synheart.startDataCollection(); // Resume collecting
-  /// ```
+  /// Per RFC §5.2: Core must halt module streaming, stop Flux updates,
+  /// clear ephemeral buffers, and prevent further HSI export.
+  static Future<void> stopSession() async {
+    return shared._stopDataCollection();
+  }
+
+  /// @Deprecated: Use [stopSession] instead.
   static Future<void> stopDataCollection() async {
     return shared._stopDataCollection();
   }
@@ -563,185 +635,28 @@ class Synheart {
     return shared._getPhoneFeatures(window);
   }
 
-  /// Enable focus interpretation module
+  /// Enable focus interpretation module.
   ///
-  /// This is an optional interpretation module that consumes HSV
-  /// and produces focus estimates.
-  ///
-  /// Example:
-  /// ```dart
-  /// await Synheart.enableFocus();
-  /// Synheart.onFocusUpdate.listen((focus) {
-  ///   print('Focus Score: ${focus.estimate.score}');
-  /// });
-  /// ```
+  /// @Deprecated Use `activate(SynheartFeature.focus)` instead.
+  @Deprecated('Use activate(SynheartFeature.focus) instead')
   static Future<void> enableFocus() async {
-    return shared._enableFocus();
+    activate(SynheartFeature.focus);
   }
 
-  Future<void> _enableFocus() async {
-    if (!_isConfigured) {
-      throw StateError('Synheart must be initialized before enabling focus');
-    }
-
-    if (_focusHead != null) {
-      SynheartLogger.log('[Synheart] Focus module already enabled');
-      return;
-    }
-
-    try {
-      SynheartLogger.log('[Synheart] Enabling focus module...');
-
-      _focusHead = FocusHead();
-
-      // Focus head subscribes to HSV stream
-      await _focusHead!.start(_hsvStream.stream);
-
-      // Subscribe to focus output
-      _focusSubscription = _focusHead!.focusStream.listen(
-        (hsvWithFocus) {
-          // Instead of just emitting focus, merge the full HSV back into the main stream
-          _hsvStream.add(hsvWithFocus);
-          // Also emit focus state for backward compatibility
-          _focusStream.add(hsvWithFocus.focus);
-        },
-        onError: (e, st) => SynheartLogger.log(
-          '[Synheart] Focus stream error: $e',
-          error: e,
-          stackTrace: st,
-        ),
-      );
-
-      // Update wear module to use higher frequency collection (1s)
-      await _wearModule?.updateModuleStatus(focusEnabled: true);
-
-      SynheartLogger.log('[Synheart] Focus module enabled');
-    } catch (e, stack) {
-      SynheartLogger.log(
-        '[Synheart] Failed to enable focus: $e',
-        error: e,
-        stackTrace: stack,
-      );
-      rethrow;
-    }
-  }
-
-  /// Enable emotion interpretation module
+  /// Enable emotion interpretation module.
   ///
-  /// This is an optional interpretation module that consumes HSV
-  /// and produces emotion estimates.
-  ///
-  /// Example:
-  /// ```dart
-  /// await Synheart.enableEmotion();
-  /// Synheart.onEmotionUpdate.listen((emotion) {
-  ///   print('Stress Index: ${emotion.stressIndex}');
-  /// });
-  /// ```
+  /// @Deprecated Use `activate(SynheartFeature.emotion)` instead.
+  @Deprecated('Use activate(SynheartFeature.emotion) instead')
   static Future<void> enableEmotion() async {
-    return shared._enableEmotion();
+    activate(SynheartFeature.emotion);
   }
 
-  Future<void> _enableEmotion() async {
-    if (!_isConfigured) {
-      throw StateError('Synheart must be initialized before enabling emotion');
-    }
-
-    if (_emotionHead != null) {
-      SynheartLogger.log('[Synheart] Emotion module already enabled');
-      return;
-    }
-
-    try {
-      SynheartLogger.log('[Synheart] Enabling emotion module...');
-
-      _emotionHead = EmotionHead();
-
-      // Emotion head subscribes to HSV stream
-      _emotionHead!.start(_hsvStream.stream);
-
-      // Subscribe to emotion output
-      _emotionSubscription = _emotionHead!.emotionStream.listen(
-        (hsv) {
-          // Extract emotion state from HSV and emit to emotion stream
-          _emotionStream.add(hsv.emotion);
-
-          // Also merge emotion-populated HSV back into main HSV stream
-          // This ensures UI subscribers see the updated emotion data
-          _hsvStream.add(hsv);
-        },
-        onError: (e, st) => SynheartLogger.log(
-          '[Synheart] Emotion stream error: $e',
-          error: e,
-          stackTrace: st,
-        ),
-      );
-
-      // Update wear module to use higher frequency collection (1s)
-      await _wearModule?.updateModuleStatus(emotionEnabled: true);
-
-      SynheartLogger.log('[Synheart] Emotion module enabled');
-    } catch (e, stack) {
-      SynheartLogger.log(
-        '[Synheart] Failed to enable emotion: $e',
-        error: e,
-        stackTrace: stack,
-      );
-      rethrow;
-    }
-  }
-
-  /// Enable cloud uploads (requires cloudUpload consent)
+  /// Enable cloud uploads (requires cloudUpload consent).
   ///
-  /// Example:
-  /// ```dart
-  /// await Synheart.enableCloud();
-  /// ```
+  /// @Deprecated Use `activate(SynheartFeature.cloud)` instead.
+  @Deprecated('Use activate(SynheartFeature.cloud) instead')
   static Future<void> enableCloud() async {
-    return shared._enableCloud();
-  }
-
-  Future<void> _enableCloud() async {
-    if (!_isConfigured) {
-      throw StateError('Synheart must be initialized before enabling cloud');
-    }
-
-    if (!_consentModule!.current().cloudUpload) {
-      throw StateError('cloudUpload consent required');
-    }
-
-    // If cloud connector doesn't exist, create it lazily
-    if (_cloudConnector == null) {
-      // Check if cloudConfig was provided during initialization
-      CloudConfig? cloudConfig = _config?.cloudConfig;
-
-      // If no cloudConfig was provided, we cannot enable cloud sync
-      // CloudConfig requires tenantId, hmacSecret, etc. which must come from app config
-      if (cloudConfig == null) {
-        throw StateError(
-          'Cloud Connector not configured. Provide cloudConfig during initialization with tenantId, hmacSecret, subjectId, and instanceId.',
-        );
-      }
-
-      SynheartLogger.log('[Synheart] Lazy initializing Cloud Connector...');
-      _cloudConnector = CloudConnectorModule(
-        capabilities: _capabilityModule!,
-        consent: _consentModule!,
-        hsiRuntime: _hsiRuntimeModule!,
-        config: cloudConfig,
-      );
-      _moduleManager.registerModule(
-        _cloudConnector!,
-        dependsOn: ['capabilities', 'consent', 'hsi_runtime'],
-      );
-
-      await _cloudConnector!.initialize();
-    }
-
-    // Ensure cloud connector is running
-    if (_cloudConnector!.status != ModuleStatus.running) {
-      await _cloudConnector!.start();
-    }
+    activate(SynheartFeature.cloud);
   }
 
   /// Force upload of queued snapshots now
@@ -786,23 +701,12 @@ class Synheart {
     await _cloudConnector!.flushQueue();
   }
 
-  /// Disable cloud uploads
+  /// Disable cloud uploads.
   ///
-  /// Example:
-  /// ```dart
-  /// await Synheart.disableCloud();
-  /// ```
+  /// @Deprecated Use `deactivate(SynheartFeature.cloud)` instead.
+  @Deprecated('Use deactivate(SynheartFeature.cloud) instead')
   static Future<void> disableCloud() async {
-    return shared._disableCloud();
-  }
-
-  Future<void> _disableCloud() async {
-    if (!_isConfigured) {
-      throw StateError('Synheart must be initialized before disabling cloud');
-    }
-    if (_cloudConnector != null) {
-      await _cloudConnector!.stop();
-    }
+    deactivate(SynheartFeature.cloud);
   }
 
   /// Check if user has granted a specific consent
@@ -827,8 +731,7 @@ class Synheart {
       case 'behavior':
         return consent.behavior;
       case 'phoneContext':
-      case 'motion':
-        return consent.motion;
+        return consent.phoneContext;
       case 'cloudUpload':
         return consent.cloudUpload;
       default:
@@ -855,20 +758,22 @@ class Synheart {
     final updated = ConsentSnapshot(
       biosignals: consentType == 'biosignals' ? false : current.biosignals,
       behavior: consentType == 'behavior' ? false : current.behavior,
-      motion: consentType == 'motion' || consentType == 'phoneContext'
+      phoneContext: consentType == 'phoneContext'
           ? false
-          : current.motion,
+          : current.phoneContext,
       cloudUpload: consentType == 'cloudUpload' ? false : current.cloudUpload,
       syni: consentType == 'syni' ? false : current.syni,
+      focusEstimation: false,
+      emotionEstimation: false,
       timestamp: DateTime.now(),
     );
 
     await _consentModule!.updateConsent(updated);
   }
 
-  /// Get current HSV state (latest)
-  HumanStateVector? get currentState {
-    return _hsiRuntimeModule?.currentState;
+  /// Get latest HSI JSON (latest runtime output), or null if none produced yet.
+  String? get currentState {
+    return _hsvStream.hasValue ? _hsvStream.value : null;
   }
 
   /// Get the currently configured user id (if initialized)
@@ -906,6 +811,7 @@ class Synheart {
     SynheartLogger.log('[Synheart] Starting all data collection modules...');
     await _moduleManager.startAll();
     _isRunning = true;
+    _reevaluateAllFeatures();
     SynheartLogger.log('[Synheart] Data collection started');
   }
 
@@ -923,8 +829,9 @@ class Synheart {
     }
 
     SynheartLogger.log('[Synheart] Stopping all data collection modules...');
-    await _moduleManager.stopAll();
     _isRunning = false;
+    _reevaluateAllFeatures();
+    await _moduleManager.stopAll();
     SynheartLogger.log('[Synheart] Data collection stopped');
   }
 
@@ -1295,20 +1202,17 @@ class Synheart {
     }
 
     try {
-      // 1. Fetch available profiles
       final profiles = await _consentModule!.getAvailableProfiles();
       if (profiles.isEmpty) {
         SynheartLogger.log('[Synheart] No consent profiles available');
         return null;
       }
 
-      // 2. Present UI (via hook)
       final selected = await _consentUI.presentConsentFlow(profiles);
       if (selected == null) {
         return null; // User declined
       }
 
-      // 3. Issue token
       final token = await _consentModule!.requestConsent(selected);
       return token;
     } catch (e, stack) {
@@ -1432,7 +1336,7 @@ class Synheart {
     }
 
     if (_config?.phoneConfig != null) {
-      info['motion'] =
+      info['phoneContext'] =
           'Collect motion and phone context data (screen state, app usage) to understand your activity patterns and device interactions.';
     }
 
@@ -1459,21 +1363,21 @@ class Synheart {
   /// await Synheart.grantConsent(
   ///   biosignals: true,
   ///   behavior: true,
-  ///   motion: true,
+  ///   phoneContext: true,
   ///   cloudUpload: true,
   /// );
   /// ```
   static Future<void> grantConsent({
     required bool biosignals,
     required bool behavior,
-    required bool motion,
+    required bool phoneContext,
     required bool cloudUpload,
     String? profileId,
   }) async {
     return shared._grantConsent(
       biosignals: biosignals,
       behavior: behavior,
-      motion: motion,
+      phoneContext: phoneContext,
       cloudUpload: cloudUpload,
       profileId: profileId,
     );
@@ -1482,12 +1386,27 @@ class Synheart {
   Future<void> _grantConsent({
     required bool biosignals,
     required bool behavior,
-    required bool motion,
+    required bool phoneContext,
     required bool cloudUpload,
     String? profileId,
   }) async {
     if (!_isConfigured) {
-      throw StateError('Synheart must be initialized before granting consent');
+      // If init is in progress, wait for it then proceed.
+      if (_initCompleter != null) {
+        await _initCompleter!.future;
+      } else {
+        // Not even started — queue for later.
+        _pendingConsent = _PendingConsent(
+          biosignals: biosignals,
+          behavior: behavior,
+          phoneContext: phoneContext,
+          cloudUpload: cloudUpload,
+        );
+        SynheartLogger.log(
+          '[Synheart] SDK not yet initialized — consent queued and will be applied after init.',
+        );
+        return;
+      }
     }
 
     if (_consentModule == null) {
@@ -1522,9 +1441,11 @@ class Synheart {
     final snapshot = ConsentSnapshot(
       biosignals: biosignals,
       behavior: behavior,
-      motion: motion,
+      phoneContext: phoneContext,
       cloudUpload: cloudUpload,
       syni: false,
+      focusEstimation: false,
+      emotionEstimation: false,
       timestamp: DateTime.now(),
       explicitlyDenied: false,
     );
@@ -1546,15 +1467,15 @@ class Synheart {
       // The BehaviorModule will handle this via consent checks
     }
 
-    if (!motion && _phoneModule != null) {
+    if (!phoneContext && _phoneModule != null) {
       SynheartLogger.log(
-        '[Synheart] Motion consent denied - stopping phone data collection',
+        '[Synheart] Phone context consent denied - stopping phone data collection',
       );
       // The PhoneModule will handle this via consent checks
     }
 
     SynheartLogger.log(
-      '[Synheart] Consent granted: biosignals=$biosignals, behavior=$behavior, motion=$motion, cloudUpload=$cloudUpload',
+      '[Synheart] Consent granted: biosignals=$biosignals, behavior=$behavior, phoneContext=$phoneContext, cloudUpload=$cloudUpload',
     );
   }
 
@@ -1563,7 +1484,6 @@ class Synheart {
       return {
         'biosignals': false,
         'behavior': false,
-        'motion': false,
         'phoneContext': false,
         'cloudUpload': false,
         'syni': false,
@@ -1574,8 +1494,7 @@ class Synheart {
     return {
       'biosignals': consent.biosignals,
       'behavior': consent.behavior,
-      'motion': consent.motion,
-      'phoneContext': consent.motion, // Alias
+      'phoneContext': consent.phoneContext,
       'cloudUpload': consent.cloudUpload,
       'syni': consent.syni,
     };
@@ -1654,7 +1573,6 @@ class Synheart {
         break;
       case 'phonecontext':
       case 'phone':
-      case 'motion':
         await _phoneModule?.clearCache();
         break;
       case 'behavior':
@@ -1737,14 +1655,149 @@ class Synheart {
     return statuses.map((key, value) => MapEntry(key, value.name));
   }
 
-  /// Handle consent changes
-  void _onConsentChanged(ConsentSnapshot consent) {
+  /// Handle consent changes — reevaluate all features via the four-authority model.
+  void _onConsentChanged(ConsentSnapshot newConsent) {
     SynheartLogger.log('[Synheart] Consent changed:');
-    SynheartLogger.log('  - Biosignals: ${consent.biosignals}');
-    SynheartLogger.log('  - Behavior: ${consent.behavior}');
-    SynheartLogger.log('  - Motion: ${consent.motion}');
-    SynheartLogger.log('  - Cloud Upload: ${consent.cloudUpload}');
-    SynheartLogger.log('  - Syni: ${consent.syni}');
+    SynheartLogger.log('  - Biosignals: ${newConsent.biosignals}');
+    SynheartLogger.log('  - Behavior: ${newConsent.behavior}');
+    SynheartLogger.log('  - PhoneContext: ${newConsent.phoneContext}');
+    SynheartLogger.log('  - Cloud Upload: ${newConsent.cloudUpload}');
+    SynheartLogger.log('  - Syni: ${newConsent.syni}');
+
+    _previousConsent = newConsent;
+    _reevaluateAllFeatures();
+  }
+
+  // Feature Reevaluation (RFC-0005 Four-Authority Model)
+
+  /// Reevaluate whether a single feature should be operational.
+  ///
+  /// ```
+  /// isOperational = activated AND hasConsent AND capabilityAllowed AND isRunning
+  /// ```
+  void _reevaluateFeature(SynheartFeature feature) {
+    final activated = _activationManager?.isActivated(feature) ?? false;
+    final hasConsent = _hasConsentForFeature(feature);
+    final capabilityAllowed = _isCapabilityAllowed(feature);
+    final isOperational = activated && hasConsent && capabilityAllowed && _isRunning;
+
+    switch (feature) {
+      case SynheartFeature.wear:
+        if (isOperational && _wearModule?.status != ModuleStatus.running) {
+          _wearModule?.start().catchError((e) =>
+              SynheartLogger.log('[Synheart] Error starting wear: $e', error: e));
+        } else if (!isOperational && _wearModule?.status == ModuleStatus.running) {
+          _wearModule?.stop().catchError((e) =>
+              SynheartLogger.log('[Synheart] Error stopping wear: $e', error: e));
+        }
+      case SynheartFeature.behavior:
+        if (isOperational && _behaviorModule?.status != ModuleStatus.running) {
+          _behaviorModule?.start().catchError((e) =>
+              SynheartLogger.log('[Synheart] Error starting behavior: $e', error: e));
+        } else if (!isOperational && _behaviorModule?.status == ModuleStatus.running) {
+          _behaviorModule?.stop().catchError((e) =>
+              SynheartLogger.log('[Synheart] Error stopping behavior: $e', error: e));
+        }
+      case SynheartFeature.phoneContext:
+        if (isOperational && _phoneModule?.status != ModuleStatus.running) {
+          _phoneModule?.start().catchError((e) =>
+              SynheartLogger.log('[Synheart] Error starting phone: $e', error: e));
+        } else if (!isOperational && _phoneModule?.status == ModuleStatus.running) {
+          _phoneModule?.stop().catchError((e) =>
+              SynheartLogger.log('[Synheart] Error stopping phone: $e', error: e));
+        }
+      case SynheartFeature.focus:
+        if (isOperational && _focusHead == null) {
+          // TODO: FocusHead needs migration to accept Stream<String> (HSI JSON)
+          //       instead of Stream<HumanStateVector>. Skipping until updated.
+          SynheartLogger.log(
+            '[Synheart] Focus head not yet migrated to runtime bridge — skipping',
+          );
+          _wearModule?.updateModuleStatus(focusEnabled: true);
+        } else if (!isOperational && _focusHead != null) {
+          _focusSubscription?.cancel();
+          _focusSubscription = null;
+          _focusHead?.stop();
+          _focusHead = null;
+          _wearModule?.updateModuleStatus(focusEnabled: false);
+        }
+      case SynheartFeature.emotion:
+        if (isOperational && _emotionHead == null) {
+          // TODO: EmotionHead needs migration to accept Stream<String> (HSI JSON)
+          //       instead of Stream<HumanStateVector>. Skipping until updated.
+          SynheartLogger.log(
+            '[Synheart] Emotion head not yet migrated to runtime bridge — skipping',
+          );
+          _wearModule?.updateModuleStatus(emotionEnabled: true);
+        } else if (!isOperational && _emotionHead != null) {
+          _emotionSubscription?.cancel();
+          _emotionSubscription = null;
+          _emotionHead?.stop();
+          _emotionHead = null;
+          _wearModule?.updateModuleStatus(emotionEnabled: false);
+        }
+      case SynheartFeature.cloud:
+        if (isOperational && _cloudConnector != null &&
+            _cloudConnector!.status != ModuleStatus.running) {
+          _cloudConnector?.start().catchError((e) =>
+              SynheartLogger.log('[Synheart] Error starting cloud: $e', error: e));
+        } else if (!isOperational && _cloudConnector != null &&
+            _cloudConnector!.status == ModuleStatus.running) {
+          _cloudConnector?.stop().catchError((e) =>
+              SynheartLogger.log('[Synheart] Error stopping cloud: $e', error: e));
+        }
+      case SynheartFeature.syni:
+        break; // placeholder — no SyniHooksModule yet
+    }
+  }
+
+  /// Reevaluate all features (e.g. after consent change or session start/stop).
+  void _reevaluateAllFeatures() {
+    for (final feature in SynheartFeature.values) {
+      _reevaluateFeature(feature);
+    }
+  }
+
+  /// Check consent for a feature's required consent type.
+  bool _hasConsentForFeature(SynheartFeature feature) {
+    final consent = _consentModule?.current();
+    if (consent == null) return false;
+    switch (feature.requiredConsent) {
+      case 'biosignals':
+        return consent.biosignals;
+      case 'behavior':
+        return consent.behavior;
+      case 'phoneContext':
+        return consent.phoneContext;
+      case 'cloudUpload':
+        return consent.cloudUpload;
+      case 'syni':
+        return consent.syni;
+      default:
+        return false;
+    }
+  }
+
+  /// Check whether the CapabilityModule allows a given feature.
+  bool _isCapabilityAllowed(SynheartFeature feature) {
+    final cap = _capabilityModule;
+    if (cap == null) return false;
+    switch (feature) {
+      case SynheartFeature.wear:
+        return cap.capability(Module.wear) != CapabilityLevel.none;
+      case SynheartFeature.behavior:
+        return cap.capability(Module.behavior) != CapabilityLevel.none;
+      case SynheartFeature.phoneContext:
+        return cap.capability(Module.phone) != CapabilityLevel.none;
+      case SynheartFeature.focus:
+        return cap.isFeatureEnabled(FeatureFlag.hsiEmotionFocus);
+      case SynheartFeature.emotion:
+        return cap.isFeatureEnabled(FeatureFlag.hsiEmotionFocus);
+      case SynheartFeature.cloud:
+        return cap.capability(Module.cloud) != CapabilityLevel.none;
+      case SynheartFeature.syni:
+        return true; // no capability gate for syni yet
+    }
   }
 
   /// Stop Synheart Core SDK
@@ -1812,11 +1865,16 @@ class Synheart {
       _wearModule = null;
       _phoneModule = null;
       _behaviorModule = null;
-      _hsiRuntimeModule = null;
+      _runtimeModule = null;
+      _srmModule = null;
       _focusHead = null;
       _emotionHead = null;
+      _activationManager = null;
+      _previousConsent = null;
+      _pendingConsent = null;
       _isConfigured = false;
       _isRunning = false;
+      _initCompleter = null;
 
       SynheartLogger.log('[Synheart] Disposed');
       // Allow re-initialization by creating a fresh instance next time.
@@ -1829,4 +1887,19 @@ class Synheart {
       );
     }
   }
+}
+
+/// Consent values queued before SDK initialization.
+class _PendingConsent {
+  final bool biosignals;
+  final bool behavior;
+  final bool phoneContext;
+  final bool cloudUpload;
+
+  _PendingConsent({
+    required this.biosignals,
+    required this.behavior,
+    required this.phoneContext,
+    required this.cloudUpload,
+  });
 }

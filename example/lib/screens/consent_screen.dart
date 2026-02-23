@@ -16,7 +16,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
   // User's consent choices
   bool _biosignals = false;
   bool _behavior = false;
-  bool _motion = false;
+  bool _phoneContext = false;
   bool _cloudUpload = false;
   String? _selectedProfileId;
   bool _isGranting = false;
@@ -155,15 +155,15 @@ class _ConsentScreenState extends State<ConsentScreen> {
               const SizedBox(height: 16),
             ],
 
-            if (provider.consentInfo.containsKey('motion')) ...[
+            if (provider.consentInfo.containsKey('phoneContext')) ...[
               _buildConsentOption(
                 context,
                 title: 'Motion & Phone Context',
-                description: provider.consentInfo['motion']!,
+                description: provider.consentInfo['phoneContext']!,
                 icon: Icons.phone_android,
                 color: const Color(0xFF4CAF50),
-                value: _motion,
-                onChanged: (value) => setState(() => _motion = value),
+                value: _phoneContext,
+                onChanged: (value) => setState(() => _phoneContext = value),
               ),
               const SizedBox(height: 16),
             ],
@@ -792,7 +792,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
       await provider.grantConsent(
         biosignals: _biosignals,
         behavior: _behavior,
-        motion: _motion,
+        phoneContext: _phoneContext,
         cloudUpload: _cloudUpload,
         profileId: _cloudUpload ? _selectedProfileId : null,
       );
@@ -891,7 +891,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
               ),
             );
             // Enable cloud sync after consent
-            await provider.enableCloudSync();
+            provider.enableCloudSync();
           }
         }
       }

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:synheart_core/synheart_core.dart';
 import '../providers/synheart_provider.dart';
 
-/// HSV screen showing all state axes
+/// HSI screen showing all axis readings from the HSI payload
 class HSVScreen extends StatelessWidget {
   const HSVScreen({super.key});
 
@@ -10,12 +11,12 @@ class HSVScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('HSV State'),
+        title: const Text('HSI State'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Consumer<SynheartProvider>(
         builder: (context, provider, child) {
-          if (!provider.isInitialized || provider.latestHSV == null) {
+          if (!provider.isInitialized || provider.latestHSI == null) {
             return const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -23,7 +24,7 @@ class HSVScreen extends StatelessWidget {
                   Icon(Icons.analytics_outlined, size: 64, color: Colors.grey),
                   SizedBox(height: 16),
                   Text(
-                    'No HSV data available',
+                    'No HSI data available',
                     style: TextStyle(color: Colors.grey),
                   ),
                   SizedBox(height: 8),
@@ -36,169 +37,94 @@ class HSVScreen extends StatelessWidget {
             );
           }
 
-          final axes = provider.latestAxes!;
+          final hsi = provider.latestHSI!;
+          final axes = hsi.axes;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Affect Axes
-                Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.mood, color: Colors.red.shade700),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Affect Axes',
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _buildAxisRow(
-                          'Arousal Index',
-                          axes.affect.arousalIndex ?? 0.0,
-                          Colors.red,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildAxisRow(
-                          'Valence Stability',
-                          axes.affect.valenceStability ?? 0.0,
-                          Colors.purple,
-                        ),
-                      ],
-                    ),
-                  ),
+                // Affect Domain
+                _buildDomainCard(
+                  context,
+                  title: 'Affect',
+                  icon: Icons.mood,
+                  color: Colors.red.shade700,
+                  domain: axes?.affect,
                 ),
                 const SizedBox(height: 16),
 
-                // Engagement Axes
-                Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.people, color: Colors.green.shade700),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Engagement Axes',
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _buildAxisRow(
-                          'Engagement Stability',
-                          axes.engagement.engagementStability ?? 0.0,
-                          Colors.green,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildAxisRow(
-                          'Interaction Cadence',
-                          axes.engagement.interactionCadence ?? 0.0,
-                          Colors.blue,
-                        ),
-                      ],
-                    ),
-                  ),
+                // Engagement Domain
+                _buildDomainCard(
+                  context,
+                  title: 'Engagement',
+                  icon: Icons.people,
+                  color: Colors.green.shade700,
+                  domain: axes?.engagement,
                 ),
                 const SizedBox(height: 16),
 
-                // Activity Axes
-                Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.directions_run,
-                              color: Colors.orange.shade700,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Activity Axes',
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _buildAxisRow(
-                          'Motion Index',
-                          axes.activity.motionIndex ?? 0.0,
-                          Colors.orange,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildAxisRow(
-                          'Posture Stability',
-                          axes.activity.postureStability ?? 0.0,
-                          Colors.teal,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Context Axes
-                Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.phone_android,
-                              color: Colors.cyan.shade700,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Context Axes',
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _buildAxisRow(
-                          'Screen Active Ratio',
-                          axes.context.screenActiveRatio ?? 0.0,
-                          Colors.cyan,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildAxisRow(
-                          'Session Fragmentation',
-                          axes.context.sessionFragmentation ?? 0.0,
-                          Colors.pink,
-                        ),
-                      ],
-                    ),
-                  ),
+                // Behavior Domain
+                _buildDomainCard(
+                  context,
+                  title: 'Behavior',
+                  icon: Icons.touch_app,
+                  color: Colors.orange.shade700,
+                  domain: axes?.behavior,
                 ),
               ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildDomainCard(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required Color color,
+    HSI10Domain? domain,
+  }) {
+    final readings = domain?.readings ?? [];
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color),
+                const SizedBox(width: 8),
+                Text(
+                  '$title Axes',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (readings.isEmpty)
+              const Text(
+                'No readings available',
+                style: TextStyle(color: Colors.grey),
+              )
+            else
+              ...readings.map((reading) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildAxisRow(
+                  reading.axis,
+                  reading.score,
+                  color,
+                ),
+              )),
+          ],
+        ),
       ),
     );
   }

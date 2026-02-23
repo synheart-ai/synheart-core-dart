@@ -19,6 +19,7 @@ export 'src/synheart.dart';
 
 // Configuration
 export 'src/config/synheart_config.dart';
+export 'src/config/synheart_feature.dart';
 
 // Data Models
 export 'src/models/hsv.dart';
@@ -28,6 +29,7 @@ export 'src/models/behavior.dart';
 export 'src/models/context.dart';
 export 'src/models/hsi_axes.dart';
 export 'src/models/hsi_export.dart';
+export 'src/models/behavior_session_results.dart';
 
 // Module Base
 export 'src/modules/base/synheart_module.dart';
@@ -48,10 +50,17 @@ export 'src/modules/consent/consent_ui.dart';
 export 'src/modules/wear/wear_module.dart';
 export 'src/modules/phone/phone_module.dart';
 export 'src/modules/behavior/behavior_module.dart';
-export 'src/modules/hsi_runtime/hsi_runtime_module.dart';
+export 'src/modules/runtime/runtime_module.dart';
 export 'src/modules/cloud/cloud_connector_module.dart';
 export 'src/modules/cloud/upload_models.dart';
 export 'src/modules/cloud/cloud_exceptions.dart';
 
 // Services
 export 'src/services/auth_service.dart';
+
+// Session lifecycle (re-exported from synheart_session)
+export 'package:synheart_session/synheart_session.dart';
+
+// BLE Heart Rate Monitor (re-exported from synheart_wear)
+export 'package:synheart_wear/src/adapters/ble_hrm_models.dart';
+export 'package:synheart_wear/src/adapters/ble_hrm_bridge.dart';

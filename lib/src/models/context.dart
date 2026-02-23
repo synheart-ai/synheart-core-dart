@@ -2,34 +2,22 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'context.g.dart';
 
-/// Context information from Context Adapters + HSI processing
+/// Context information from adapters
 @JsonSerializable()
 class ContextState {
-  /// Overload indicator (0.0 - 1.0)
-  final double overload;
-
-  /// Frustration level (0.0 - 1.0)
-  final double frustration;
-
-  /// Engagement level (0.0 - 1.0)
-  final double engagement;
-
   /// Conversation timing metrics
-  final ConversationContext conversation;
+  final ConversationContext? conversation;
 
   /// Device state information
-  final DeviceStateContext deviceState;
+  final DeviceStateContext? device;
 
   /// User pattern information
-  final UserPatternsContext userPatterns;
+  final UserPatternsContext? userPatterns;
 
   ContextState({
-    required this.overload,
-    required this.frustration,
-    required this.engagement,
-    required this.conversation,
-    required this.deviceState,
-    required this.userPatterns,
+    this.conversation,
+    this.device,
+    this.userPatterns,
   });
 
   factory ContextState.fromJson(Map<String, dynamic> json) =>
@@ -41,19 +29,23 @@ class ContextState {
 /// Conversation timing context
 @JsonSerializable()
 class ConversationContext {
+  /// Whether a conversation is currently active
+  final bool isActive;
+
   /// Average reply delay in seconds
-  final double avgReplyDelaySec;
+  final double? avgReplyDelaySec;
+
+  /// Number of messages in conversation
+  final int? messageCount;
 
   /// Burstiness of conversation (0.0 - 1.0)
-  final double burstiness;
-
-  /// Interrupt rate (0.0 - 1.0)
-  final double interruptRate;
+  final double? burstiness;
 
   ConversationContext({
-    required this.avgReplyDelaySec,
-    required this.burstiness,
-    required this.interruptRate,
+    this.isActive = false,
+    this.avgReplyDelaySec,
+    this.messageCount,
+    this.burstiness,
   });
 
   factory ConversationContext.fromJson(Map<String, dynamic> json) =>
@@ -65,18 +57,26 @@ class ConversationContext {
 /// Device state context
 @JsonSerializable()
 class DeviceStateContext {
-  /// Whether app is in foreground
-  final bool foreground;
-
   /// Whether screen is on
   final bool screenOn;
+
+  /// Whether device is charging
+  final bool isCharging;
+
+  /// Battery level (0.0 - 1.0)
+  final double? batteryLevel;
+
+  /// Network type (e.g., 'wifi', 'cellular')
+  final String? networkType;
 
   /// Focus mode (e.g., 'work', 'personal', 'none')
   final String? focusMode;
 
   DeviceStateContext({
-    required this.foreground,
-    required this.screenOn,
+    this.screenOn = true,
+    this.isCharging = false,
+    this.batteryLevel,
+    this.networkType,
     this.focusMode,
   });
 
@@ -89,19 +89,23 @@ class DeviceStateContext {
 /// User patterns context
 @JsonSerializable()
 class UserPatternsContext {
-  /// Morning focus bias (0.0 - 1.0)
-  final double morningFocusBias;
+  /// Time of day in seconds since midnight
+  final double timeOfDay;
+
+  /// Day of week (0-6, 0=Sunday)
+  final int dayOfWeek;
 
   /// Average session length in minutes
-  final double avgSessionMinutes;
+  final double? avgSessionMinutes;
 
-  /// Baseline typing cadence
-  final double baselineTypingCadence;
+  /// Activity pattern (e.g., 'work', 'exercise', 'rest')
+  final String? activityPattern;
 
   UserPatternsContext({
-    required this.morningFocusBias,
-    required this.avgSessionMinutes,
-    required this.baselineTypingCadence,
+    this.timeOfDay = 0.0,
+    this.dayOfWeek = 0,
+    this.avgSessionMinutes,
+    this.activityPattern,
   });
 
   factory UserPatternsContext.fromJson(Map<String, dynamic> json) =>

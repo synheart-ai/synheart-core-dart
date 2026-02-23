@@ -110,9 +110,7 @@ class FocusHead {
       }
 
       // Extract HR from HSV embedding
-      // The embedding vector[0] contains raw HR (BPM) from FusionEngine._buildFusedVector()
-      // FusionEngine puts features.wear!.hrAverage directly into vector[0] without normalization
-      // See fusion_engine.dart line 64: vector.add(features.wear!.hrAverage ?? 0.0)
+      // The embedding vector[0] contains raw HR (BPM) as placed by Flux
       final emb = hsv.meta.embedding.vector;
       if (emb.isEmpty) {
         SynheartLogger.log('[FocusHead] No embedding data available');

@@ -361,26 +361,20 @@ HumanStateVector _createMockHSVWithEmbedding(
   return HumanStateVector.base(
     timestamp: timestamp ?? DateTime.now().millisecondsSinceEpoch,
     behavior: BehaviorState(
-      typingCadence: 0.5,
+      typingSpeed: 0.5,
       typingBurstiness: 0.3,
       scrollVelocity: 0.4,
       idleGaps: 2.0,
       appSwitchRate: 0.1,
     ),
     context: ContextState(
-      overload: 0.3,
-      frustration: 0.2,
-      engagement: 0.7,
       conversation: ConversationContext(
         avgReplyDelaySec: 5.0,
         burstiness: 0.4,
-        interruptRate: 0.2,
       ),
-      deviceState: DeviceStateContext(foreground: true, screenOn: true),
+      device: DeviceStateContext(screenOn: true),
       userPatterns: UserPatternsContext(
-        morningFocusBias: 0.6,
         avgSessionMinutes: 45.0,
-        baselineTypingCadence: 0.5,
       ),
     ),
     meta: MetaState(

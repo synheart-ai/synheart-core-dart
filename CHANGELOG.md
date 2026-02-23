@@ -5,9 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-02-22
+
+### Changed
+
+- **RuntimeBridge** (renamed from `FluxFFIProvider`) — now wraps synheart-runtime C ABI instead of calling synheart-flux directly. synheart-runtime composes the full session → state → flux pipeline internally.
+  - `synheart_runtime_new(config_json)` replaces `flux_processor_create()`
+  - `synheart_runtime_push_rr()`, `push_hr()`, `push_accel()`, `push_behavior()` for signal ingestion
+  - `synheart_runtime_tick(now_ms)` returns HSI JSON when a window completes
+  - `synheart_runtime_free_string()` for memory management
+  - Backward-compatible: `createIfAvailable()` still returns null when native library is absent
+- **RuntimeModule** (renamed from `HSVRuntimeModule`) — orchestrates signal collection and pipeline execution via RuntimeBridge.
+- Updated stale comments across 10 source files to reference current module names.
+
+## [1.0.0] - 2026-02-21
+
+First stable release supporting HSI 1.x.
 
 ### Added
+- **Flux FFI Integration** — Live pipeline from Core SDK to synheart-flux (Rust) via dart:ffi
+  - `FluxFFIProvider` — concrete `FluxProvider` calling `flux_processor_process_window()` via dart:ffi
+  - Platform-specific library loading (Android `.so`, iOS `DynamicLibrary.process()`, macOS `.dylib`, Windows `.dll`)
+  - Serializes raw `WearSample`, `PhoneDataPoint`, `BehaviorEvent` into WindowInput JSON
+  - Maps returned Flux HSV JSON into Core `HumanStateVector` (physiology, quality, provenance, embedding)
+  - Stores raw Flux HSV JSON in `MetaState.rawFluxHsv` for downstream access
+  - Baseline persistence: `saveBaselines()` / `loadBaselines()` for session continuity
+  - Graceful degradation: `createIfAvailable()` returns null when native library is absent
+  - Memory-safe: all `flux_free_string()` / `malloc.free()` calls paired with allocations
+  - Dependencies: `ffi: ^2.1.0`, `package:ffi` for UTF-8 string conversion
+
+- **synheart-flux 0.4.0 Alignment** — HSV types updated to match Flux HSV specification
+  - `HsvAxisValue` — score + confidence pair for per-axis readings (replaces hardcoded 0.8 confidence)
+  - `PhysiologyState` — wearable-derived physiology domain with 11 axes (sleep efficiency, recovery, HRV deviation, RHR deviation, respiratory rate, SpO2, strain, sleep duration, deep sleep ratio, REM sleep ratio, sleep fragmentation)
+  - `StateQuality` — aggregated quality assessment (overall confidence, modality count, degraded flag, quality flags)
+  - `ProvenanceInfo` — data provenance tracking (source IDs, vendors, device ID, timezone, baseline days)
+  - `ExportPolicy` — controls which domains, axes, and confidence thresholds appear in exported HSI
+  - `HumanStateVector` gains `physiology`, `stateQuality`, and `provenance` fields
+  - `FluxBridge.export()` now accepts optional `ExportPolicy` for domain filtering and confidence gating
+  - FluxBridge uses per-axis `HsvAxisValue.confidence` for physiology readings instead of hardcoded values
+  - FluxBridge meta block includes `modality_count`, `overall_confidence`, and `vendors` from provenance
+
+- **Capability Token Validation** — SDK now validates server-signed capability tokens during initialization
+  - New `SynheartConfig` fields: `capabilityToken`, `capabilitySecret`, `allowUnsignedCapabilities`
+  - When token and secret are provided, `CapabilityModule.loadFromToken()` validates HMAC signature and expiry
+  - `allowUnsignedCapabilities: true` serves as a debug escape hatch (logs a warning)
+  - Without a valid token or explicit opt-in, initialization throws `StateError`
+  - Removed hardcoded `mock_secret` and `_authService.authenticate()` from production initialization path
+
+- **Consent Revocation Deactivates Modules** — Revoking consent mid-session now stops affected modules immediately
+  - `biosignals` revoked → stops `WearModule`, cancels Emotion/Focus head subscriptions
+  - `behavior` revoked → stops `BehaviorModule`
+  - `motion` revoked → stops `PhoneModule`
+  - `cloudUpload` revoked → stops `CloudConnectorModule`
+  - Granting consent re-starts the corresponding module
+  - Each stop/start is isolated — one module failure does not cascade
+  - Rewrote `_onConsentChanged` from logging-only to active module management
+
 - **On-Demand Data Collection API**: Granular control over when data collection starts and stops
   - `autoStart` parameter in `initialize()` to control automatic collection start (defaults to `true` for backward compatibility)
   - `startDataCollection()` / `stopDataCollection()` for global collection control
@@ -67,6 +120,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed incorrect `SynheartConfig` examples (removed non-existent `enableWear`/`enablePhone`/`enableBehavior` properties)
   - Added examples for all new APIs (raw streams, sessions, feature queries)
   - Enhanced privacy & security section with consent enforcement details
+
+### Breaking Changes
+- `Synheart.initialize()` now requires either a valid capability token or `allowUnsignedCapabilities: true` in config. Existing callers that relied on implicit `loadDefaults()` via `MockAuthService` must pass `SynheartConfig(allowUnsignedCapabilities: true)`.
 
 ### Example App
 - Added new `OnDemandScreen` demonstrating all on-demand collection features
@@ -204,5 +260,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[1.0.0]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v1.0.0
 [0.0.2]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v0.0.2
 [0.0.1]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v0.0.1

@@ -4,14 +4,16 @@ import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
 import '../interfaces/feature_providers.dart';
+import '../interfaces/raw_data_provider.dart';
 import 'phone_collectors.dart';
 import 'phone_cache.dart';
 
 /// Phone Module
 ///
 /// Captures device-level motion and context signals.
-/// Provides window-based features to HSI Runtime.
-class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
+/// RFC-CORE-0007 compliant: no feature computation in Core.
+class PhoneModule extends BaseSynheartModule
+    implements PhoneFeatureProvider, RawPhoneDataProvider {
   @override
   String get moduleId => 'phone';
 
@@ -34,42 +36,17 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
 
   @override
   PhoneWindowFeatures? features(WindowType window) {
-    // Check consent
-    if (!_consent.current().motion) {
-      return null; // Return null if consent denied
-    }
-
-    final features = _cache.getFeatures(window);
-    if (features == null) {
-      return null;
-    }
-
-    // Filter based on capability level
-    return _filterByCapability(features);
+    // Feature computation removed per RFC-CORE-0007.
+    // Features will be computed by Flux when wired.
+    return null;
   }
 
-  /// Filter features based on capability level
-  PhoneWindowFeatures? _filterByCapability(PhoneWindowFeatures features) {
-    final level = _capabilities.capability(Module.phone);
+  // MARK: - RawPhoneDataProvider
 
-    switch (level) {
-      case CapabilityLevel.none:
-        return null;
-
-      case CapabilityLevel.core:
-        // Core: Motion and screen only
-        return PhoneWindowFeatures(
-          motionLevel: features.motionLevel,
-          screenOnRatio: features.screenOnRatio,
-          appSwitchRate: 0.0, // No app switching at core level
-          notificationRate: 0.0, // No notifications at core level
-        );
-
-      case CapabilityLevel.extended:
-      case CapabilityLevel.research:
-        // Extended/Research: Full access
-        return features;
-    }
+  @override
+  List<PhoneDataPoint> rawDataPoints(WindowType window) {
+    if (!_consent.current().phoneContext) return [];
+    return _cache.getDataPoints(window);
   }
 
   @override

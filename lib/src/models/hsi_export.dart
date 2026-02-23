@@ -1,5 +1,4 @@
 import 'package:json_annotation/json_annotation.dart';
-import 'hsv.dart';
 
 part 'hsi_export.g.dart';
 
@@ -107,9 +106,10 @@ class HSI10Window {
 @JsonSerializable(explicitToJson: true)
 class HSI10Axes {
   final HSI10Domain? affect;
+  final HSI10Domain? engagement;
   final HSI10Domain? behavior;
 
-  HSI10Axes({this.affect, this.behavior});
+  HSI10Axes({this.affect, this.engagement, this.behavior});
 
   factory HSI10Axes.fromJson(Map<String, dynamic> json) =>
       _$HSI10AxesFromJson(json);
@@ -169,6 +169,9 @@ class HSI10Embedding {
   @JsonKey(name: 'window_id')
   final String windowId;
 
+  @JsonKey(name: 'vector_hash')
+  final String? vectorHash;
+
   final String? model;
   final String? notes;
 
@@ -178,6 +181,7 @@ class HSI10Embedding {
     required this.encoding,
     required this.confidence,
     required this.windowId,
+    this.vectorHash,
     this.model,
     this.notes,
   });
@@ -200,12 +204,19 @@ class HSI10Privacy {
   @JsonKey(name: 'derived_metrics_allowed')
   final bool derivedMetricsAllowed;
 
+  @JsonKey(name: 'embedding_allowed')
+  final bool embeddingAllowed;
+
+  final String consent;
+
   final String? notes;
 
   HSI10Privacy({
     required this.containsPii,
     required this.rawBiosignalsAllowed,
     required this.derivedMetricsAllowed,
+    this.embeddingAllowed = false,
+    this.consent = 'explicit',
     this.notes,
   });
 
@@ -215,276 +226,4 @@ class HSI10Privacy {
   Map<String, dynamic> toJson() => _$HSI10PrivacyToJson(this);
 }
 
-/// Extension to convert HSV (Human State Vector) to HSI 1.0 format
-extension HSI10Export on HumanStateVector {
-  /// Convert HSV to HSI 1.0 canonical JSON payload
-  ///
-  /// This converts the internal HSV representation (fast, type-safe Dart classes)
-  /// to the external HSI 1.0 format (JSON for cross-system interoperability).
-  HSI10Payload toHSI10({
-    String? producerName,
-    String? producerVersion,
-    String? instanceId,
-  }) {
-    final now = DateTime.now().toUtc();
-    final observedTime = DateTime.fromMillisecondsSinceEpoch(timestamp).toUtc();
-    const windowId = 'w1';
-
-    // Create window based on embedding window type
-    final windowDuration = _getWindowDuration(meta.embedding.windowType);
-    final windowStart = observedTime.subtract(windowDuration);
-
-    return HSI10Payload(
-      hsiVersion: '1.0',
-      observedAtUtc: observedTime.toIso8601String(),
-      computedAtUtc: now.toIso8601String(),
-      producer: HSI10Producer(
-        name: producerName ?? 'Synheart Core SDK',
-        version: producerVersion ?? version,
-        instanceId: instanceId ?? meta.sessionId,
-      ),
-      windowIds: [windowId],
-      windows: {
-        windowId: HSI10Window(
-          start: windowStart.toIso8601String(),
-          end: observedTime.toIso8601String(),
-          label: '${meta.embedding.windowType}_window',
-        ),
-      },
-      axes: _convertAxes(windowId),
-      embeddings: [_convertEmbedding(windowId)],
-      privacy: HSI10Privacy(
-        containsPii: false,
-        rawBiosignalsAllowed: false,
-        derivedMetricsAllowed: true,
-        notes: 'Synheart Core SDK: privacy-first, on-device processing only',
-      ),
-      meta: {
-        'sdk': 'synheart_core',
-        'platform': meta.device.platform,
-        'sampling_rate_hz': meta.samplingRateHz,
-      },
-    );
-  }
-
-  /// Convert HSV axes to HSI 1.0 axes format
-  HSI10Axes? _convertAxes(String windowId) {
-    final affectReadings = <HSI10Reading>[];
-    final behaviorReadings = <HSI10Reading>[];
-
-    // Convert Affect Axis
-    if (meta.axes.affect.arousalIndex != null) {
-      affectReadings.add(
-        HSI10Reading(
-          axis: 'arousal',
-          score: meta.axes.affect.arousalIndex!,
-          confidence:
-              0.8, // Default confidence (internal doesn't track per-axis confidence)
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    if (meta.axes.affect.valenceStability != null) {
-      affectReadings.add(
-        HSI10Reading(
-          axis: 'valence_stability',
-          score: meta.axes.affect.valenceStability!,
-          confidence: 0.8,
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    // Convert Engagement Axis to behavior domain
-    if (meta.axes.engagement.engagementStability != null) {
-      behaviorReadings.add(
-        HSI10Reading(
-          axis: 'engagement_stability',
-          score: meta.axes.engagement.engagementStability!,
-          confidence: 0.8,
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    if (meta.axes.engagement.interactionCadence != null) {
-      behaviorReadings.add(
-        HSI10Reading(
-          axis: 'interaction_cadence',
-          score: meta.axes.engagement.interactionCadence!,
-          confidence: 0.8,
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    // Convert Activity Axis to behavior domain
-    if (meta.axes.activity.motionIndex != null) {
-      behaviorReadings.add(
-        HSI10Reading(
-          axis: 'motion',
-          score: meta.axes.activity.motionIndex!,
-          confidence: 0.8,
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    // Convert Context Axis to behavior domain
-    if (meta.axes.context.screenActiveRatio != null) {
-      behaviorReadings.add(
-        HSI10Reading(
-          axis: 'screen_active_ratio',
-          score: meta.axes.context.screenActiveRatio!,
-          confidence: 0.8,
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    if (affectReadings.isEmpty && behaviorReadings.isEmpty) {
-      return null;
-    }
-
-    return HSI10Axes(
-      affect: affectReadings.isNotEmpty
-          ? HSI10Domain(readings: affectReadings)
-          : null,
-      behavior: behaviorReadings.isNotEmpty
-          ? HSI10Domain(readings: behaviorReadings)
-          : null,
-    );
-  }
-
-  /// Convert HSV embedding to HSI 1.0 embedding format
-  HSI10Embedding _convertEmbedding(String windowId) {
-    return HSI10Embedding(
-      vector: meta.embedding.vector,
-      dimension: meta.embedding.dimension,
-      encoding: 'float64',
-      confidence: 0.85, // Default confidence for embedding
-      windowId: windowId,
-      model: meta.embedding.model,
-      notes: 'HSV state embedding',
-    );
-  }
-
-  /// Get window duration from window type
-  Duration _getWindowDuration(String windowType) {
-    switch (windowType) {
-      case 'micro':
-        return const Duration(seconds: 30);
-      case 'short':
-        return const Duration(minutes: 5);
-      case 'medium':
-        return const Duration(hours: 1);
-      case 'long':
-        return const Duration(hours: 24);
-      default:
-        return const Duration(seconds: 30);
-    }
-  }
-
-  /// Convert FocusState to Python format for snapshot
-  /// Returns a Map matching the Python focus object structure
-  Map<String, dynamic> toFocusSnapshot() {
-    final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      this.timestamp,
-    ).toUtc();
-    final timestampStr = timestamp.toIso8601String();
-
-    // Determine focus state based on score
-    String state;
-    if (focus.score >= 0.75) {
-      state = 'deep_focus';
-    } else if (focus.score >= 0.5) {
-      state = 'focused';
-    } else if (focus.score >= 0.25) {
-      state = 'neutral';
-    } else {
-      state = 'distracted';
-    }
-
-    // Determine trend based on cognitive load and distraction
-    String trend;
-    if (focus.cognitiveLoad > 0.6 && focus.distraction < 0.3) {
-      trend = 'increasing';
-    } else if (focus.distraction > 0.6 || focus.cognitiveLoad < 0.3) {
-      trend = 'decreasing';
-    } else {
-      trend = 'stable';
-    }
-
-    // Calculate confidence from clarity
-    final confidence = (focus.clarity * 0.8 + 0.2).clamp(0.0, 1.0);
-
-    return {
-      'timestamp': timestampStr,
-      'state': state,
-      'estimate': {
-        'score': focus.score.clamp(0.0, 1.0),
-        'confidence': confidence,
-      },
-      'trend': trend,
-    };
-  }
-
-  /// Convert EmotionState to Python format for snapshot
-  /// Returns a Map matching the Python emotion object structure
-  Map<String, dynamic> toEmotionSnapshot() {
-    final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      this.timestamp,
-    ).toUtc();
-    final timestampStr = timestamp.toIso8601String();
-
-    // Determine primary emotion based on stress, calm, activation
-    String primaryEmotion;
-    if (emotion.stress > 0.6) {
-      primaryEmotion = 'stressed';
-    } else if (emotion.calm > 0.6) {
-      primaryEmotion = 'calm';
-    } else if (emotion.activation > 0.6) {
-      primaryEmotion = 'excited';
-    } else if (emotion.activation < 0.3) {
-      primaryEmotion = 'tired';
-    } else {
-      primaryEmotion = 'calm'; // Default
-    }
-
-    // Map activation to arousal (0.0-1.0)
-    final arousal = emotion.activation.clamp(0.0, 1.0);
-
-    // Use stress as stress_index
-    final stressIndex = emotion.stress.clamp(0.0, 1.0);
-
-    // Calculate energy level from activation and engagement
-    final energyLevel = ((emotion.activation + emotion.engagement) / 2.0).clamp(
-      0.0,
-      1.0,
-    );
-
-    return {
-      'timestamp': timestampStr,
-      'primary_emotion': primaryEmotion,
-      'valence': emotion.valence.clamp(-1.0, 1.0),
-      'arousal': arousal,
-      'stress_index': stressIndex,
-      'energy_level': energyLevel,
-    };
-  }
-
-  /// Get ISO 8601 timestamp string from HSV timestamp
-  String getTimestampString() {
-    final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      this.timestamp,
-    ).toUtc();
-    return timestamp.toIso8601String();
-  }
-}
+// HSI generation goes through synheart-runtime exclusively.

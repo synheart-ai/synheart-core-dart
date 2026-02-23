@@ -6,23 +6,22 @@ import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
 import '../interfaces/feature_providers.dart';
+import '../interfaces/raw_data_provider.dart';
 import 'behavior_events.dart';
 import 'behavior_event_stream.dart';
 import 'window_aggregator.dart';
-import 'feature_extractor.dart';
 
 /// Behavior Module
 ///
 /// Captures user-device interaction patterns using synheart_behavior package.
-/// Provides window-based behavioral features to HSI Runtime.
+/// RFC-CORE-0007 compliant: no feature computation in Core.
 class BehaviorModule extends BaseSynheartModule
-    implements BehaviorFeatureProvider {
+    implements BehaviorFeatureProvider, RawBehaviorDataProvider {
   @override
   String get moduleId => 'behavior';
 
   final BehaviorEventStream _eventStream = BehaviorEventStream();
   final WindowAggregator _aggregator = WindowAggregator();
-  final BehaviorFeatureExtractor _extractor = BehaviorFeatureExtractor();
 
   final CapabilityProvider _capabilities;
   final ConsentProvider _consent;
@@ -55,46 +54,17 @@ class BehaviorModule extends BaseSynheartModule
 
   @override
   BehaviorWindowFeatures? features(WindowType window) {
-    // Check consent
-    if (!_consent.current().behavior) {
-      return null; // Return null if consent denied
-    }
-
-    final events = _aggregator.getEvents(window);
-    final features = _extractor.extract(events);
-
-    // Filter based on capability level
-    return _filterByCapability(features);
+    // Feature computation removed per RFC-CORE-0007.
+    // Features will be computed by Flux when wired.
+    return null;
   }
 
-  /// Filter features based on capability level
-  BehaviorWindowFeatures? _filterByCapability(BehaviorWindowFeatures features) {
-    final level = _capabilities.capability(Module.behavior);
+  // MARK: - RawBehaviorDataProvider
 
-    switch (level) {
-      case CapabilityLevel.none:
-        return null;
-
-      case CapabilityLevel.core:
-        // Core: Only basic metrics
-        return BehaviorWindowFeatures(
-          tapRateNorm: features.tapRateNorm,
-          keystrokeRateNorm: features.keystrokeRateNorm,
-          scrollVelocityNorm: features.scrollVelocityNorm,
-          idleRatio: features.idleRatio,
-          switchRateNorm: features.switchRateNorm,
-          burstiness: 0.0, // Not available at core
-          sessionFragmentation: 0.0, // Not available at core
-          notificationLoad: 0.0, // Not available at core
-          distractionScore: features.distractionScore,
-          focusHint: features.focusHint,
-        );
-
-      case CapabilityLevel.extended:
-      case CapabilityLevel.research:
-        // Extended/Research: Full access
-        return features;
-    }
+  @override
+  List<BehaviorEvent> rawEvents(WindowType window) {
+    if (!_consent.current().behavior) return [];
+    return _aggregator.getEvents(window);
   }
 
   @override
@@ -108,7 +78,7 @@ class BehaviorModule extends BaseSynheartModule
           enableInputSignals: true,
           enableAttentionSignals: true,
           enableMotionLite:
-              true, // Enable motion data collection for ML inference
+              false, // Disabled: 50Hz sensor + ONNX inference is too heavy during debug
         ),
       );
       SynheartLogger.log(
@@ -235,6 +205,9 @@ class BehaviorModule extends BaseSynheartModule
       case sb.BehaviorEventType.swipe:
         // Map swipe to tap for now (could be enhanced later)
         return BehaviorEvent.tap(Offset.zero);
+      case sb.BehaviorEventType.clipboard:
+        // Clipboard events don't map to an internal behavior event
+        return null;
     }
   }
 

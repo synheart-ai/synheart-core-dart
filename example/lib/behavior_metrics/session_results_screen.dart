@@ -1143,6 +1143,8 @@ class _SessionResultsScreenState extends State<SessionResultsScreen> {
         return Colors.purple;
       case sb.BehaviorEventType.typing:
         return Colors.teal;
+      case sb.BehaviorEventType.clipboard:
+        return Colors.indigo;
     }
   }
 

@@ -6,14 +6,20 @@ enum ConsentType {
   /// Consent for behavioral data collection
   behavior,
 
-  /// Consent for motion/context data collection
-  motion,
+  /// Consent for phone context data collection
+  phoneContext,
 
   /// Consent for cloud uploads
   cloudUpload,
 
   /// Consent for Syni personalization
   syni,
+
+  /// Consent for focus estimation
+  focusEstimation,
+
+  /// Consent for emotion estimation
+  emotionEstimation,
 }
 
 /// Snapshot of user consent at a point in time
@@ -24,14 +30,20 @@ class ConsentSnapshot {
   /// Consent for behavioral data collection
   final bool behavior;
 
-  /// Consent for motion/context data collection
-  final bool motion;
+  /// Consent for phone context data collection
+  final bool phoneContext;
 
   /// Consent for cloud uploads
   final bool cloudUpload;
 
   /// Consent for Syni personalization
   final bool syni;
+
+  /// Consent for focus estimation
+  final bool focusEstimation;
+
+  /// Consent for emotion estimation
+  final bool emotionEstimation;
 
   /// Timestamp when this consent was given
   final DateTime timestamp;
@@ -46,9 +58,11 @@ class ConsentSnapshot {
   const ConsentSnapshot({
     required this.biosignals,
     required this.behavior,
-    required this.motion,
+    required this.phoneContext,
     required this.cloudUpload,
     required this.syni,
+    this.focusEstimation = false,
+    this.emotionEstimation = false,
     required this.timestamp,
     this.version = '1.0.0',
     this.explicitlyDenied = false,
@@ -61,12 +75,16 @@ class ConsentSnapshot {
         return biosignals;
       case ConsentType.behavior:
         return behavior;
-      case ConsentType.motion:
-        return motion;
+      case ConsentType.phoneContext:
+        return phoneContext;
       case ConsentType.cloudUpload:
         return cloudUpload;
       case ConsentType.syni:
         return syni;
+      case ConsentType.focusEstimation:
+        return focusEstimation;
+      case ConsentType.emotionEstimation:
+        return emotionEstimation;
     }
   }
 
@@ -74,9 +92,11 @@ class ConsentSnapshot {
   ConsentSnapshot copyWith({
     bool? biosignals,
     bool? behavior,
-    bool? motion,
+    bool? phoneContext,
     bool? cloudUpload,
     bool? syni,
+    bool? focusEstimation,
+    bool? emotionEstimation,
     DateTime? timestamp,
     String? version,
     bool? explicitlyDenied,
@@ -84,9 +104,11 @@ class ConsentSnapshot {
     return ConsentSnapshot(
       biosignals: biosignals ?? this.biosignals,
       behavior: behavior ?? this.behavior,
-      motion: motion ?? this.motion,
+      phoneContext: phoneContext ?? this.phoneContext,
       cloudUpload: cloudUpload ?? this.cloudUpload,
       syni: syni ?? this.syni,
+      focusEstimation: focusEstimation ?? this.focusEstimation,
+      emotionEstimation: emotionEstimation ?? this.emotionEstimation,
       timestamp: timestamp ?? this.timestamp,
       version: version ?? this.version,
       explicitlyDenied: explicitlyDenied ?? this.explicitlyDenied,
@@ -101,9 +123,11 @@ class ConsentSnapshot {
     return ConsentSnapshot(
       biosignals: false,
       behavior: false,
-      motion: false,
+      phoneContext: false,
       cloudUpload: false,
       syni: false,
+      focusEstimation: false,
+      emotionEstimation: false,
       timestamp: DateTime.now(),
       explicitlyDenied: explicitlyDenied,
     );
@@ -114,9 +138,11 @@ class ConsentSnapshot {
     return ConsentSnapshot(
       biosignals: true,
       behavior: true,
-      motion: true,
+      phoneContext: true,
       cloudUpload: true,
       syni: true,
+      focusEstimation: true,
+      emotionEstimation: true,
       timestamp: DateTime.now(),
     );
   }
@@ -125,9 +151,11 @@ class ConsentSnapshot {
     return {
       'biosignals': biosignals,
       'behavior': behavior,
-      'motion': motion,
+      'phoneContext': phoneContext,
       'cloudUpload': cloudUpload,
       'syni': syni,
+      'focusEstimation': focusEstimation,
+      'emotionEstimation': emotionEstimation,
       'timestamp': timestamp.toIso8601String(),
       'version': version,
       'explicitlyDenied': explicitlyDenied,
@@ -138,9 +166,11 @@ class ConsentSnapshot {
     return ConsentSnapshot(
       biosignals: json['biosignals'] as bool,
       behavior: json['behavior'] as bool,
-      motion: json['motion'] as bool,
+      phoneContext: json['phoneContext'] as bool,
       cloudUpload: json['cloudUpload'] as bool,
       syni: json['syni'] as bool,
+      focusEstimation: json['focusEstimation'] as bool? ?? false,
+      emotionEstimation: json['emotionEstimation'] as bool? ?? false,
       timestamp: DateTime.parse(json['timestamp'] as String),
       version: json['version'] as String? ?? '1.0.0',
       explicitlyDenied: json['explicitlyDenied'] as bool? ?? false,

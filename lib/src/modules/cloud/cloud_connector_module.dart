@@ -4,10 +4,8 @@ import '../../core/logger.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../consent/consent_module.dart';
-import '../hsi_runtime/hsi_runtime_module.dart';
+import '../runtime/runtime_module.dart';
 import '../../config/synheart_config.dart';
-import '../../models/hsv.dart';
-import '../../models/hsi_export.dart';
 import 'hmac_signer.dart';
 import 'upload_client.dart';
 import 'upload_queue.dart';
@@ -22,7 +20,7 @@ class CloudConnectorModule extends BaseSynheartModule {
 
   final CapabilityProvider _capabilities;
   final ConsentModule _consent;
-  final HSIRuntimeModule _hsiRuntime;
+  final RuntimeModule _hsiRuntime;
   final CloudConfig _config;
 
   // Components
@@ -38,7 +36,7 @@ class CloudConnectorModule extends BaseSynheartModule {
   CloudConnectorModule({
     required CapabilityProvider capabilities,
     required ConsentModule consent,
-    required HSIRuntimeModule hsiRuntime,
+    required RuntimeModule hsiRuntime,
     required CloudConfig config,
   }) : _capabilities = capabilities,
        _consent = consent,
@@ -49,7 +47,6 @@ class CloudConnectorModule extends BaseSynheartModule {
   Future<void> onInitialize() async {
     SynheartLogger.log('[CloudConnector] Initializing Cloud Connector...');
 
-    // 1. Initialize components
     _hmacSigner = HMACSigner(hmacSecret: _config.hmacSecret);
     _uploadClient = UploadClient(baseUrl: _config.baseUrl);
     _uploadQueue = UploadQueue(
@@ -61,7 +58,6 @@ class CloudConnectorModule extends BaseSynheartModule {
     );
     _networkMonitor = NetworkMonitor();
 
-    // 2. Load persisted queue
     await _uploadQueue.loadFromStorage();
 
     SynheartLogger.log('[CloudConnector] Cloud Connector initialized');
@@ -71,16 +67,12 @@ class CloudConnectorModule extends BaseSynheartModule {
   Future<void> onStart() async {
     SynheartLogger.log('[CloudConnector] Starting Cloud Connector...');
 
-    // 1. Subscribe to HSV stream
-    _hsvSubscription = _hsiRuntime.hsiStream.listen(_handleHSVUpdate);
+    _hsvSubscription = _hsiRuntime.hsiStream.listen(_handleHSIUpdate);
 
-    // 2. Subscribe to network changes
     _networkSubscription = _networkMonitor.connectivityStream.listen(
       _handleNetworkChange,
     );
 
-    // 3. Attempt to flush queue if online (non-blocking - don't await)
-    // This ensures initialization completes even if uploads fail
     if (_networkMonitor.isOnline) {
       flushQueue().catchError((error) {
         SynheartLogger.log(
@@ -139,19 +131,14 @@ class CloudConnectorModule extends BaseSynheartModule {
     _networkMonitor.dispose();
   }
 
-  void _handleHSVUpdate(HumanStateVector hsv) async {
+  void _handleHSIUpdate(String hsiJson) async {
     // Check consent
     if (!_consent.current().cloudUpload) {
       return; // Silent return - no upload
     }
 
-    // Check rate limit
-    if (!_rateLimiter.canUpload(hsv.meta.embedding.windowType)) {
-      return; // Silent return - rate limited
-    }
-
-    // Enqueue for upload
-    await _uploadQueue.enqueue(hsv);
+    // Enqueue for upload (raw HSI JSON string)
+    await _uploadQueue.enqueue(hsiJson);
 
     // Try immediate upload if online
     if (_networkMonitor.isOnline) {
@@ -171,37 +158,26 @@ class CloudConnectorModule extends BaseSynheartModule {
     if (batch.isEmpty) return;
 
     try {
-      // Get platform and capability level from first HSV (assuming all in batch are from same device)
-      final firstHsv = batch.first;
-      final platform = firstHsv.meta.device.platform;
       final capabilityLevel = _capabilities.capability(Module.cloud);
       final capabilityLevelStr = capabilityLevel
           .toString()
           .split('.')
           .last; // Convert enum to string
 
-      // Convert to HSI 1.0 and create snapshots with focus/emotion
-      final snapshots = batch.map((hsv) {
-        final hsi10 = hsv.toHSI10(
-          producerName: 'Synheart Core SDK',
-          producerVersion: '1.0.0',
-          instanceId: _config.instanceId,
-        );
-
+      // HSI JSON strings are already the canonical format from synheart-runtime
+      final snapshots = batch.map((hsiJson) {
         return {
-          'hsi': hsi10.toJson(),
-          'focus': hsv.toFocusSnapshot(),
-          'emotion': hsv.toEmotionSnapshot(),
-          'timestamp': hsv.getTimestampString(),
+          'hsi_json': hsiJson,
+          'timestamp': DateTime.now().toUtc().toIso8601String(),
         };
       }).toList();
 
-      // Create upload payload with new structure
+      // Create upload payload
       final payload = UploadRequest(
         userId: _config.subjectId,
         metadata: UploadMetadata(
           sdkVersion: '1.0.0',
-          platform: platform,
+          platform: 'dart',
           capabilityLevel: capabilityLevelStr,
           orgId: _config.orgId,
         ),
@@ -222,12 +198,6 @@ class CloudConnectorModule extends BaseSynheartModule {
       // Success - remove from queue
       _uploadQueue.confirmBatch(batch);
 
-      // Update rate limiter
-      _rateLimiter.recordUpload(
-        batch.first.meta.embedding.windowType,
-        batchSize: batch.length,
-      );
-
       SynheartLogger.log(
         '[CloudConnector] Upload successful: ${response.status}',
       );
@@ -239,7 +209,7 @@ class CloudConnectorModule extends BaseSynheartModule {
         );
         try {
           await _consent.refreshTokenIfNeeded();
-          // Retry upload with new token (will happen on next HSV update)
+          // Retry upload with new token (will happen on next HSI update)
           await _uploadQueue.requeueBatch(batch);
           return;
         } catch (refreshError) {

@@ -48,6 +48,12 @@ dependencies:
   # Synheart behavior SDK (for behavior metrics)
   synheart_behavior: ^0.1.3
 
+dependency_overrides:
+  synheart_wear:
+    path: ../../synheart-wear-dart
+  synheart_behavior:
+    path: ../../synheart-behavior-dart
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

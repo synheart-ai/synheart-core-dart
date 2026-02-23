@@ -8,18 +8,22 @@ part of 'behavior.dart';
 
 BehaviorState _$BehaviorStateFromJson(Map<String, dynamic> json) =>
     BehaviorState(
-      typingCadence: (json['typingCadence'] as num).toDouble(),
-      typingBurstiness: (json['typingBurstiness'] as num).toDouble(),
-      scrollVelocity: (json['scrollVelocity'] as num).toDouble(),
-      idleGaps: (json['idleGaps'] as num).toDouble(),
-      appSwitchRate: (json['appSwitchRate'] as num).toDouble(),
+      typingSpeed: (json['typingSpeed'] as num?)?.toDouble() ?? 0.0,
+      typingBurstiness: (json['typingBurstiness'] as num?)?.toDouble() ?? 0.0,
+      scrollVelocity: (json['scrollVelocity'] as num?)?.toDouble() ?? 0.0,
+      idleGaps: (json['idleGaps'] as num?)?.toDouble() ?? 0.0,
+      appSwitchRate: (json['appSwitchRate'] as num?)?.toDouble() ?? 0.0,
+      interactionIntensity: (json['interactionIntensity'] as num?)?.toDouble() ?? 0.0,
+      engagementLevel: (json['engagementLevel'] as num?)?.toDouble() ?? 0.0,
     );
 
 Map<String, dynamic> _$BehaviorStateToJson(BehaviorState instance) =>
     <String, dynamic>{
-      'typingCadence': instance.typingCadence,
+      'typingSpeed': instance.typingSpeed,
       'typingBurstiness': instance.typingBurstiness,
       'scrollVelocity': instance.scrollVelocity,
       'idleGaps': instance.idleGaps,
       'appSwitchRate': instance.appSwitchRate,
+      'interactionIntensity': instance.interactionIntensity,
+      'engagementLevel': instance.engagementLevel,
     };

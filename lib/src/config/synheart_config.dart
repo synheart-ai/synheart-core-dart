@@ -1,3 +1,5 @@
+import '../modules/capabilities/capability_token.dart';
+
 /// Configuration for Synheart Core SDK
 class SynheartConfig {
   /// Enable cloud sync (HSI snapshots only, no raw data)
@@ -23,6 +25,15 @@ class SynheartConfig {
   /// Consent service configuration
   final ConsentConfig? consentConfig;
 
+  /// Server-signed capability token for feature gating
+  final CapabilityToken? capabilityToken;
+
+  /// HMAC secret for verifying the capability token signature
+  final String? capabilitySecret;
+
+  /// When true, allows SDK to run with default capabilities and no signed token (debug only)
+  final bool allowUnsignedCapabilities;
+
   const SynheartConfig({
     this.enableCloudSync = false,
     this.enableSyniHooks = false,
@@ -33,6 +44,9 @@ class SynheartConfig {
     this.behaviorConfig,
     this.cloudConfig,
     this.consentConfig,
+    this.capabilityToken,
+    this.capabilitySecret,
+    this.allowUnsignedCapabilities = false,
   });
 
   /// Create default configuration

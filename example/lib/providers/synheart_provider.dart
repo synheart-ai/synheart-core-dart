@@ -19,14 +19,12 @@ class SynheartProvider extends ChangeNotifier {
   bool _focusEnabled = false;
 
   // Data Streams
-  HumanStateVector? _latestHSV;
+  HSI10Payload? _latestHSI;
   EmotionState? _latestEmotion;
   FocusState? _latestFocus;
-  BehaviorState? _latestBehavior;
-  HSIAxes? _latestAxes;
 
   // Stream Subscriptions
-  StreamSubscription<HumanStateVector>? _hsvSubscription;
+  StreamSubscription<HSI10Payload>? _hsiSubscription;
   StreamSubscription<EmotionState>? _emotionSubscription;
   StreamSubscription<FocusState>? _focusSubscription;
 
@@ -65,11 +63,11 @@ class SynheartProvider extends ChangeNotifier {
   bool get emotionEnabled => _emotionEnabled;
   bool get focusEnabled => _focusEnabled;
 
-  HumanStateVector? get latestHSV => _latestHSV;
+  HSI10Payload? get latestHSI => _latestHSI;
+  /// Backward-compatible alias for UI screens
+  HSI10Payload? get latestHSV => _latestHSI;
   EmotionState? get latestEmotion => _latestEmotion;
   FocusState? get latestFocus => _latestFocus;
-  BehaviorState? get latestBehavior => _latestBehavior;
-  HSIAxes? get latestAxes => _latestAxes;
 
   ConsentStatus get consentStatus => _consentStatus;
   ConsentToken? get currentToken => _currentToken;
@@ -106,7 +104,7 @@ class SynheartProvider extends ChangeNotifier {
     return ConsentSnapshot(
       biosignals: statusMap['biosignals'] ?? false,
       behavior: statusMap['behavior'] ?? false,
-      motion: statusMap['motion'] ?? false,
+      phoneContext: statusMap['phoneContext'] ?? false,
       cloudUpload: statusMap['cloudUpload'] ?? false,
       syni: statusMap['syni'] ?? false,
       timestamp: DateTime.now(),
@@ -134,6 +132,7 @@ class SynheartProvider extends ChangeNotifier {
       final finalConfig =
           config ??
           SynheartConfig(
+            allowUnsignedCapabilities: true,
             wearConfig: WearConfig(),
             phoneConfig: PhoneConfig(),
             behaviorConfig: BehaviorConfig(),
@@ -172,8 +171,8 @@ class SynheartProvider extends ChangeNotifier {
       _isInitializing = false;
       _errorMessage = null;
 
-      // Start listening to HSV updates
-      _startHSVListening();
+      // Start listening to HSI updates
+      _startHSIListening();
 
       // Start listening to raw data streams
       _startRawDataListening();
@@ -193,13 +192,11 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
-  /// Start listening to HSV updates
-  void _startHSVListening() {
-    _hsvSubscription?.cancel();
-    _hsvSubscription = Synheart.onHSVUpdate.listen((hsv) {
-      _latestHSV = hsv;
-      _latestBehavior = hsv.behavior;
-      _latestAxes = hsv.meta.axes;
+  /// Start listening to HSI updates
+  void _startHSIListening() {
+    _hsiSubscription?.cancel();
+    _hsiSubscription = Synheart.onHSIUpdate.listen((hsi) {
+      _latestHSI = hsi;
       notifyListeners();
     });
   }
@@ -242,7 +239,7 @@ class SynheartProvider extends ChangeNotifier {
   }
 
   /// Enable cloud sync (requires consent)
-  Future<void> enableCloudSync() async {
+  void enableCloudSync() {
     if (!_isInitialized) {
       throw StateError('SDK must be initialized first');
     }
@@ -254,7 +251,7 @@ class SynheartProvider extends ChangeNotifier {
         throw StateError('Consent token required. Please grant consent first.');
       }
 
-      await Synheart.enableCloud();
+      Synheart.activate(SynheartFeature.cloud);
       _cloudSyncEnabled = true;
       _errorMessage = null;
       notifyListeners();
@@ -266,13 +263,13 @@ class SynheartProvider extends ChangeNotifier {
   }
 
   /// Disable cloud sync
-  Future<void> disableCloudSync() async {
+  void disableCloudSync() {
     if (!_cloudSyncEnabled) {
       return;
     }
 
     try {
-      await Synheart.disableCloud();
+      Synheart.deactivate(SynheartFeature.cloud);
       _cloudSyncEnabled = false;
       _errorMessage = null;
       notifyListeners();
@@ -283,8 +280,8 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
-  /// Enable emotion module
-  Future<void> enableEmotion() async {
+  /// Enable emotion feature
+  void enableEmotion() {
     if (!_isInitialized) {
       throw StateError('SDK must be initialized first');
     }
@@ -294,7 +291,7 @@ class SynheartProvider extends ChangeNotifier {
     }
 
     try {
-      await Synheart.enableEmotion();
+      Synheart.activate(SynheartFeature.emotion);
       _emotionEnabled = true;
       _startEmotionListening();
       _errorMessage = null;
@@ -306,13 +303,14 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
-  /// Disable emotion module
-  Future<void> disableEmotion() async {
+  /// Disable emotion feature
+  void disableEmotion() {
     if (!_emotionEnabled) {
       return;
     }
 
     try {
+      Synheart.deactivate(SynheartFeature.emotion);
       _emotionSubscription?.cancel();
       _emotionSubscription = null;
       _emotionEnabled = false;
@@ -335,8 +333,8 @@ class SynheartProvider extends ChangeNotifier {
     });
   }
 
-  /// Enable focus module
-  Future<void> enableFocus() async {
+  /// Enable focus feature
+  void enableFocus() {
     if (!_isInitialized) {
       throw StateError('SDK must be initialized first');
     }
@@ -346,7 +344,7 @@ class SynheartProvider extends ChangeNotifier {
     }
 
     try {
-      await Synheart.enableFocus();
+      Synheart.activate(SynheartFeature.focus);
       _focusEnabled = true;
       _startFocusListening();
       _errorMessage = null;
@@ -358,13 +356,14 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
-  /// Disable focus module
-  Future<void> disableFocus() async {
+  /// Disable focus feature
+  void disableFocus() {
     if (!_focusEnabled) {
       return;
     }
 
     try {
+      Synheart.deactivate(SynheartFeature.focus);
       _focusSubscription?.cancel();
       _focusSubscription = null;
       _focusEnabled = false;
@@ -424,7 +423,7 @@ class SynheartProvider extends ChangeNotifier {
   Future<void> grantConsent({
     required bool biosignals,
     required bool behavior,
-    required bool motion,
+    required bool phoneContext,
     required bool cloudUpload,
     String? profileId,
   }) async {
@@ -432,7 +431,7 @@ class SynheartProvider extends ChangeNotifier {
       await Synheart.grantConsent(
         biosignals: biosignals,
         behavior: behavior,
-        motion: motion,
+        phoneContext: phoneContext,
         cloudUpload: cloudUpload,
         profileId: profileId,
       );
@@ -520,8 +519,8 @@ class SynheartProvider extends ChangeNotifier {
 
     try {
       // Cancel subscriptions first
-      await _hsvSubscription?.cancel();
-      _hsvSubscription = null;
+      await _hsiSubscription?.cancel();
+      _hsiSubscription = null;
       await _emotionSubscription?.cancel();
       _emotionSubscription = null;
       await _focusSubscription?.cancel();
@@ -538,11 +537,9 @@ class SynheartProvider extends ChangeNotifier {
       _cloudSyncEnabled = false;
 
       // Clear cached data
-      _latestHSV = null;
+      _latestHSI = null;
       _latestEmotion = null;
       _latestFocus = null;
-      _latestBehavior = null;
-      _latestAxes = null;
 
       _errorMessage = null;
       notifyListeners();
@@ -776,7 +773,7 @@ class SynheartProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _hsvSubscription?.cancel();
+    _hsiSubscription?.cancel();
     _emotionSubscription?.cancel();
     _focusSubscription?.cancel();
     _wearSampleSubscription?.cancel();

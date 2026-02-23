@@ -4,6 +4,7 @@ import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
 import '../interfaces/feature_providers.dart';
+import '../interfaces/raw_data_provider.dart';
 import 'wear_source_handler.dart';
 import 'wear_cache.dart';
 import 'mock_wear_source.dart';
@@ -11,9 +12,10 @@ import 'synheart_wear_source_handler.dart';
 
 /// Wear Module
 ///
-/// Collects and normalizes biosignals from wearables.
-/// Provides window-based features to HSI Runtime.
-class WearModule extends BaseSynheartModule implements WearFeatureProvider {
+/// Collects and buffers raw biosignals from wearables.
+/// RFC-CORE-0007 compliant: no feature computation in Core.
+class WearModule extends BaseSynheartModule
+    implements WearFeatureProvider, RawWearDataProvider {
   @override
   String get moduleId => 'wear';
 
@@ -86,65 +88,17 @@ class WearModule extends BaseSynheartModule implements WearFeatureProvider {
 
   @override
   WearWindowFeatures? features(WindowType window) {
-    // Check consent first
-    if (!_consent.current().biosignals) {
-      SynheartLogger.log('[WearModule] No features: biosignals consent denied');
-      return null; // Return null if consent denied
-    }
-
-    final features = _cache.getFeatures(window);
-    if (features == null) {
-      SynheartLogger.log(
-        '[WearModule] No features: cache returned null for $window',
-      );
-      return null;
-    }
-
-    // Check if features are actually populated
-    if (features.hrAverage == null &&
-        features.hrvRmssd == null &&
-        features.motionIndex == null) {
-      SynheartLogger.log(
-        '[WearModule] No features: cache has empty features for $window (no data collected yet)',
-      );
-      return null;
-    }
-
-    // Filter based on capability level
-    return _filterByCapability(features);
+    // Feature computation removed per RFC-CORE-0007.
+    // Features will be computed by Flux when wired.
+    return null;
   }
 
-  /// Filter features based on capability level
-  WearWindowFeatures? _filterByCapability(WearWindowFeatures features) {
-    final level = _capabilities.capability(Module.wear);
+  // MARK: - RawWearDataProvider
 
-    switch (level) {
-      case CapabilityLevel.none:
-        return null;
-
-      case CapabilityLevel.core:
-        // Core: Only derived metrics (average HR, HRV)
-        return WearWindowFeatures(
-          windowDuration: features.windowDuration,
-          hrAverage: features.hrAverage,
-          hrvRmssd: features.hrvRmssd,
-          hrvSdnn: features.hrvSdnn,
-          pnn50: features.pnn50,
-          meanRrMs: features.meanRrMs,
-          motionIndex: features.motionIndex,
-          sleepStage: features.sleepStage,
-          respRate: features.respRate,
-          // No min/max for core level
-        );
-
-      case CapabilityLevel.extended:
-        // Extended: Include min/max
-        return features;
-
-      case CapabilityLevel.research:
-        // Research: Full access (would include raw RR intervals in production)
-        return features;
-    }
+  @override
+  List<WearSample> rawSamples(WindowType window) {
+    if (!_consent.current().biosignals) return [];
+    return _cache.getSamples(window);
   }
 
   @override

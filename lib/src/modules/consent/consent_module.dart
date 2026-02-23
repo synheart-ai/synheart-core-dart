@@ -110,7 +110,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       _currentConsent = stored;
       _consentStream.add(stored);
       SynheartLogger.log(
-        '[ConsentModule] Loaded consent from storage: biosignals=${stored.biosignals}, behavior=${stored.behavior}, motion=${stored.motion}, cloudUpload=${stored.cloudUpload}',
+        '[ConsentModule] Loaded consent from storage: biosignals=${stored.biosignals}, behavior=${stored.behavior}, phoneContext=${stored.phoneContext}, cloudUpload=${stored.cloudUpload}',
       );
     } else {
       // No stored consent, use defaults
@@ -146,7 +146,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       behavior: type == ConsentType.behavior
           ? granted
           : _currentConsent!.behavior,
-      motion: type == ConsentType.motion ? granted : _currentConsent!.motion,
+      phoneContext: type == ConsentType.phoneContext ? granted : _currentConsent!.phoneContext,
       cloudUpload: type == ConsentType.cloudUpload
           ? granted
           : _currentConsent!.cloudUpload,
@@ -183,9 +183,19 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
         'Consent changed: behavior ${newConsent.behavior ? "granted" : "revoked"}',
       );
     }
-    if (oldConsent.motion != newConsent.motion) {
+    if (oldConsent.phoneContext != newConsent.phoneContext) {
       SynheartLogger.log(
-        'Consent changed: motion ${newConsent.motion ? "granted" : "revoked"}',
+        'Consent changed: phoneContext ${newConsent.phoneContext ? "granted" : "revoked"}',
+      );
+    }
+    if (oldConsent.focusEstimation != newConsent.focusEstimation) {
+      SynheartLogger.log(
+        'Consent changed: focusEstimation ${newConsent.focusEstimation ? "granted" : "revoked"}',
+      );
+    }
+    if (oldConsent.emotionEstimation != newConsent.emotionEstimation) {
+      SynheartLogger.log(
+        'Consent changed: emotionEstimation ${newConsent.emotionEstimation ? "granted" : "revoked"}',
       );
     }
     if (oldConsent.cloudUpload != newConsent.cloudUpload) {
@@ -460,11 +470,13 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
           profile.channels.biosignals.vitals ||
           profile.channels.biosignals.sleep,
       behavior: profile.channels.behavior.enabled,
-      motion:
+      phoneContext:
           profile.channels.phoneContext.motion ||
           profile.channels.phoneContext.screenState,
       cloudUpload: profile.cloudEnabled,
       syni: false, // Not in profile yet
+      focusEstimation: false,
+      emotionEstimation: false,
       timestamp: DateTime.now(),
       explicitlyDenied: false, // User accepted, so not denied
     );
