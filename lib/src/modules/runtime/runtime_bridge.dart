@@ -86,6 +86,24 @@ typedef _RuntimeFreeStringDart = void Function(Pointer<Utf8> ptr);
 typedef _RuntimeVersionC = Pointer<Utf8> Function();
 typedef _RuntimeVersionDart = Pointer<Utf8> Function();
 
+// SRM
+typedef _RuntimeBaselinesJsonC = Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _RuntimeBaselinesJsonDart = Pointer<Utf8> Function(Pointer<Void> handle);
+
+typedef _RuntimeBaselineSummaryC = Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _RuntimeBaselineSummaryDart = Pointer<Utf8> Function(
+    Pointer<Void> handle);
+
+typedef _RuntimeExportSrmSnapshotC = Pointer<Utf8> Function(
+    Pointer<Void> handle);
+typedef _RuntimeExportSrmSnapshotDart = Pointer<Utf8> Function(
+    Pointer<Void> handle);
+
+typedef _RuntimeLoadSrmSnapshotC = Int32 Function(
+    Pointer<Void> handle, Pointer<Utf8> snapshotJson);
+typedef _RuntimeLoadSrmSnapshotDart = int Function(
+    Pointer<Void> handle, Pointer<Utf8> snapshotJson);
+
 // --- Config ---
 
 /// Configuration passed to `synheart_runtime_new` as JSON.
@@ -135,6 +153,12 @@ class RuntimeBridge {
   late final _RuntimeResetDart _resetFfi;
   late final _RuntimeFreeStringDart _freeString;
 
+  // SRM
+  late final _RuntimeBaselinesJsonDart _baselinesJsonFfi;
+  late final _RuntimeBaselineSummaryDart _baselineSummaryFfi;
+  late final _RuntimeExportSrmSnapshotDart _exportSrmSnapshotFfi;
+  late final _RuntimeLoadSrmSnapshotDart _loadSrmSnapshotFfi;
+
   RuntimeBridge._(this._lib, this._handle) {
     _runtimeFree = _lib
         .lookupFunction<_RuntimeFreeC, _RuntimeFreeDart>(
@@ -175,6 +199,22 @@ class RuntimeBridge {
     _freeString = _lib
         .lookupFunction<_RuntimeFreeStringC, _RuntimeFreeStringDart>(
           'synheart_runtime_free_string',
+        );
+    _baselinesJsonFfi = _lib
+        .lookupFunction<_RuntimeBaselinesJsonC, _RuntimeBaselinesJsonDart>(
+          'synheart_runtime_baselines_json',
+        );
+    _baselineSummaryFfi = _lib
+        .lookupFunction<_RuntimeBaselineSummaryC, _RuntimeBaselineSummaryDart>(
+          'synheart_runtime_baseline_summary',
+        );
+    _exportSrmSnapshotFfi = _lib.lookupFunction<_RuntimeExportSrmSnapshotC,
+        _RuntimeExportSrmSnapshotDart>(
+      'synheart_runtime_export_srm_snapshot',
+    );
+    _loadSrmSnapshotFfi = _lib
+        .lookupFunction<_RuntimeLoadSrmSnapshotC, _RuntimeLoadSrmSnapshotDart>(
+          'synheart_runtime_load_srm_snapshot',
         );
   }
 
@@ -272,6 +312,45 @@ class RuntimeBridge {
   /// Reset the runtime state (clears all internal buffers).
   void reset() {
     _resetFfi(_handle);
+  }
+
+  // -- SRM Baselines --
+
+  /// Return all SRM baselines as JSON, or `null`.
+  String? baselinesJson() {
+    final ptr = _baselinesJsonFfi(_handle);
+    if (ptr == nullptr) return null;
+    final json = ptr.toDartString();
+    _freeString(ptr);
+    return json;
+  }
+
+  /// Return baseline summary as JSON: `{"total":14,"ready":0,"warming":5,"empty":9}`.
+  String? baselineSummary() {
+    final ptr = _baselineSummaryFfi(_handle);
+    if (ptr == nullptr) return null;
+    final json = ptr.toDartString();
+    _freeString(ptr);
+    return json;
+  }
+
+  /// Export the SRM snapshot as JSON for persistence, or `null`.
+  String? exportSrmSnapshot() {
+    final ptr = _exportSrmSnapshotFfi(_handle);
+    if (ptr == nullptr) return null;
+    final json = ptr.toDartString();
+    _freeString(ptr);
+    return json;
+  }
+
+  /// Load an SRM snapshot from JSON. Returns 0 on success, error code on failure.
+  int loadSrmSnapshot(String json) {
+    final native = json.toNativeUtf8();
+    try {
+      return _loadSrmSnapshotFfi(_handle, native);
+    } finally {
+      malloc.free(native);
+    }
   }
 
   /// Release the native runtime handle. Must be called when the bridge

@@ -55,6 +55,9 @@ export 'src/modules/cloud/cloud_connector_module.dart';
 export 'src/modules/cloud/upload_models.dart';
 export 'src/modules/cloud/cloud_exceptions.dart';
 
+// Runtime Bridge (FFI to synheart-runtime, includes SRM baseline access)
+export 'src/modules/runtime/runtime_bridge.dart';
+
 // Services
 export 'src/services/auth_service.dart';
 

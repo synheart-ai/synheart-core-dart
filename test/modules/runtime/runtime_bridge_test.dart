@@ -199,5 +199,114 @@ void main() {
       expect(framesProduced, greaterThanOrEqualTo(1),
           reason: 'Should produce at least one frame across 10 windows');
     });
+
+    // -- SRM Baselines --
+
+    test('baselineSummary returns valid JSON with expected keys', () {
+      if (bridge == null) {
+        markTestSkipped('Native runtime library not available');
+        return;
+      }
+
+      final summary = bridge!.baselineSummary();
+      expect(summary, isNotNull, reason: 'baselineSummary() should return JSON');
+
+      final parsed = jsonDecode(summary!) as Map<String, dynamic>;
+      expect(parsed.containsKey('total'), isTrue);
+      expect(parsed.containsKey('ready'), isTrue);
+      expect(parsed.containsKey('warming'), isTrue);
+      expect(parsed.containsKey('empty'), isTrue);
+    });
+
+    test('baselinesJson returns valid JSON', () {
+      if (bridge == null) {
+        markTestSkipped('Native runtime library not available');
+        return;
+      }
+
+      final baselines = bridge!.baselinesJson();
+      expect(baselines, isNotNull, reason: 'baselinesJson() should return JSON');
+      expect(() => jsonDecode(baselines!), returnsNormally);
+    });
+
+    test('baselineSummary shows metrics after data ingestion', () {
+      if (bridge == null) {
+        markTestSkipped('Native runtime library not available');
+        return;
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (var w = 0; w < 5; w++) {
+        fillWindowAndTick(bridge!, now + w * 15000);
+      }
+
+      final summary = bridge!.baselineSummary();
+      expect(summary, isNotNull);
+
+      final parsed = jsonDecode(summary!) as Map<String, dynamic>;
+      expect(parsed['total'], greaterThan(0),
+          reason: 'Should have SRM metrics registered');
+    });
+
+    test('SRM snapshot export and load round-trip', () {
+      if (bridge == null) {
+        markTestSkipped('Native runtime library not available');
+        return;
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (var w = 0; w < 5; w++) {
+        fillWindowAndTick(bridge!, now + w * 15000);
+      }
+
+      // Export snapshot
+      final snapshot = bridge!.exportSrmSnapshot();
+      expect(snapshot, isNotNull,
+          reason: 'exportSrmSnapshot() should return JSON');
+      expect(() => jsonDecode(snapshot!), returnsNormally);
+
+      // Create a new bridge and load the snapshot
+      final bridge2 = RuntimeBridge.createIfAvailable(
+        RuntimeConfig(
+          subjectId: 'sub_test_002',
+          sessionId: 'sess_test_002',
+          windowMs: 10000,
+          stepMs: 5000,
+        ),
+      );
+      expect(bridge2, isNotNull);
+
+      final result = bridge2!.loadSrmSnapshot(snapshot!);
+      expect(result, equals(0), reason: 'loadSrmSnapshot should return 0');
+
+      // Verify loaded bridge has same baseline summary
+      final originalSummary = bridge!.baselineSummary();
+      final loadedSummary = bridge2.baselineSummary();
+      expect(loadedSummary, equals(originalSummary),
+          reason: 'Baseline summary should match after round-trip');
+
+      bridge2.dispose();
+    });
+
+    test('reset clears SRM baselines', () {
+      if (bridge == null) {
+        markTestSkipped('Native runtime library not available');
+        return;
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (var w = 0; w < 5; w++) {
+        fillWindowAndTick(bridge!, now + w * 15000);
+      }
+
+      bridge!.reset();
+
+      final summary = bridge!.baselineSummary();
+      expect(summary, isNotNull);
+
+      final parsed = jsonDecode(summary!) as Map<String, dynamic>;
+      expect(parsed['warming'], equals(0), reason: 'warming should be 0 after reset');
+      expect(parsed['ready'], equals(0), reason: 'ready should be 0 after reset');
+    });
   });
 }

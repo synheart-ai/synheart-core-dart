@@ -743,6 +743,35 @@ class Synheart {
   /// Get runtime module (for diagnostics and direct bridge access)
   RuntimeModule? get runtimeModule => _runtimeModule;
 
+  // ── synheart-runtime SRM API (baselines live in the native Rust engine) ──
+
+  /// Baseline summary from the native synheart-runtime.
+  ///
+  /// Returns a JSON string like `{"total":14,"ready":0,"warming":5,"empty":9}`
+  /// or `null` if the native runtime is not linked.
+  static String? get runtimeBaselineSummary {
+    return shared._runtimeModule?.bridge?.baselineSummary();
+  }
+
+  /// All native runtime baselines as JSON, or `null`.
+  static String? get runtimeBaselinesJson {
+    return shared._runtimeModule?.bridge?.baselinesJson();
+  }
+
+  /// Export the native runtime SRM snapshot as JSON for cross-session persistence.
+  static String? exportRuntimeSRMSnapshot() {
+    return shared._runtimeModule?.bridge?.exportSrmSnapshot();
+  }
+
+  /// Load a native runtime SRM snapshot from JSON.
+  /// Returns 0 on success, non-zero error code on failure.
+  static int? loadRuntimeSRMSnapshot(String json) {
+    return shared._runtimeModule?.bridge?.loadSrmSnapshot(json);
+  }
+
+  /// The native synheart-runtime version, or `null` if unavailable.
+  static String? get runtimeVersion => RuntimeBridge.version();
+
   // Collection status getters
   bool get _isWearCollecting {
     return _wearModule?.status == ModuleStatus.running;
