@@ -46,8 +46,8 @@ Future<void> main() async {
   // 3. Subscribe to HSI updates (core state representation)
   Synheart.onHSIUpdate.listen((hsi) {
     print('[HSI] v${hsi.hsiVersion} at ${hsi.observedAtUtc}');
-    final affectReadings = hsi.axes?.affect?.readings ?? [];
-    for (final r in affectReadings) {
+    final physiologicalReadings = hsi.axes?.physiological?.readings ?? [];
+    for (final r in physiologicalReadings) {
       print('[HSI]   ${r.axis}: ${r.score}');
     }
   });

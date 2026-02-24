@@ -110,7 +110,7 @@ class FocusHead {
       }
 
       // Extract HR from HSV embedding
-      // The embedding vector[0] contains raw HR (BPM) as placed by Flux
+      // The embedding vector[0] contains raw HR (BPM) as placed by synheart-runtime
       final emb = hsv.meta.embedding.vector;
       if (emb.isEmpty) {
         SynheartLogger.log('[FocusHead] No embedding data available');

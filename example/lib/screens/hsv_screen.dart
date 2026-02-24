@@ -48,10 +48,10 @@ class HSVScreen extends StatelessWidget {
                 // Affect Domain
                 _buildDomainCard(
                   context,
-                  title: 'Affect',
+                  title: 'Physiological',
                   icon: Icons.mood,
                   color: Colors.red.shade700,
-                  domain: axes?.affect,
+                  domain: axes?.physiological,
                 ),
                 const SizedBox(height: 16),
 
@@ -86,7 +86,7 @@ class HSVScreen extends StatelessWidget {
     required String title,
     required IconData icon,
     required Color color,
-    HSI10Domain? domain,
+    HSI11Domain? domain,
   }) {
     final readings = domain?.readings ?? [];
 

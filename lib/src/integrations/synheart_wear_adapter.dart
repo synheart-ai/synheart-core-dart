@@ -98,8 +98,8 @@ class SynheartWearDataSource implements BiosignalDataSource {
           wearMetrics.getMetric(wear.MetricType.hrvSdnn)?.toDouble(),
       rrIntervals: wearMetrics.rrIntervalsMs,
       respirationRate: null, // Not provided by wear SDK yet
-      motion: null, // TODO: Add motion data mapping if available
-      sleepStage: null, // TODO: Add sleep stage mapping if available
+      motion: null,
+      sleepStage: null,
     );
 
     _controller.add(biosignals);

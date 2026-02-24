@@ -23,7 +23,7 @@ void main() {
         ),
         snapshots: [
           {
-            'hsi': {'hsi_version': '1.0', 'test': 'data'},
+            'hsi': {'hsi_version': '1.1', 'test': 'data'},
             'focus': {'timestamp': '2025-01-01T00:00:00Z', 'state': 'neutral'},
             'emotion': {
               'timestamp': '2025-01-01T00:00:00Z',
@@ -126,7 +126,7 @@ void main() {
           jsonEncode({
             'status': 'error',
             'code': 'schema_validation_failed',
-            'message': 'Invalid HSI 1.0 format',
+            'message': 'Invalid HSI 1.1 format',
           }),
           400,
           headers: {'content-type': 'application/json'},

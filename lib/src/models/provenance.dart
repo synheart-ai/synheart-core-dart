@@ -1,6 +1,6 @@
-/// Data provenance tracking aligned with synheart-flux HSV.
+/// Data provenance tracking aligned with synheart-runtime HSV.
 ///
-/// Mirrors Flux `ProvenanceInfo` — records the origin and lineage of data
+/// Mirrors `ProvenanceInfo` from synheart-runtime — records the origin and lineage of data
 /// that contributed to the Human State Vector.
 
 /// Provenance metadata describing where HSV data originated.

@@ -1,6 +1,6 @@
 # Synheart Core SDK - Dart/Flutter
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
 [![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.32.0-blue.svg)](https://flutter.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
@@ -26,10 +26,9 @@ The Synheart Core SDK consolidates all Synheart signal channels into one SDK:
 - **Wear Module** → Biosignals (HR, HRV, sleep, motion)
 - **Phone Module** → Motion + context signals
 - **Behavior Module** → Digital interaction patterns
-- **HSI Runtime** → Signal fusion + state computation
+- **HSI Runtime** → Signal fusion + state computation (via synheart-runtime Rust engine)
 - **Consent Module** → User permission management
 - **Cloud Connector** → Secure HSI snapshot uploads
-- **Syni Hooks** → LLM conditioning
 
 **Key principle:**
 > One SDK, many modules, unified human-state model
@@ -37,13 +36,14 @@ The Synheart Core SDK consolidates all Synheart signal channels into one SDK:
 ## Features
 
 - **Modular signal collection** — Wear (biosignals), Phone (motion/context), Behavior (interaction patterns)
-- **On-device state computation** — HSV Runtime fuses signals into a unified Human State Vector
-- **Optional interpretation heads** — Focus and Emotion modules consume HSV and produce semantic estimates
-- **HSI 1.0 export** — Cross-platform canonical JSON format for external interoperability
+- **On-device state computation** — synheart-runtime (Rust) fuses signals into HSI JSON
+- **Optional interpretation heads** — Focus and Emotion modules consume HSI and produce semantic estimates
+- **HSI 1.1 export** — Cross-platform canonical JSON format for external interoperability
 - **Consent-first architecture** — All data collection respects explicit user consent; revocation stops modules immediately
 - **Capability-gated features** — Server-signed tokens control which SDK features are available (core/extended/research)
 - **On-demand collection** — Granular start/stop control per module, custom collection intervals
 - **Raw data streams** — Direct access to wear samples and behavior events
+- **SRM baseline persistence** — Self-Reference Model snapshots automatically saved to encrypted storage and restored on startup, preserving learned baselines across app restarts
 - **Secure cloud upload** — Encrypted, HMAC-signed HSI snapshot uploads with offline queue
 - **Reactive streams** — RxDart-based real-time updates
 
@@ -67,11 +67,11 @@ The Core SDK strictly separates:
   - Implemented in Dart classes for this SDK
   - Fast, type-safe on-device processing
 
-- **HSI 1.0 (Human State Interface)**: Cross-platform JSON wire format
+- **HSI 1.1 (Human State Interface)**: Cross-platform JSON wire format
   - Platform-agnostic canonical format
   - For external systems and cross-platform communication
 
-The SDK uses a hybrid approach: HSV for local computation, HSI 1.0 for external integration.
+The SDK uses a hybrid approach: HSV for local computation, HSI 1.1 for external integration.
 
 ### Core Modules
 
@@ -95,11 +95,9 @@ Wear, Phone, Behavior Modules (raw samples)
     ↓
 RuntimeModule → RuntimeBridge → synheart-runtime (Rust via dart:ffi)
     ↓                              ↓
-    ↓                   session → state → flux → HSI JSON
+    ↓                   session → state → HSI JSON
     ↓                              ↓
     ←──── HumanStateVector ←───────┘
-    ↓
-FluxBridge → HSI 1.x (canonical export)
     ↓
 Optional: Focus Module → Focus Estimates
 Optional: Emotion Module → Emotion Estimates
@@ -140,25 +138,24 @@ await Synheart.initialize(
   ),
 );
 
-// Subscribe to HSV updates (core state representation)
-Synheart.onHSVUpdate.listen((hsv) {
-  print('Arousal Index: ${hsv.meta.axes.affect.arousalIndex}');
-  print('Engagement Stability: ${hsv.meta.axes.engagement.engagementStability}');
+// Subscribe to HSI updates (core state representation — raw JSON from synheart-runtime)
+Synheart.onHSIUpdate.listen((hsiJson) {
+  print('HSI JSON: $hsiJson');
 });
 
-// Optional: Enable interpretation modules
-await Synheart.enableFocus();
+// Optional: Enable interpretation modules (activate API preferred)
+Synheart.activate(SynheartFeature.focus);
 Synheart.onFocusUpdate.listen((focus) {
   print('Focus Score: ${focus.estimate.score}');
 });
 
-await Synheart.enableEmotion();
+Synheart.activate(SynheartFeature.emotion);
 Synheart.onEmotionUpdate.listen((emotion) {
   print('Stress Index: ${emotion.stressIndex}');
 });
 
 // Optional: Enable cloud sync (requires consent)
-await Synheart.enableCloud();
+Synheart.activate(SynheartFeature.cloud);
 ```
 
 ### On-Demand Data Collection
@@ -167,7 +164,7 @@ The SDK supports granular control over when data collection starts and stops, al
 
 #### Manual Initialization
 
-By default, `initialize()` automatically starts all data collection modules. To control when collection starts:
+By default, `initialize()` does not start data collection (`autoStart: false`). To control when collection starts:
 
 ```dart
 // Initialize without auto-starting collection
@@ -183,10 +180,10 @@ await Synheart.initialize(
 );
 
 // Start collection when needed (e.g., when game starts)
-await Synheart.startDataCollection();
+await Synheart.startSession();
 
 // Stop collection when done (e.g., when game ends)
-await Synheart.stopDataCollection();
+await Synheart.stopSession();
 ```
 
 #### Module-Level Control
@@ -326,29 +323,26 @@ if (results.focusHint > 0.7) {
 }
 ```
 
-### HSI 1.0 Export
+### HSI 1.1 Export
 
-The SDK supports exporting HSV to the canonical HSI 1.0 format for external interoperability:
+The SDK supports exporting HSV to the canonical HSI 1.1 format for external interoperability:
 
 ```dart
 import 'package:synheart_core/synheart_core.dart';
-import 'package:synheart_core/src/modules/hsi_runtime/flux_bridge.dart';
+import 'package:synheart_core/synheart_core.dart';
 import 'dart:convert';
 
-// Subscribe to HSI updates
-Synheart.onHSIUpdate.listen((hsi10) {
-  // Serialize to JSON
-  final json = hsi10.toJson();
-  final jsonString = JsonEncoder.withIndent('  ').convert(json);
-
+// Subscribe to HSI updates (raw JSON string from synheart-runtime)
+Synheart.onHSIUpdate.listen((hsiJson) {
+  // hsiJson is already a canonical HSI 1.x JSON string
   // Send to external system, validate against schema, etc.
-  print(jsonString);
+  print(hsiJson);
 });
 ```
 
 The SDK uses a hybrid architecture:
 - **HSV (Human State Vector)**: Language-agnostic model implemented in Dart classes
-- **HSI 1.0 (Human State Interface)**: Cross-platform JSON format for interoperability
+- **HSI 1.1 (Human State Interface)**: Cross-platform JSON format for interoperability
 
 **Note**: All Synheart SDKs (Dart, Kotlin, Swift) implement the same HSV model, ensuring consistent state representation across platforms.
 
@@ -485,8 +479,7 @@ try {
 | `startWearCollection()` / `stopWearCollection()` | Control wear module |
 | `startBehaviorCollection()` / `stopBehaviorCollection()` | Control behavior module |
 | `startPhoneCollection()` / `stopPhoneCollection()` | Control phone module |
-| `enableFocus()` / `enableEmotion()` | Enable interpretation modules |
-| `enableCloud()` / `disableCloud()` | Control cloud uploads |
+| `activate(feature)` / `deactivate(feature)` | Enable/disable features (focus, emotion, cloud, etc.) |
 | `grantConsent(...)` | Grant consent for data types |
 | `revokeConsent()` / `revokeConsentType(type)` | Revoke consent |
 | `getWearFeatures(window)` | Query wear features on demand |
@@ -498,7 +491,7 @@ try {
 
 | Stream | Type | Description |
 |--------|------|-------------|
-| `onHSIUpdate` | `Stream<HSI10Payload>` | HSI 1.0 state updates |
+| `onHSIUpdate` | `Stream<String>` | HSI JSON frames from synheart-runtime |
 | `onEmotionUpdate` | `Stream<EmotionState>` | Emotion estimates |
 | `onFocusUpdate` | `Stream<FocusState>` | Focus estimates |
 | `wearSampleStream` | `Stream<WearSample>` | Raw wear samples |
@@ -611,8 +604,9 @@ The example app (`example/`) includes all required configurations. You can copy 
 
 - All processing is **on-device** by default
 - No raw biosignals leave the device without explicit consent
-- **Consent is enforced at every level** - collection, caching, and streaming all respect consent
-- Cloud sync uses **aggregated HSV** only
+- **Consent is enforced at every level** — collection, caching, streaming, and local HSI delivery all respect consent
+- **HSI stream is consent-gated** — `onHSIUpdate` only emits frames when `biosignals` consent is granted
+- Cloud sync uses **aggregated HSI** only
 - HSI is strictly **non-medical**; no diagnoses or clinical labels
 - **On-demand collection** allows apps to minimize data collection to only when needed
 
@@ -640,9 +634,9 @@ await Synheart.initialize(
 await Synheart.startSession();
 
 // Subscribe and verify
-Synheart.onHSIUpdate.listen((hsi) {
-  // Validate HSI data structure
-  print('HSI version: ${hsi.hsiVersion}');
+Synheart.onHSIUpdate.listen((hsiJson) {
+  // Validate HSI JSON from synheart-runtime
+  print('HSI: $hsiJson');
 });
 ```
 
@@ -686,7 +680,7 @@ See [ARCHITECTURE](doc/ARCHITECTURE.md) for detailed implementation specificatio
 
 - All processing is **on-device** by default
 - No raw biosignals leave the device without explicit consent
-- Cloud sync uses **aggregated HSV** only
+- Cloud sync uses **aggregated HSI** only
 - HSI is strictly **non-medical**; no diagnoses or clinical labels
 - Zero raw data policy enforced throughout
 
@@ -706,7 +700,7 @@ See [ARCHITECTURE](doc/ARCHITECTURE.md) for detailed implementation specificatio
 
 Apache 2.0 License - see [LICENSE](LICENSE) for details.
 
-Copyright 2025 Synheart AI Inc.
+Copyright 2025-2026 Synheart AI Inc.
 
 ## 👤 Author
 

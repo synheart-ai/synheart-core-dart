@@ -23,6 +23,7 @@ import 'package:synheart_behavior/synheart_behavior.dart' as sb;
 import 'modules/runtime/runtime_bridge.dart';
 import 'modules/runtime/runtime_module.dart';
 import 'modules/srm/srm_module.dart';
+import 'modules/srm/srm_snapshot_storage.dart';
 import 'modules/cloud/cloud_connector_module.dart';
 import 'heads/emotion_head.dart';
 import 'heads/focus_head.dart';
@@ -68,18 +69,18 @@ import 'modules/consent/consent_ui.dart';
 /// });
 ///
 /// // Optional: Enable interpretation modules
-/// await Synheart.enableFocus();
+/// Synheart.activate(SynheartFeature.focus);
 /// Synheart.onFocusUpdate.listen((focus) {
 ///   print('Focus Score: ${focus.estimate.score}');
 /// });
 ///
-/// await Synheart.enableEmotion();
+/// Synheart.activate(SynheartFeature.emotion);
 /// Synheart.onEmotionUpdate.listen((emotion) {
 ///   print('Stress Index: ${emotion.stressIndex}');
 /// });
 ///
 /// // Enable cloud upload (with consent)
-/// await Synheart.enableCloud();
+/// Synheart.activate(SynheartFeature.cloud);
 /// ```
 class Synheart {
   static Synheart? _instance;
@@ -99,7 +100,6 @@ class Synheart {
   RuntimeModule? _runtimeModule;
   SRMModule? _srmModule;
   CloudConnectorModule? _cloudConnector;
-  // TODO: SyniHooksModule? _syniHooks;
 
   // Optional interpretation modules
   EmotionHead? _emotionHead;
@@ -146,7 +146,7 @@ class Synheart {
   /// Stream of HSI updates (core state representation, raw HSI JSON)
   ///
   /// HSI (Human State Interface) contains:
-  /// - State axes (affect, engagement, activity, context)
+  /// - State axes (physiological, engagement, activity, context)
   /// - State indices (arousalIndex, engagementStability, etc.)
   /// - 64D state embedding
   ///
@@ -304,7 +304,7 @@ class Synheart {
       );
 
       SynheartLogger.log('[Synheart] Initializing SRM...');
-      _srmModule = SRMModule();
+      _srmModule = SRMModule(storage: SRMSnapshotStorage());
       _moduleManager.registerModule(
         _srmModule!,
         dependsOn: ['capabilities', 'consent'],
@@ -348,8 +348,8 @@ class Synheart {
 
       _hsvSubscription = _runtimeModule!.hsiStream.listen(
         (hsiJson) {
-          // hsiJson is already HSI 1.1 — emit as raw string for now
-          // TODO: parse into HSI10Payload if needed by downstream
+          final consent = _consentModule?.current();
+          if (consent == null || !consent.biosignals) return;
           _hsvStream.add(hsiJson);
         },
         onError: (e, st) => SynheartLogger.log(
@@ -403,7 +403,7 @@ class Synheart {
   /// Start a session — activates permitted modules and begins signal collection.
   ///
   /// Per RFC §5.2: Core must activate permitted modules, route normalized
-  /// signals to Flux, enable HSV updates, and enable optional HSI export.
+  /// signals to synheart-runtime, enable HSV updates, and enable optional HSI export.
   ///
   /// Must be called after initialize(). No data collection occurs until
   /// this method is called (RFC §3.3).
@@ -411,21 +411,11 @@ class Synheart {
     return shared._startDataCollection();
   }
 
-  /// @Deprecated: Use [startSession] instead.
-  static Future<void> startDataCollection() async {
-    return shared._startDataCollection();
-  }
-
   /// Stop the current session — halts module streaming and clears ephemeral buffers.
   ///
-  /// Per RFC §5.2: Core must halt module streaming, stop Flux updates,
+  /// Per RFC §5.2: Core must halt module streaming, stop synheart-runtime updates,
   /// clear ephemeral buffers, and prevent further HSI export.
   static Future<void> stopSession() async {
-    return shared._stopDataCollection();
-  }
-
-  /// @Deprecated: Use [stopSession] instead.
-  static Future<void> stopDataCollection() async {
     return shared._stopDataCollection();
   }
 
@@ -635,30 +625,6 @@ class Synheart {
     return shared._getPhoneFeatures(window);
   }
 
-  /// Enable focus interpretation module.
-  ///
-  /// @Deprecated Use `activate(SynheartFeature.focus)` instead.
-  @Deprecated('Use activate(SynheartFeature.focus) instead')
-  static Future<void> enableFocus() async {
-    activate(SynheartFeature.focus);
-  }
-
-  /// Enable emotion interpretation module.
-  ///
-  /// @Deprecated Use `activate(SynheartFeature.emotion)` instead.
-  @Deprecated('Use activate(SynheartFeature.emotion) instead')
-  static Future<void> enableEmotion() async {
-    activate(SynheartFeature.emotion);
-  }
-
-  /// Enable cloud uploads (requires cloudUpload consent).
-  ///
-  /// @Deprecated Use `activate(SynheartFeature.cloud)` instead.
-  @Deprecated('Use activate(SynheartFeature.cloud) instead')
-  static Future<void> enableCloud() async {
-    activate(SynheartFeature.cloud);
-  }
-
   /// Force upload of queued snapshots now
   ///
   /// Example:
@@ -699,14 +665,6 @@ class Synheart {
       throw StateError('Cloud connector not enabled');
     }
     await _cloudConnector!.flushQueue();
-  }
-
-  /// Disable cloud uploads.
-  ///
-  /// @Deprecated Use `deactivate(SynheartFeature.cloud)` instead.
-  @Deprecated('Use deactivate(SynheartFeature.cloud) instead')
-  static Future<void> disableCloud() async {
-    deactivate(SynheartFeature.cloud);
   }
 
   /// Check if user has granted a specific consent
@@ -781,6 +739,9 @@ class Synheart {
 
   /// Get behavior module for recording events
   BehaviorModule? get behaviorModule => _behaviorModule;
+
+  /// Get runtime module (for diagnostics and direct bridge access)
+  RuntimeModule? get runtimeModule => _runtimeModule;
 
   // Collection status getters
   bool get _isWearCollecting {
@@ -1612,11 +1573,6 @@ class Synheart {
       await _cloudConnector!.clearQueue();
     }
 
-    // TODO: Add API call to cloud service to delete user data
-    // This would require:
-    // 1. Cloud service endpoint for data deletion
-    // 2. User authentication/authorization
-    // 3. Confirmation of deletion
     SynheartLogger.log(
       '[Synheart] Cloud upload queue cleared. Note: Cloud service data deletion requires API call (not implemented yet)',
     );
@@ -1647,6 +1603,21 @@ class Synheart {
       throw StateError('Consent module not initialized');
     }
     await _consentModule!.denyConsent();
+  }
+
+  /// Runtime diagnostics — returns availability, version, frame count, and last quality.
+  ///
+  /// Useful for debugging and runtime verification screens.
+  /// Returns a map with keys: `isAvailable`, `version`, `frameCount`, `lastQuality`.
+  static Map<String, dynamic> runtimeDiagnostics() {
+    final runtime = shared._runtimeModule;
+    final bridge = runtime != null ? runtime.bridge : null;
+    return {
+      'isAvailable': bridge != null,
+      'version': RuntimeBridge.version(),
+      'frameCount': bridge?.frameCount() ?? 0,
+      'lastQuality': bridge?.lastQuality(),
+    };
   }
 
   /// Get module statuses (for debugging)
@@ -1708,8 +1679,7 @@ class Synheart {
         }
       case SynheartFeature.focus:
         if (isOperational && _focusHead == null) {
-          // TODO: FocusHead needs migration to accept Stream<String> (HSI JSON)
-          //       instead of Stream<HumanStateVector>. Skipping until updated.
+          // FocusHead: HSI JSON parser pending.
           SynheartLogger.log(
             '[Synheart] Focus head not yet migrated to runtime bridge — skipping',
           );
@@ -1723,8 +1693,7 @@ class Synheart {
         }
       case SynheartFeature.emotion:
         if (isOperational && _emotionHead == null) {
-          // TODO: EmotionHead needs migration to accept Stream<String> (HSI JSON)
-          //       instead of Stream<HumanStateVector>. Skipping until updated.
+          // EmotionHead: HSI JSON parser pending.
           SynheartLogger.log(
             '[Synheart] Emotion head not yet migrated to runtime bridge — skipping',
           );

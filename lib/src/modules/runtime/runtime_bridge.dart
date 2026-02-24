@@ -94,12 +94,14 @@ class RuntimeConfig {
   final int stepMs;
   final String subjectId;
   final String sessionId;
+  final bool behaviorEnabled;
 
   RuntimeConfig({
     this.windowMs = 60000,
     this.stepMs = 5000,
     required this.subjectId,
     required this.sessionId,
+    this.behaviorEnabled = true,
   });
 
   Map<String, dynamic> toJson() => {
@@ -107,6 +109,7 @@ class RuntimeConfig {
         'step_ms': stepMs,
         'subject_id': subjectId,
         'session_id': sessionId,
+        'behavior_enabled': behaviorEnabled,
       };
 }
 
@@ -289,10 +292,14 @@ class RuntimeBridge {
           .lookupFunction<_RuntimeVersionC, _RuntimeVersionDart>(
             'synheart_runtime_version',
           );
+      final freeStringFfi = lib
+          .lookupFunction<_RuntimeFreeStringC, _RuntimeFreeStringDart>(
+            'synheart_runtime_free_string',
+          );
       final ptr = versionFfi();
       if (ptr == nullptr) return null;
       final v = ptr.toDartString();
-      // Note: version string is expected to be static — no free needed.
+      freeStringFfi(ptr);
       return v;
     } catch (_) {
       return null;

@@ -9,7 +9,7 @@ import 'provenance.dart';
 
 /// Human State Vector (HSV) - Internal runtime representation of human state.
 ///
-/// Aligned with synheart-flux. The HSV is the canonical internal
+/// Aligned with synheart-runtime. The HSV is the canonical internal
 /// representation fusing physiology, behavior, and context modalities.
 /// External consumers receive HSI JSON (via synheart-runtime), never HSV directly.
 ///
@@ -17,7 +17,7 @@ import 'provenance.dart';
 /// - Core produces the base HSV with physiology + behavior + context
 /// - Emotion Head (via synheart-emotion SDK) populates [emotion]
 /// - Focus Head (via synheart-focus SDK) populates [focus]
-/// - synheart-runtime exports HSV → HSI 1.0 with [ExportPolicy] filtering
+/// - synheart-runtime exports HSV → HSI internally
 class HumanStateVector {
   /// HSV schema version
   final String version;
@@ -203,9 +203,6 @@ class MetaState {
   /// Total accepted windows across SRM strata.
   final int? baselineSessions;
 
-  /// Raw Flux HSV JSON returned by `flux_processor_process_window`.
-  final String? rawFluxHsv;
-
   MetaState({
     required this.sessionId,
     required this.device,
@@ -217,7 +214,6 @@ class MetaState {
     this.srmVersion,
     this.baselineDays,
     this.baselineSessions,
-    this.rawFluxHsv,
   });
 
   factory MetaState.fromJson(Map<String, dynamic> json) {
@@ -232,7 +228,6 @@ class MetaState {
       srmVersion: json['srmVersion'] as String?,
       baselineDays: (json['baselineDays'] as num?)?.toInt(),
       baselineSessions: (json['baselineSessions'] as num?)?.toInt(),
-      rawFluxHsv: json['rawFluxHsv'] as String?,
     );
   }
 
@@ -247,7 +242,6 @@ class MetaState {
     if (srmVersion != null) 'srmVersion': srmVersion,
     if (baselineDays != null) 'baselineDays': baselineDays,
     if (baselineSessions != null) 'baselineSessions': baselineSessions,
-    if (rawFluxHsv != null) 'rawFluxHsv': rawFluxHsv,
   };
 }
 

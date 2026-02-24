@@ -4,7 +4,7 @@ import 'wear_source_handler.dart';
 /// Cache for wear raw samples
 ///
 /// RFC-CORE-0007 compliant: buffers raw data only.
-/// Feature computation is delegated to Flux.
+/// Feature computation is delegated to synheart-runtime.
 class WearCache {
   final Map<WindowType, List<WearSample>> _windowSamples = {};
 

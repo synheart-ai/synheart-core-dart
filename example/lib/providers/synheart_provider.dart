@@ -19,12 +19,12 @@ class SynheartProvider extends ChangeNotifier {
   bool _focusEnabled = false;
 
   // Data Streams
-  HSI10Payload? _latestHSI;
+  HSI11Payload? _latestHSI;
   EmotionState? _latestEmotion;
   FocusState? _latestFocus;
 
   // Stream Subscriptions
-  StreamSubscription<HSI10Payload>? _hsiSubscription;
+  StreamSubscription<HSI11Payload>? _hsiSubscription;
   StreamSubscription<EmotionState>? _emotionSubscription;
   StreamSubscription<FocusState>? _focusSubscription;
 
@@ -63,9 +63,9 @@ class SynheartProvider extends ChangeNotifier {
   bool get emotionEnabled => _emotionEnabled;
   bool get focusEnabled => _focusEnabled;
 
-  HSI10Payload? get latestHSI => _latestHSI;
+  HSI11Payload? get latestHSI => _latestHSI;
   /// Backward-compatible alias for UI screens
-  HSI10Payload? get latestHSV => _latestHSI;
+  HSI11Payload? get latestHSV => _latestHSI;
   EmotionState? get latestEmotion => _latestEmotion;
   FocusState? get latestFocus => _latestFocus;
 
@@ -85,6 +85,19 @@ class SynheartProvider extends ChangeNotifier {
   Map<String, dynamic>? get queriedFeatures => _queriedFeatures;
   bool get isGameActive => _isGameActive;
   double? get latestGameHR => _latestGameHR;
+
+  /// Runtime diagnostics from the native synheart-runtime bridge.
+  Map<String, dynamic> get runtimeDiagnostics {
+    if (!_isInitialized) {
+      return {
+        'isAvailable': false,
+        'version': null,
+        'frameCount': 0,
+        'lastQuality': null,
+      };
+    }
+    return Synheart.runtimeDiagnostics();
+  }
 
   /// Get current consent status map
   Map<String, bool> get consentStatusMap {

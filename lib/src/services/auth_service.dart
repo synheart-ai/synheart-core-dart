@@ -96,8 +96,6 @@ class ProductionAuthService implements AuthService {
     required String appKey,
     required String userId,
   }) async {
-    // TODO: Implement actual API call to authentication service
-    // This would make an HTTP request to the Synheart backend
     throw UnimplementedError('Production auth not yet implemented');
   }
 }

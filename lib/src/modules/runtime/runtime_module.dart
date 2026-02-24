@@ -31,6 +31,9 @@ class RuntimeModule extends BaseSynheartModule {
   /// Stream of HSI JSON strings emitted each time the runtime produces a frame.
   Stream<String> get hsiStream => _hsiStream.stream;
 
+  /// The underlying RuntimeBridge (nullable — null when native library unavailable).
+  RuntimeBridge? get bridge => _runtime;
+
   RuntimeModule({
     RuntimeBridge? runtime,
     Stream<WearSample>? wearSampleStream,

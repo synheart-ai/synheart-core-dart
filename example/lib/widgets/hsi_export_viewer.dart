@@ -5,7 +5,7 @@ import 'dart:convert';
 
 /// HSI export viewer widget
 class HSIExportViewer extends StatelessWidget {
-  final HSI10Payload? hsv;
+  final HSI11Payload? hsv;
 
   const HSIExportViewer({super.key, this.hsv});
 
@@ -26,7 +26,7 @@ class HSIExportViewer extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'HSI 1.0 Export',
+                'HSI 1.1 Export',
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),

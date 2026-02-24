@@ -61,7 +61,6 @@ class CapabilityModule extends BaseSynheartModule
 
   @override
   bool canAccessFeature(String moduleId, String featureId) {
-    // TODO: Implement fine-grained feature access control
     return true;
   }
 

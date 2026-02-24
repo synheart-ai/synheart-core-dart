@@ -11,7 +11,7 @@ part 'hsi_axes.g.dart';
 /// All indices are normalized to [0.0, 1.0] range.
 /// Missing signals result in null values (not 0.0).
 ///
-/// For external interoperability, HSV is exported to HSI 1.0 format
+/// For external interoperability, HSV is exported to HSI 1.1 format
 /// by synheart-runtime (the sole source of truth for HSI generation).
 
 /// Affect Axis - Physiological arousal and emotional stability

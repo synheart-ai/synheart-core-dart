@@ -4,7 +4,7 @@ import 'package:synheart_core/synheart_core.dart';
 /// Dialog that shows a summary of the last captured HSI, Emotion, and Focus
 /// state after a session is stopped.
 class SessionSummaryDialog extends StatelessWidget {
-  final HSI10Payload? hsi;
+  final HSI11Payload? hsi;
   final EmotionState? emotion;
   final FocusState? focus;
 
@@ -30,10 +30,10 @@ class SessionSummaryDialog extends StatelessWidget {
                   if (hsi != null) ...[
                     _buildDomainSection(
                       context,
-                      title: 'Affect',
+                      title: 'Physiological',
                       icon: Icons.mood,
                       color: Colors.red.shade700,
-                      readings: hsi!.axes?.affect?.readings ?? [],
+                      readings: hsi!.axes?.physiological?.readings ?? [],
                     ),
                     _buildDomainSection(
                       context,
@@ -133,7 +133,7 @@ class SessionSummaryDialog extends StatelessWidget {
     required String title,
     required IconData icon,
     required Color color,
-    required List<HSI10Reading> readings,
+    required List<HSI11Reading> readings,
   }) {
     if (readings.isEmpty) return const SizedBox.shrink();
     return Column(

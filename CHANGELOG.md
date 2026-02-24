@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-02-23
+
+### Removed
+
+- **FeatureExtractor** — Deleted empty `BehaviorFeatureExtractor` placeholder class (`lib/src/modules/behavior/feature_extractor.dart`). All feature computation lives in synheart-runtime per RFC-CORE-0007.
+
+### Changed
+
+- Removed all TODO/FIXME comments across the SDK (synheart.dart, auth_service.dart, synheart_wear_adapter.dart, capability_module.dart).
+- Replaced stale TODO comments in FocusHead and EmotionHead reevaluation branches with concise `// FocusHead: HSI JSON parser pending.` / `// EmotionHead: HSI JSON parser pending.` notes.
+- **README.md** — Updated version badge, fixed HSV→HSI terminology, updated code examples to use `activate()` API and `Stream<String>` types, removed Syni Hooks from module list, removed stale `startDataCollection`/`stopDataCollection` references.
+
+### Added
+
+- **SRM snapshot persistence** — SRM baseline model is now persisted to encrypted storage (`FlutterSecureStorage`) and automatically restored on SDK initialization. Prevents baseline loss on app restart. New `SRMSnapshotStorage` class mirrors the `ConsentStorage` pattern.
+- **HSI stream consent gating** — Local `onHSIUpdate` stream now checks `biosignals` consent before forwarding HSI frames to consumers. Previously only cloud upload was gated; now local streams respect consent too.
+- **SRM persistence tests** — New `srm_snapshot_storage_test.dart` with 4 tests: save/load round-trip, null on empty, clear, and full SRMModule restore-from-storage integration test.
+- **HSI consent gate tests** — New `consent_gate_test.dart` with 3 tests verifying HSI frames are blocked when biosignal consent is denied.
+- **synheart-runtime installed** — macOS dylib, Android `.so` (4 ABIs), and iOS XCFramework now bundled in the SDK via `make install-dart`.
+
 ## [1.1.0] - 2026-02-22
 
 ### Changed

@@ -5,6 +5,7 @@ import 'srm_stratum.dart';
 import 'srm_baseline_status.dart';
 import 'srm_buffer.dart';
 import 'srm_snapshot.dart';
+import 'srm_snapshot_storage.dart';
 import 'srm_types.dart';
 
 /// SRM (Synheart Reference Model) module.
@@ -19,11 +20,14 @@ class SRMModule extends BaseSynheartModule {
   String get moduleId => 'srm';
 
   final SRMConfig _config;
+  final SRMSnapshotStorage? _storage;
 
   /// Per-stratum buffers.
   final Map<SRMStratum, SRMBuffer> _buffers = {};
 
-  SRMModule({SRMConfig config = const SRMConfig()}) : _config = config;
+  SRMModule({SRMConfig config = const SRMConfig(), SRMSnapshotStorage? storage})
+    : _config = config,
+      _storage = storage;
 
   @override
   Future<void> onInitialize() async {
@@ -31,6 +35,20 @@ class SRMModule extends BaseSynheartModule {
     for (final stratum in SRMStratum.values) {
       _buffers[stratum] = SRMBuffer(stratum: stratum, config: _config);
     }
+
+    // Restore persisted snapshot if available
+    if (_storage != null) {
+      try {
+        final saved = await _storage!.load();
+        if (saved != null) {
+          restoreSnapshot(saved);
+          SynheartLogger.log('[SRM] Restored persisted snapshot');
+        }
+      } catch (e) {
+        SynheartLogger.log('[SRM] Warning: failed to load persisted snapshot: $e', error: e);
+      }
+    }
+
     SynheartLogger.log('[SRM] SRM module initialized (${_buffers.length} strata)');
   }
 
@@ -41,12 +59,26 @@ class SRMModule extends BaseSynheartModule {
 
   @override
   Future<void> onStop() async {
+    if (_storage != null) {
+      try {
+        await _storage!.save(snapshot());
+      } catch (e) {
+        SynheartLogger.log('[SRM] Warning: failed to persist snapshot on stop: $e', error: e);
+      }
+    }
     SynheartLogger.log('[SRM] SRM module stopped');
   }
 
   @override
   Future<void> onDispose() async {
     SynheartLogger.log('[SRM] Disposing SRM module...');
+    if (_storage != null) {
+      try {
+        await _storage!.save(snapshot());
+      } catch (e) {
+        SynheartLogger.log('[SRM] Warning: failed to persist snapshot on dispose: $e', error: e);
+      }
+    }
     _buffers.clear();
   }
 

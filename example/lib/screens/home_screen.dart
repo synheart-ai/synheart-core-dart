@@ -15,9 +15,10 @@ import 'focus_screen.dart';
 import 'consent_screen.dart';
 import 'settings_screen.dart';
 import 'on_demand_screen.dart';
+import 'runtime_screen.dart';
 
 /// Helper to find a reading score from an HSI domain by axis name
-double _findReading(HSI10Domain? domain, String axis) {
+double _findReading(HSI11Domain? domain, String axis) {
   if (domain == null) return 0.0;
   for (final r in domain.readings) {
     if (r.axis == axis) return r.score;
@@ -478,7 +479,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(
                         child: MetricCard(
                           label: 'Arousal',
-                          value: _findReading(provider.latestHSI?.axes?.affect, 'arousal'),
+                          value: _findReading(provider.latestHSI?.axes?.physiological, 'arousal'),
                           color: Colors.red,
                         ),
                       ),
@@ -557,6 +558,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   Colors.orange,
                   () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const OnDemandScreen()),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildNavigationCard(
+                  context,
+                  'Runtime',
+                  'Native runtime status, version, live HSI JSON',
+                  Icons.memory,
+                  Colors.teal,
+                  () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const RuntimeScreen()),
                   ),
                 ),
                 const SizedBox(height: 12),

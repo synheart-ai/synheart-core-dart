@@ -6,28 +6,28 @@ part of 'hsi_export.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-HSI10Payload _$HSI10PayloadFromJson(Map<String, dynamic> json) => HSI10Payload(
+HSI11Payload _$HSI11PayloadFromJson(Map<String, dynamic> json) => HSI11Payload(
   hsiVersion: json['hsi_version'] as String,
   observedAtUtc: json['observed_at_utc'] as String,
   computedAtUtc: json['computed_at_utc'] as String,
-  producer: HSI10Producer.fromJson(json['producer'] as Map<String, dynamic>),
+  producer: HSI11Producer.fromJson(json['producer'] as Map<String, dynamic>),
   windowIds: (json['window_ids'] as List<dynamic>)
       .map((e) => e as String)
       .toList(),
   windows: (json['windows'] as Map<String, dynamic>).map(
-    (k, e) => MapEntry(k, HSI10Window.fromJson(e as Map<String, dynamic>)),
+    (k, e) => MapEntry(k, HSI11Window.fromJson(e as Map<String, dynamic>)),
   ),
   axes: json['axes'] == null
       ? null
-      : HSI10Axes.fromJson(json['axes'] as Map<String, dynamic>),
+      : HSI11Axes.fromJson(json['axes'] as Map<String, dynamic>),
   embeddings: (json['embeddings'] as List<dynamic>?)
-      ?.map((e) => HSI10Embedding.fromJson(e as Map<String, dynamic>))
+      ?.map((e) => HSI11Embedding.fromJson(e as Map<String, dynamic>))
       .toList(),
-  privacy: HSI10Privacy.fromJson(json['privacy'] as Map<String, dynamic>),
+  privacy: HSI11Privacy.fromJson(json['privacy'] as Map<String, dynamic>),
   meta: json['meta'] as Map<String, dynamic>?,
 );
 
-Map<String, dynamic> _$HSI10PayloadToJson(HSI10Payload instance) =>
+Map<String, dynamic> _$HSI11PayloadToJson(HSI11Payload instance) =>
     <String, dynamic>{
       'hsi_version': instance.hsiVersion,
       'observed_at_utc': instance.observedAtUtc,
@@ -41,63 +41,67 @@ Map<String, dynamic> _$HSI10PayloadToJson(HSI10Payload instance) =>
       'meta': instance.meta,
     };
 
-HSI10Producer _$HSI10ProducerFromJson(Map<String, dynamic> json) =>
-    HSI10Producer(
+HSI11Producer _$HSI11ProducerFromJson(Map<String, dynamic> json) =>
+    HSI11Producer(
       name: json['name'] as String,
       version: json['version'] as String,
       instanceId: json['instance_id'] as String,
     );
 
-Map<String, dynamic> _$HSI10ProducerToJson(HSI10Producer instance) =>
+Map<String, dynamic> _$HSI11ProducerToJson(HSI11Producer instance) =>
     <String, dynamic>{
       'name': instance.name,
       'version': instance.version,
       'instance_id': instance.instanceId,
     };
 
-HSI10Window _$HSI10WindowFromJson(Map<String, dynamic> json) => HSI10Window(
+HSI11Window _$HSI11WindowFromJson(Map<String, dynamic> json) => HSI11Window(
   start: json['start'] as String,
   end: json['end'] as String,
   label: json['label'] as String?,
 );
 
-Map<String, dynamic> _$HSI10WindowToJson(HSI10Window instance) =>
+Map<String, dynamic> _$HSI11WindowToJson(HSI11Window instance) =>
     <String, dynamic>{
       'start': instance.start,
       'end': instance.end,
       'label': instance.label,
     };
 
-HSI10Axes _$HSI10AxesFromJson(Map<String, dynamic> json) => HSI10Axes(
-  affect: json['affect'] == null
+HSI11Axes _$HSI11AxesFromJson(Map<String, dynamic> json) => HSI11Axes(
+  physiological: json['physiological'] == null
       ? null
-      : HSI10Domain.fromJson(json['affect'] as Map<String, dynamic>),
+      : HSI11Domain.fromJson(json['physiological'] as Map<String, dynamic>),
   engagement: json['engagement'] == null
       ? null
-      : HSI10Domain.fromJson(json['engagement'] as Map<String, dynamic>),
+      : HSI11Domain.fromJson(json['engagement'] as Map<String, dynamic>),
   behavior: json['behavior'] == null
       ? null
-      : HSI10Domain.fromJson(json['behavior'] as Map<String, dynamic>),
+      : HSI11Domain.fromJson(json['behavior'] as Map<String, dynamic>),
+  context: json['context'] == null
+      ? null
+      : HSI11Domain.fromJson(json['context'] as Map<String, dynamic>),
 );
 
-Map<String, dynamic> _$HSI10AxesToJson(HSI10Axes instance) => <String, dynamic>{
-  'affect': instance.affect?.toJson(),
+Map<String, dynamic> _$HSI11AxesToJson(HSI11Axes instance) => <String, dynamic>{
+  'physiological': instance.physiological?.toJson(),
   'engagement': instance.engagement?.toJson(),
   'behavior': instance.behavior?.toJson(),
+  'context': instance.context?.toJson(),
 };
 
-HSI10Domain _$HSI10DomainFromJson(Map<String, dynamic> json) => HSI10Domain(
+HSI11Domain _$HSI11DomainFromJson(Map<String, dynamic> json) => HSI11Domain(
   readings: (json['readings'] as List<dynamic>)
-      .map((e) => HSI10Reading.fromJson(e as Map<String, dynamic>))
+      .map((e) => HSI11Reading.fromJson(e as Map<String, dynamic>))
       .toList(),
 );
 
-Map<String, dynamic> _$HSI10DomainToJson(HSI10Domain instance) =>
+Map<String, dynamic> _$HSI11DomainToJson(HSI11Domain instance) =>
     <String, dynamic>{
       'readings': instance.readings.map((e) => e.toJson()).toList(),
     };
 
-HSI10Reading _$HSI10ReadingFromJson(Map<String, dynamic> json) => HSI10Reading(
+HSI11Reading _$HSI11ReadingFromJson(Map<String, dynamic> json) => HSI11Reading(
   axis: json['axis'] as String,
   score: (json['score'] as num).toDouble(),
   confidence: (json['confidence'] as num).toDouble(),
@@ -106,7 +110,7 @@ HSI10Reading _$HSI10ReadingFromJson(Map<String, dynamic> json) => HSI10Reading(
   notes: json['notes'] as String?,
 );
 
-Map<String, dynamic> _$HSI10ReadingToJson(HSI10Reading instance) =>
+Map<String, dynamic> _$HSI11ReadingToJson(HSI11Reading instance) =>
     <String, dynamic>{
       'axis': instance.axis,
       'score': instance.score,
@@ -116,8 +120,8 @@ Map<String, dynamic> _$HSI10ReadingToJson(HSI10Reading instance) =>
       'notes': instance.notes,
     };
 
-HSI10Embedding _$HSI10EmbeddingFromJson(Map<String, dynamic> json) =>
-    HSI10Embedding(
+HSI11Embedding _$HSI11EmbeddingFromJson(Map<String, dynamic> json) =>
+    HSI11Embedding(
       vector: (json['vector'] as List<dynamic>)
           .map((e) => (e as num).toDouble())
           .toList(),
@@ -130,7 +134,7 @@ HSI10Embedding _$HSI10EmbeddingFromJson(Map<String, dynamic> json) =>
       notes: json['notes'] as String?,
     );
 
-Map<String, dynamic> _$HSI10EmbeddingToJson(HSI10Embedding instance) =>
+Map<String, dynamic> _$HSI11EmbeddingToJson(HSI11Embedding instance) =>
     <String, dynamic>{
       'vector': instance.vector,
       'dimension': instance.dimension,
@@ -142,7 +146,7 @@ Map<String, dynamic> _$HSI10EmbeddingToJson(HSI10Embedding instance) =>
       'notes': instance.notes,
     };
 
-HSI10Privacy _$HSI10PrivacyFromJson(Map<String, dynamic> json) => HSI10Privacy(
+HSI11Privacy _$HSI11PrivacyFromJson(Map<String, dynamic> json) => HSI11Privacy(
   containsPii: json['contains_pii'] as bool,
   rawBiosignalsAllowed: json['raw_biosignals_allowed'] as bool,
   derivedMetricsAllowed: json['derived_metrics_allowed'] as bool,
@@ -151,7 +155,7 @@ HSI10Privacy _$HSI10PrivacyFromJson(Map<String, dynamic> json) => HSI10Privacy(
   notes: json['notes'] as String?,
 );
 
-Map<String, dynamic> _$HSI10PrivacyToJson(HSI10Privacy instance) =>
+Map<String, dynamic> _$HSI11PrivacyToJson(HSI11Privacy instance) =>
     <String, dynamic>{
       'contains_pii': instance.containsPii,
       'raw_biosignals_allowed': instance.rawBiosignalsAllowed,
