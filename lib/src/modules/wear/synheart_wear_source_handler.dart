@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:synheart_wear/synheart_wear.dart' as wear;
+import '../../core/defaults.dart';
 import '../../core/logger.dart';
 import 'wear_source_handler.dart';
 
@@ -285,7 +286,7 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   /// This is a placeholder until synheart_wear provides direct motion data
   double _estimateMotionFromSteps(double steps) {
     // Normalize steps to 0-1 range (assuming 10000 steps = max activity)
-    return (steps / 10000.0).clamp(0.0, 1.0);
+    return (steps / SynheartDefaults.maxStepsForMotion).clamp(0.0, 1.0);
   }
 
   @override

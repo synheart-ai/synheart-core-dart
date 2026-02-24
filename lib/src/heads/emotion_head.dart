@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:rxdart/rxdart.dart';
 import '../models/hsv.dart';
 import '../models/emotion.dart';
+import '../core/defaults.dart';
 import '../core/logger.dart';
 import 'package:synheart_emotion/synheart_emotion.dart' as se;
 
@@ -372,14 +373,14 @@ class EmotionHead {
     final hrMean = emb[0];
     var meanRr = emb[4];
 
-    if (hrMean <= 0 || hrMean > 300) {
+    if (hrMean <= 0 || hrMean > SynheartDefaults.rrMinMs) {
       // Invalid HR range
       return null;
     }
 
-    if (meanRr <= 0 || meanRr > 2000) {
+    if (meanRr <= 0 || meanRr > SynheartDefaults.rrMaxMs) {
       // Invalid RR range, derive from HR
-      meanRr = 60000.0 / hrMean;
+      meanRr = SynheartDefaults.msPerMinute / hrMean;
     }
 
     return {'hr': hrMean, 'mean_rr': meanRr};
@@ -408,7 +409,7 @@ class EmotionHead {
       final rr = meanRr + rsaVariation + randomVariation;
 
       // Clamp to physiological range (300ms - 2000ms)
-      rrIntervals.add(rr.clamp(300.0, 2000.0));
+      rrIntervals.add(rr.clamp(SynheartDefaults.rrMinMs, SynheartDefaults.rrMaxMs));
     }
 
     return rrIntervals;

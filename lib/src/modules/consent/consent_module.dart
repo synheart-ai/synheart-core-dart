@@ -173,40 +173,19 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
     ConsentSnapshot oldConsent,
     ConsentSnapshot newConsent,
   ) {
-    if (oldConsent.biosignals != newConsent.biosignals) {
-      SynheartLogger.log(
-        'Consent changed: biosignals ${newConsent.biosignals ? "granted" : "revoked"}',
-      );
-    }
-    if (oldConsent.behavior != newConsent.behavior) {
-      SynheartLogger.log(
-        'Consent changed: behavior ${newConsent.behavior ? "granted" : "revoked"}',
-      );
-    }
-    if (oldConsent.phoneContext != newConsent.phoneContext) {
-      SynheartLogger.log(
-        'Consent changed: phoneContext ${newConsent.phoneContext ? "granted" : "revoked"}',
-      );
-    }
-    if (oldConsent.focusEstimation != newConsent.focusEstimation) {
-      SynheartLogger.log(
-        'Consent changed: focusEstimation ${newConsent.focusEstimation ? "granted" : "revoked"}',
-      );
-    }
-    if (oldConsent.emotionEstimation != newConsent.emotionEstimation) {
-      SynheartLogger.log(
-        'Consent changed: emotionEstimation ${newConsent.emotionEstimation ? "granted" : "revoked"}',
-      );
-    }
-    if (oldConsent.cloudUpload != newConsent.cloudUpload) {
-      SynheartLogger.log(
-        'Consent changed: cloudUpload ${newConsent.cloudUpload ? "granted" : "revoked"}',
-      );
-    }
-    if (oldConsent.syni != newConsent.syni) {
-      SynheartLogger.log(
-        'Consent changed: syni ${newConsent.syni ? "granted" : "revoked"}',
-      );
+    final fields = {
+      'biosignals': (oldConsent.biosignals, newConsent.biosignals),
+      'behavior': (oldConsent.behavior, newConsent.behavior),
+      'phoneContext': (oldConsent.phoneContext, newConsent.phoneContext),
+      'focusEstimation': (oldConsent.focusEstimation, newConsent.focusEstimation),
+      'emotionEstimation': (oldConsent.emotionEstimation, newConsent.emotionEstimation),
+      'cloudUpload': (oldConsent.cloudUpload, newConsent.cloudUpload),
+      'syni': (oldConsent.syni, newConsent.syni),
+    };
+    for (final e in fields.entries) {
+      if (e.value.$1 != e.value.$2) {
+        SynheartLogger.log('Consent changed: ${e.key} ${e.value.$2 ? "granted" : "revoked"}');
+      }
     }
   }
 

@@ -329,7 +329,6 @@ The SDK supports exporting HSV to the canonical HSI 1.1 format for external inte
 
 ```dart
 import 'package:synheart_core/synheart_core.dart';
-import 'package:synheart_core/synheart_core.dart';
 import 'dart:convert';
 
 // Subscribe to HSI updates (raw JSON string from synheart-runtime)
@@ -650,8 +649,7 @@ For complete documentation, see the [main Synheart Core repository](https://gith
 
 ### Dart-Specific Documentation
 
-- **[ARCHITECTURE](doc/ARCHITECTURE.md)** - Dart implementation architecture
-- **[HSV Technical Spec](doc/hsv-tech-spec.md)** - HSV data structure details
+- **[ARCHITECTURE](docs/ARCHITECTURE.md)** - Dart implementation architecture
 
 ## 👥 Contributing
 
@@ -674,7 +672,7 @@ The Synheart Core SDK consists of 7 core modules:
 6. **HSI Runtime** - Signal fusion and state computation
 7. **Cloud Connector** - Secure HSI snapshot uploads
 
-See [ARCHITECTURE](doc/ARCHITECTURE.md) for detailed implementation specifications.
+See [ARCHITECTURE](docs/ARCHITECTURE.md) for detailed implementation specifications.
 
 ## 🔒 Privacy & Security
 

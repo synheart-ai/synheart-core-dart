@@ -1,16 +1,16 @@
-# example
+# Synheart Core SDK — Example App
 
-A new Flutter project.
+Demonstrates the Synheart Core SDK for Flutter:
 
-## Getting Started
+- **lib/main.dart** — App entry point with SDK initialization
+- **lib/screens/** — UI screens for consent, HSI visualization, and module control
+- **lib/providers/** — State management for SDK streams
+- **lib/widgets/** — Reusable SDK-aware UI components
 
-This project is a starting point for a Flutter application.
+## Running
 
-A few resources to get you started if this is your first Flutter project:
+```bash
+flutter run
+```
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+See the [main SDK README](../README.md) for installation and configuration details.

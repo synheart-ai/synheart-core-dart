@@ -85,17 +85,3 @@ class MockAuthService implements AuthService {
   }
 }
 
-/// Production authentication service (to be implemented)
-class ProductionAuthService implements AuthService {
-  final String baseUrl;
-
-  ProductionAuthService({required this.baseUrl});
-
-  @override
-  Future<CapabilityToken> authenticate({
-    required String appKey,
-    required String userId,
-  }) async {
-    throw UnimplementedError('Production auth not yet implemented');
-  }
-}

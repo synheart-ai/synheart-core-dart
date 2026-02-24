@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:rxdart/rxdart.dart';
 import '../models/hsv.dart';
 import '../models/focus.dart';
+import '../core/defaults.dart';
 import '../core/logger.dart';
 import 'package:synheart_focus/synheart_focus.dart' as sf;
 
@@ -123,14 +124,14 @@ class FocusHead {
 
       // Validate HR is in reasonable range (40-180 bpm)
       // If it's outside this range, it may be invalid or incorrectly normalized
-      if (hrBpm < 40.0 || hrBpm > 180.0) {
+      if (hrBpm < SynheartDefaults.hrMinBpm || hrBpm > SynheartDefaults.hrMaxBpm) {
         SynheartLogger.log(
           '[FocusHead] HR value out of range: ${hrBpm.toStringAsFixed(1)} BPM (expected 40-180 BPM)',
         );
         return; // Skip invalid HR values
       }
 
-      final clampedHrBpm = hrBpm.clamp(40.0, 180.0);
+      final clampedHrBpm = hrBpm.clamp(SynheartDefaults.hrMinBpm, SynheartDefaults.hrMaxBpm);
 
       // Cache latest HR value for periodic data pushing
       _latestHrBpm = clampedHrBpm;

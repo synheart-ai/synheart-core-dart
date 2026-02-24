@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
 
+import '../../core/defaults.dart';
+
 // --- C function typedefs (native signatures) ---
 
 typedef _RuntimeNewC = Pointer<Void> Function(Pointer<Utf8> configJson);
@@ -116,8 +118,8 @@ class RuntimeConfig {
   final bool behaviorEnabled;
 
   RuntimeConfig({
-    this.windowMs = 60000,
-    this.stepMs = 5000,
+    this.windowMs = SynheartDefaults.runtimeWindowMs,
+    this.stepMs = SynheartDefaults.runtimeStepMs,
     required this.subjectId,
     required this.sessionId,
     this.behaviorEnabled = true,
