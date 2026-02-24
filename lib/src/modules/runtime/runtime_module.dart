@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:rxdart/rxdart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/logger.dart';
 import '../base/synheart_module.dart';
@@ -22,6 +23,11 @@ class RuntimeModule extends BaseSynheartModule {
   final Stream<WearSample>? _wearSampleStream;
   final Stream<BehaviorEvent>? _behaviorEventStream;
 
+  /// Key used to persist the SRM baseline snapshot in SharedPreferences.
+  /// Set to null to disable auto-persistence. Defaults to "synheart.srm_snapshot".
+  /// For multi-subject apps, include the subject ID in the key.
+  final String? srmSnapshotKey;
+
   Timer? _tickTimer;
   StreamSubscription? _wearSubscription;
   StreamSubscription? _behaviorSubscription;
@@ -38,6 +44,7 @@ class RuntimeModule extends BaseSynheartModule {
     RuntimeBridge? runtime,
     Stream<WearSample>? wearSampleStream,
     Stream<BehaviorEvent>? behaviorEventStream,
+    this.srmSnapshotKey = 'synheart.srm_snapshot',
   })  : _runtime = runtime,
         _wearSampleStream = wearSampleStream,
         _behaviorEventStream = behaviorEventStream;
@@ -56,6 +63,24 @@ class RuntimeModule extends BaseSynheartModule {
         '[RuntimeModule] No native bridge — pipeline inert until synheart_runtime is linked',
       );
       return;
+    }
+
+    // Restore SRM baselines from previous session
+    if (srmSnapshotKey != null) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final saved = prefs.getString(srmSnapshotKey!);
+        if (saved != null) {
+          final rc = _runtime!.loadSrmSnapshot(saved);
+          if (rc == 0) {
+            SynheartLogger.log('[RuntimeModule] Restored SRM baselines from snapshot');
+          } else {
+            SynheartLogger.log('[RuntimeModule] SRM snapshot load failed (code $rc), starting fresh');
+          }
+        }
+      } catch (e) {
+        SynheartLogger.log('[RuntimeModule] SRM snapshot restore error: $e');
+      }
     }
 
     // Subscribe to wear samples
@@ -96,6 +121,20 @@ class RuntimeModule extends BaseSynheartModule {
   @override
   Future<void> onStop() async {
     SynheartLogger.log('[RuntimeModule] Stopping...');
+
+    // Persist SRM baselines for next session
+    if (_runtime != null && srmSnapshotKey != null) {
+      try {
+        final snapshot = _runtime!.exportSrmSnapshot();
+        if (snapshot != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(srmSnapshotKey!, snapshot);
+          SynheartLogger.log('[RuntimeModule] Saved SRM baselines snapshot');
+        }
+      } catch (e) {
+        SynheartLogger.log('[RuntimeModule] SRM snapshot save error: $e');
+      }
+    }
 
     _tickTimer?.cancel();
     _tickTimer = null;

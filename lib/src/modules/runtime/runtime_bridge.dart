@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:meta/meta.dart';
 
 // --- C function typedefs (native signatures) ---
 
@@ -335,6 +336,8 @@ class RuntimeBridge {
   }
 
   /// Export the SRM snapshot as JSON for persistence, or `null`.
+  /// Internal: used by RuntimeModule for auto-save/load lifecycle.
+  @visibleForTesting
   String? exportSrmSnapshot() {
     final ptr = _exportSrmSnapshotFfi(_handle);
     if (ptr == nullptr) return null;
@@ -344,6 +347,8 @@ class RuntimeBridge {
   }
 
   /// Load an SRM snapshot from JSON. Returns 0 on success, error code on failure.
+  /// Internal: used by RuntimeModule for auto-save/load lifecycle.
+  @visibleForTesting
   int loadSrmSnapshot(String json) {
     final native = json.toNativeUtf8();
     try {
