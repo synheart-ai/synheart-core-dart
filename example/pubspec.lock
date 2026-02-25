@@ -627,22 +627,6 @@ packages:
       relative: true
     source: path
     version: "1.2.0"
-  synheart_emotion:
-    dependency: transitive
-    description:
-      name: synheart_emotion
-      sha256: "041f6c373c7263e8d39c741211a9fc596959293381d371ce984890f73175a929"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.0"
-  synheart_focus:
-    dependency: transitive
-    description:
-      name: synheart_focus
-      sha256: ef8add70a98be65500bdce900237635eb8a87f3547b3993ddfd856519310e54e
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.0"
   synheart_session:
     dependency: transitive
     description:

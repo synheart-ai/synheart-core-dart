@@ -26,8 +26,8 @@ dependencies:
     path: ../synheart-wear-dart
   synheart_session:
     path: ../synheart-session-dart
-  synheart_emotion: ^0.3.0
-  synheart_focus: ^0.1.0
+  # synheart_emotion and synheart_focus removed — HSV heads now computed by
+  # synheart-runtime and accessed via RuntimeBridge.lastHsv().
   synheart_behavior:
     path: ../synheart-behavior-dart
 
@@ -76,7 +76,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/ml/
-    - assets/models/
+  # ML model assets removed — emotion/focus heads deprecated in favour of
+  # synheart-runtime inference via RuntimeBridge.lastHsv().
 

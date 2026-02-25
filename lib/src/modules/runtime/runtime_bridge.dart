@@ -77,6 +77,9 @@ typedef _RuntimeTickDart = Pointer<Utf8> Function(
 typedef _RuntimeLastQualityC = Pointer<Utf8> Function(Pointer<Void> handle);
 typedef _RuntimeLastQualityDart = Pointer<Utf8> Function(Pointer<Void> handle);
 
+typedef _RuntimeLastHsvC = Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _RuntimeLastHsvDart = Pointer<Utf8> Function(Pointer<Void> handle);
+
 typedef _RuntimeFrameCountC = Uint64 Function(Pointer<Void> handle);
 typedef _RuntimeFrameCountDart = int Function(Pointer<Void> handle);
 
@@ -152,6 +155,7 @@ class RuntimeBridge {
   late final _RuntimePushBehaviorDart _pushBehaviorFfi;
   late final _RuntimeTickDart _tickFfi;
   late final _RuntimeLastQualityDart _lastQualityFfi;
+  late final _RuntimeLastHsvDart _lastHsvFfi;
   late final _RuntimeFrameCountDart _frameCountFfi;
   late final _RuntimeResetDart _resetFfi;
   late final _RuntimeFreeStringDart _freeString;
@@ -190,6 +194,10 @@ class RuntimeBridge {
     _lastQualityFfi = _lib
         .lookupFunction<_RuntimeLastQualityC, _RuntimeLastQualityDart>(
           'synheart_runtime_last_quality',
+        );
+    _lastHsvFfi = _lib
+        .lookupFunction<_RuntimeLastHsvC, _RuntimeLastHsvDart>(
+          'synheart_runtime_last_hsv',
         );
     _frameCountFfi = _lib
         .lookupFunction<_RuntimeFrameCountC, _RuntimeFrameCountDart>(
@@ -301,6 +309,21 @@ class RuntimeBridge {
   /// Return the latest quality-assessment JSON, or `null` if unavailable.
   String? lastQuality() {
     final resultPtr = _lastQualityFfi(_handle);
+    if (resultPtr == nullptr) return null;
+    final json = resultPtr.toDartString();
+    _freeString(resultPtr);
+    return json;
+  }
+
+  /// Return the latest HSV (Human State Vector) values as JSON, or `null`
+  /// if no window has completed yet.
+  ///
+  /// The JSON contains per-head values (emotion, focus, capacity, recovery,
+  /// strain, sleep) with confidence and inference metadata. This is the
+  /// canonical source for all HSV data — SDK-side head computation is
+  /// deprecated in favour of this endpoint.
+  String? lastHsv() {
+    final resultPtr = _lastHsvFfi(_handle);
     if (resultPtr == nullptr) return null;
     final json = resultPtr.toDartString();
     _freeString(resultPtr);
