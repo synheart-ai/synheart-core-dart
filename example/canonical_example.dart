@@ -1,4 +1,5 @@
 // ignore_for_file: avoid_print
+import 'dart:convert';
 import 'package:synheart_core/synheart_core.dart';
 
 /// Canonical example demonstrating the full Synheart Core SDK surface.
@@ -43,25 +44,9 @@ Future<void> main() async {
   );
   print('[Synheart] Consent granted for biosignals, behavior, phoneContext');
 
-  // 3. Subscribe to HSI updates (core state representation)
-  Synheart.onHSIUpdate.listen((hsi) {
-    print('[HSI] v${hsi.hsiVersion} at ${hsi.observedAtUtc}');
-    final physiologicalReadings = hsi.axes?.physiological?.readings ?? [];
-    for (final r in physiologicalReadings) {
-      print('[HSI]   ${r.axis}: ${r.score}');
-    }
-  });
-
-  // 4. Activate optional features (four-authority model)
-  //    Features become operational when: Activated AND Consent AND Capability AND SessionActive
-  Synheart.activate(SynheartFeature.focus);
-  Synheart.onFocusUpdate.listen((focus) {
-    print('[Focus] Score: ${focus.score}');
-  });
-
-  Synheart.activate(SynheartFeature.emotion);
-  Synheart.onEmotionUpdate.listen((emotion) {
-    print('[Emotion] Stress: ${emotion.stress}');
+  // 3. Subscribe to HSI updates (core state representation, raw HSI JSON)
+  Synheart.onHSIUpdate.listen((hsiJson) {
+    print('[HSI] JSON: $hsiJson');
   });
 
   // 5. Start session — data collection begins, activated features become operational
@@ -72,12 +57,31 @@ Future<void> main() async {
   // Run for 30 seconds as a demo
   await Future.delayed(Duration(seconds: 30));
 
-  // 6. Features can be deactivated mid-session
-  Synheart.deactivate(SynheartFeature.emotion);
-  print('[Synheart] Emotion deactivated');
-
-  // 7. Consent can be revoked mid-session — affected features stop automatically
+  // 6. Consent can be revoked mid-session — affected features stop automatically
   // await Synheart.revokeConsent('behavior');
+
+  // 7. Pre-processed data access (internal — R&D / training only)
+  print('[Runtime] Internal diagnostics example:');
+  final runtimeModule = Synheart.runtimeModule();
+  if (runtimeModule != null) {
+    final json = runtimeModule.bridge?.lastPreprocessed();
+    if (json != null) {
+      try {
+        final parsed = jsonDecode(json) as Map<String, dynamic>;
+        final window = PreprocessedWindow.fromJson(parsed);
+        print('  Quality score: ${window.quality.score}');
+        if (window.derivedFeatures.hrv != null) {
+          print('  HRV RMSSD: ${window.derivedFeatures.hrv!.rmssdMs}ms');
+        }
+        print('  Embeddings dimension: ${window.embeddings.signalEmbedding.dimension}');
+        print(
+          'SRM ready count: ${window.srmContext.readyCount}/${window.srmContext.totalCount}',
+        );
+      } catch (e) {
+        print('  Error parsing pre-processed data: $e');
+      }
+    }
+  }
 
   // 8. Clean shutdown
   await Synheart.stopSession();

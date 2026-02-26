@@ -22,14 +22,12 @@ export 'src/config/synheart_config.dart';
 export 'src/config/synheart_feature.dart';
 
 // Data Models
-export 'src/models/hsv.dart';
-export 'src/models/emotion.dart';
-export 'src/models/focus.dart';
 export 'src/models/behavior.dart';
 export 'src/models/context.dart';
 export 'src/models/hsi_axes.dart';
 export 'src/models/hsi_export.dart';
 export 'src/models/behavior_session_results.dart';
+export 'src/models/preprocessed_window.dart';
 
 // Module Base
 export 'src/modules/base/synheart_module.dart';

@@ -80,6 +80,10 @@ typedef _RuntimeLastQualityDart = Pointer<Utf8> Function(Pointer<Void> handle);
 typedef _RuntimeLastHsvC = Pointer<Utf8> Function(Pointer<Void> handle);
 typedef _RuntimeLastHsvDart = Pointer<Utf8> Function(Pointer<Void> handle);
 
+typedef _RuntimeLastPreprocessedC = Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _RuntimeLastPreprocessedDart = Pointer<Utf8> Function(
+    Pointer<Void> handle);
+
 typedef _RuntimeFrameCountC = Uint64 Function(Pointer<Void> handle);
 typedef _RuntimeFrameCountDart = int Function(Pointer<Void> handle);
 
@@ -156,6 +160,7 @@ class RuntimeBridge {
   late final _RuntimeTickDart _tickFfi;
   late final _RuntimeLastQualityDart _lastQualityFfi;
   late final _RuntimeLastHsvDart _lastHsvFfi;
+  late final _RuntimeLastPreprocessedDart _lastPreprocessedFfi;
   late final _RuntimeFrameCountDart _frameCountFfi;
   late final _RuntimeResetDart _resetFfi;
   late final _RuntimeFreeStringDart _freeString;
@@ -198,6 +203,10 @@ class RuntimeBridge {
     _lastHsvFfi = _lib
         .lookupFunction<_RuntimeLastHsvC, _RuntimeLastHsvDart>(
           'synheart_runtime_last_hsv',
+        );
+    _lastPreprocessedFfi = _lib
+        .lookupFunction<_RuntimeLastPreprocessedC, _RuntimeLastPreprocessedDart>(
+          'synheart_runtime_last_preprocessed',
         );
     _frameCountFfi = _lib
         .lookupFunction<_RuntimeFrameCountC, _RuntimeFrameCountDart>(
@@ -324,6 +333,17 @@ class RuntimeBridge {
   /// deprecated in favour of this endpoint.
   String? lastHsv() {
     final resultPtr = _lastHsvFfi(_handle);
+    if (resultPtr == nullptr) return null;
+    final json = resultPtr.toDartString();
+    _freeString(resultPtr);
+    return json;
+  }
+
+  /// Get the last pre-processed window as JSON (internal use only).
+  ///
+  /// Returns `null` if no window has completed yet.
+  String? lastPreprocessed() {
+    final resultPtr = _lastPreprocessedFfi(_handle);
     if (resultPtr == nullptr) return null;
     final json = resultPtr.toDartString();
     _freeString(resultPtr);

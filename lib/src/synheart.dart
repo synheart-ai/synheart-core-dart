@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:rxdart/rxdart.dart';
-import 'models/emotion.dart';
-import 'models/focus.dart';
 import 'config/synheart_config.dart';
 import 'core/logger.dart';
 import 'modules/base/module_manager.dart';
@@ -25,8 +23,6 @@ import 'modules/runtime/runtime_module.dart';
 import 'modules/srm/srm_module.dart';
 import 'modules/srm/srm_snapshot_storage.dart';
 import 'modules/cloud/cloud_connector_module.dart';
-import 'heads/emotion_head.dart';
-import 'heads/focus_head.dart';
 import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
 import 'modules/consent/consent_profile.dart';
@@ -47,9 +43,6 @@ import 'modules/consent/consent_ui.dart';
 /// - HSI Runtime (signal fusion & state computation)
 /// - Cloud Connector (secure uploads)
 ///
-/// Optional interpretation modules:
-/// - Emotion (affect modeling)
-/// - Focus (engagement/focus estimation)
 ///
 /// Example usage:
 /// ```dart
@@ -65,18 +58,7 @@ import 'modules/consent/consent_ui.dart';
 ///
 /// // Subscribe to HSI updates (core state representation)
 /// Synheart.onHSIUpdate.listen((hsi) {
-///   print('HSI Version: ${hsi.hsiVersion}');
-/// });
-///
-/// // Optional: Enable interpretation modules
-/// Synheart.activate(SynheartFeature.focus);
-/// Synheart.onFocusUpdate.listen((focus) {
-///   print('Focus Score: ${focus.estimate.score}');
-/// });
-///
-/// Synheart.activate(SynheartFeature.emotion);
-/// Synheart.onEmotionUpdate.listen((emotion) {
-///   print('Stress Index: ${emotion.stressIndex}');
+///   print('HSI JSON: $hsi');
 /// });
 ///
 /// // Enable cloud upload (with consent)
@@ -101,11 +83,6 @@ class Synheart {
   SRMModule? _srmModule;
   CloudConnectorModule? _cloudConnector;
 
-  // Optional interpretation modules
-  EmotionHead? _emotionHead;
-  FocusHead? _focusHead;
-  StreamSubscription? _emotionSubscription;
-  StreamSubscription? _focusSubscription;
   StreamSubscription? _hsvSubscription;
 
   // Activation manager (RFC-0005 four-authority model)
@@ -128,20 +105,9 @@ class Synheart {
   // Streams
   final BehaviorSubject<String> _hsvStream =
       BehaviorSubject<String>();
-  final BehaviorSubject<EmotionState> _emotionStream =
-      BehaviorSubject<EmotionState>();
-  final BehaviorSubject<FocusState> _focusStream =
-      BehaviorSubject<FocusState>();
 
   /// Static stream of HSI updates (core state representation, raw HSI JSON)
   static Stream<String> get onHSIUpdate => shared._hsvStream.stream;
-
-  /// Static stream of emotion updates (optional interpretation)
-  static Stream<EmotionState> get onEmotionUpdate =>
-      shared._emotionStream.stream;
-
-  /// Static stream of focus updates (optional interpretation)
-  static Stream<FocusState> get onFocusUpdate => shared._focusStream.stream;
 
   /// Stream of HSI updates (core state representation, raw HSI JSON)
   ///
@@ -152,16 +118,6 @@ class Synheart {
   ///
   /// Consumers receive raw HSI JSON strings from the synheart-runtime C ABI.
   Stream<String> get hsiUpdates => _hsvStream.stream;
-
-  /// Stream of emotion updates (optional interpretation)
-  ///
-  /// Only emits if emotion module is enabled via enableEmotion().
-  Stream<EmotionState> get emotionUpdates => _emotionStream.stream;
-
-  /// Stream of focus updates (optional interpretation)
-  ///
-  /// Only emits if focus module is enabled via enableFocus().
-  Stream<FocusState> get focusUpdates => _focusStream.stream;
 
   // Activation API (RFC-0005)
 
@@ -278,8 +234,6 @@ class Synheart {
       _wearModule = WearModule(
         capabilities: _capabilityModule!,
         consent: _consentModule!,
-        focusEnabled: _focusHead != null,
-        emotionEnabled: _emotionHead != null,
       );
       _phoneModule = PhoneModule(
         capabilities: _capabilityModule!,
@@ -1707,33 +1661,11 @@ class Synheart {
               SynheartLogger.log('[Synheart] Error stopping phone: $e', error: e));
         }
       case SynheartFeature.focus:
-        if (isOperational && _focusHead == null) {
-          // FocusHead: HSI JSON parser pending.
-          SynheartLogger.log(
-            '[Synheart] Focus head not yet migrated to runtime bridge — skipping',
-          );
-          _wearModule?.updateModuleStatus(focusEnabled: true);
-        } else if (!isOperational && _focusHead != null) {
-          _focusSubscription?.cancel();
-          _focusSubscription = null;
-          _focusHead?.stop();
-          _focusHead = null;
-          _wearModule?.updateModuleStatus(focusEnabled: false);
-        }
+        // Focus is computed by synheart-runtime and available via lastHsv()
+        break;
       case SynheartFeature.emotion:
-        if (isOperational && _emotionHead == null) {
-          // EmotionHead: HSI JSON parser pending.
-          SynheartLogger.log(
-            '[Synheart] Emotion head not yet migrated to runtime bridge — skipping',
-          );
-          _wearModule?.updateModuleStatus(emotionEnabled: true);
-        } else if (!isOperational && _emotionHead != null) {
-          _emotionSubscription?.cancel();
-          _emotionSubscription = null;
-          _emotionHead?.stop();
-          _emotionHead = null;
-          _wearModule?.updateModuleStatus(emotionEnabled: false);
-        }
+        // Emotion is computed by synheart-runtime and available via lastHsv()
+        break;
       case SynheartFeature.cloud:
         if (isOperational && _cloudConnector != null &&
             _cloudConnector!.status != ModuleStatus.running) {
@@ -1811,18 +1743,8 @@ class Synheart {
     try {
       SynheartLogger.log('[Synheart] Stopping...');
 
-      // Stop interpretation modules
-      await _focusSubscription?.cancel();
-      await _emotionSubscription?.cancel();
+      // Stop HSI subscription
       await _hsvSubscription?.cancel();
-      await _focusHead?.stop();
-      await _emotionHead?.stop();
-
-      // Update wear module to reduce collection frequency (no longer need 1s)
-      await _wearModule?.updateModuleStatus(
-        focusEnabled: false,
-        emotionEnabled: false,
-      );
 
       // Remove consent listener (best-effort)
       _consentModule?.removeListener(_onConsentChanged);
@@ -1850,13 +1772,9 @@ class Synheart {
     try {
       await _stop();
 
-      await _focusHead?.dispose();
-      await _emotionHead?.dispose();
       await _moduleManager.disposeAll();
 
       await _hsvStream.close();
-      await _emotionStream.close();
-      await _focusStream.close();
 
       _consentModule = null;
       _capabilityModule = null;
@@ -1865,8 +1783,6 @@ class Synheart {
       _behaviorModule = null;
       _runtimeModule = null;
       _srmModule = null;
-      _focusHead = null;
-      _emotionHead = null;
       _activationManager = null;
       _previousConsent = null;
       _pendingConsent = null;

@@ -4,7 +4,7 @@
 [![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.32.0-blue.svg)](https://flutter.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
-**Synheart Core SDK** is the single, unified integration point for developers who want to collect HSI-compatible data, process human state on-device, generate focus/emotion signals, and integrate with Syni.
+**Synheart Core SDK** is the single, unified integration point for developers who want to collect HSI-compatible data, process human state on-device, and integrate with Syni. Human state inference is computed by the on-device synheart-runtime engine.
 
 > **📦 SDK Implementations**: This is the Flutter/Dart implementation. For documentation and other platforms, see the repositories below.
 
@@ -36,9 +36,9 @@ The Synheart Core SDK consolidates all Synheart signal channels into one SDK:
 ## Features
 
 - **Modular signal collection** — Wear (biosignals), Phone (motion/context), Behavior (interaction patterns)
-- **On-device state computation** — synheart-runtime (Rust) fuses signals into HSI JSON
-- **Optional interpretation heads** — Focus and Emotion modules consume HSI and produce semantic estimates
-- **HSI 1.1 export** — Cross-platform canonical JSON format for external interoperability
+- **On-device state computation** — synheart-runtime (Rust) fuses signals into HSV (6-head inference: emotion, focus, capacity, recovery, strain, sleep)
+- **HSI 1.1 export** — Cross-platform canonical JSON format mapping HSV to domain axes
+- **Direct HSV access** — Query raw inference results via `RuntimeBridge.lastHsv()` for diagnostics
 - **Consent-first architecture** — All data collection respects explicit user consent; revocation stops modules immediately
 - **Capability-gated features** — Server-signed tokens control which SDK features are available (core/extended/research)
 - **On-demand collection** — Granular start/stop control per module, custom collection intervals
@@ -51,53 +51,62 @@ The Synheart Core SDK consolidates all Synheart signal channels into one SDK:
 
 ### Core Principle
 
-> **HSV represents human state.**
+> **All inference is computed by synheart-runtime (Rust).**
 >
-> **Interpretation is downstream and optional.**
+> **SDKs coordinate data collection and distribution.**
 
 The Core SDK strictly separates:
-- **Representation (HSV)** - Human State Vector: state axes, indices, embeddings
-- **Interpretation (Focus, Emotion)** - Optional, explicit modules
-- **Application logic** - Your app
+- **Computation** — synheart-runtime (Rust) computes HSV
+- **Collection** — Core SDK modules (Wear, Phone, Behavior, Consent, Capability)
+- **Distribution** — HSI JSON export, cloud upload, raw HSV diagnostics
 
 ### HSV vs HSI
 
-- **HSV (Human State Vector)**: An internal, time-scoped, multi-dimensional representation that encodes estimates of human physiological, cognitive, and behavioral state for local computation and inference
-  - Language-agnostic model (same across Dart, Kotlin, Swift)
-  - Implemented in Dart classes for this SDK
-  - Fast, type-safe on-device processing
+- **HSV (Human State Vector)**: Internal runtime representation
+  - Computed by synheart-runtime (Rust engine)
+  - 6 heads: emotion, focus, capacity, recovery, strain, sleep
+  - Per-head: value, confidence, inference metadata
+  - Accessed via `RuntimeBridge.lastHsv()` for diagnostics
+  - NOT part of public SDK API (internal use only)
 
 - **HSI 1.1 (Human State Interface)**: Cross-platform JSON wire format
-  - Platform-agnostic canonical format
+  - Reorganizes HSV into domain axes (affect, engagement, physiological, behavior, context)
+  - Primary output format (`onHSIUpdate` stream)
   - For external systems and cross-platform communication
+  - HMAC-signed upload to platform
 
-The SDK uses a hybrid approach: HSV for local computation, HSI 1.1 for external integration.
+The SDK uses clean separation: **runtime computes HSV**, **SDK exports HSI**, **consumers parse HSI**.
 
 ### Core Modules
 
 1. **Capabilities Module** - Feature gating (core/extended/research)
-2. **Consent Module** - User permission management
-3. **Wear Module** - Biosignal collection from wearables
+2. **Consent Module** - User permission management (user-first, deny by default)
+3. **Wear Module** - Biosignal collection (HR, HRV, sleep, motion)
 4. **Phone Module** - Device motion and context signals
 5. **Behavior Module** - User-device interaction patterns
-6. **HSI Runtime** - Signal fusion and HSV state representation
-7. **Cloud Connector** - Secure HSV snapshot uploads
-
-### Optional Interpretation Modules
-
-- **Synheart Focus** - Focus/engagement estimation (optional, explicit enable)
-- **Synheart Emotion** - Affect modeling (optional, explicit enable)
+6. **Runtime Module** - FFI bridge to synheart-runtime (HSV computation & HSI export)
+7. **SRM Module** - Self-Reference Model baselines (persistent snapshots)
+8. **Cloud Connector** - Secure HSI uploads with HMAC-SHA256 signing
 
 ### Data Flow
 
 ```
-Wear, Phone, Behavior Modules (raw samples)
+Wear, Phone, Behavior Modules (raw signals)
+    ↓ (consent & capability gated)
     ↓
-RuntimeModule → RuntimeBridge → synheart-runtime (Rust via dart:ffi)
-    ↓                              ↓
-    ↓                   session → state → HSI JSON
-    ↓                              ↓
-    ←──── HumanStateVector ←───────┘
+RuntimeModule → RuntimeBridge (dart:ffi)
+    ↓
+synheart-runtime (Rust C ABI)
+  ├─ Signal processing
+  ├─ Feature extraction
+  ├─ HSV computation (6 heads)
+  └─ Flux mapping → HSI 1.1
+    ↓
+HSI JSON Output
+  ├─ onHSIUpdate stream (main output)
+  ├─ lastHsv() (diagnostics, internal use)
+  ├─ lastQuality() (confidence metrics)
+  └─ Cloud upload (if consent+capability)
     ↓
 Optional: Focus Module → Focus Estimates
 Optional: Emotion Module → Emotion Estimates

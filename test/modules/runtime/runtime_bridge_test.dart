@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:synheart_core/src/modules/runtime/runtime_bridge.dart';
+import 'package:synheart_core/src/models/preprocessed_window.dart';
 
 /// Integration tests for the synheart-runtime native bridge.
 ///
@@ -307,6 +308,56 @@ void main() {
       final parsed = jsonDecode(summary!) as Map<String, dynamic>;
       expect(parsed['warming'], equals(0), reason: 'warming should be 0 after reset');
       expect(parsed['ready'], equals(0), reason: 'ready should be 0 after reset');
+    });
+
+    // -- Pre-processed Data --
+
+    test('lastPreprocessed returns valid JSON with expected structure', () {
+      if (bridge == null) {
+        markTestSkipped('Native runtime library not available');
+        return;
+      }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (var w = 0; w < 3; w++) {
+        fillWindowAndTick(bridge!, now + w * 15000);
+      }
+      final json = bridge!.lastPreprocessed();
+      if (json != null) {
+        final parsed = jsonDecode(json) as Map<String, dynamic>;
+        expect(parsed.containsKey('schema_version'), isTrue);
+        expect(parsed.containsKey('quality'), isTrue);
+        expect(parsed.containsKey('derived_features'), isTrue);
+        expect(parsed.containsKey('srm_context'), isTrue);
+        expect(parsed.containsKey('embeddings'), isTrue);
+        final window = PreprocessedWindow.fromJson(parsed);
+        expect(window.quality.score, inInclusiveRange(0.0, 1.0));
+        expect(window.quality.rrCount, greaterThanOrEqualTo(0));
+        expect(window.srmContext.totalCount, greaterThanOrEqualTo(0));
+      }
+    });
+
+    test('lastPreprocessed returns null after reset', () {
+      if (bridge == null) {
+        markTestSkipped('Native runtime library not available');
+        return;
+      }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (var w = 0; w < 3; w++) {
+        fillWindowAndTick(bridge!, now + w * 15000);
+      }
+      bridge!.reset();
+      expect(bridge!.lastPreprocessed(), isNull);
+    });
+
+    test('PreprocessedWindow model parses valid JSON', () {
+      const jsonStr = '{"schema_version":"1.0.0","window_start_ms":1000,"window_end_ms":11000,"session_id":"test_session","quality":{"score":0.85,"coverage_pct":0.9,"dropout_count":0,"rr_count":10,"artifact_pct":0.05},"derived_features":{"hrv":{"rmssd_ms":42.5,"sdnn_ms":38.0,"pnn50":0.25,"mean_rr_ms":800.0,"hr_mean_bpm":72.0,"hr_std_bpm":3.5,"rr_count":10},"motion":null,"artifact":null},"behavior_features":null,"srm_context":{"ready_count":0,"total_count":14,"deviations":{}},"embeddings":{"signal_embedding":{"vector":[0.1,0.2,0.3],"dimension":3,"space":"latent"}}}';
+      final window = PreprocessedWindow.fromJson(jsonDecode(jsonStr) as Map<String, dynamic>);
+      expect(window.schemaVersion, equals('1.0.0'));
+      expect(window.quality.score, closeTo(0.85, 0.001));
+      expect(window.quality.rrCount, equals(10));
+      expect(window.derivedFeatures.hrv!.rmssdMs, closeTo(42.5, 0.001));
+      expect(window.srmContext.totalCount, equals(14));
+      expect(window.embeddings.signalEmbedding.dimension, equals(3));
     });
   });
 }

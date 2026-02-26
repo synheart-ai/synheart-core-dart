@@ -15,18 +15,12 @@ class SynheartProvider extends ChangeNotifier {
 
   // Feature States
   bool _cloudSyncEnabled = false;
-  bool _emotionEnabled = false;
-  bool _focusEnabled = false;
 
   // Data Streams
-  HSI11Payload? _latestHSI;
-  EmotionState? _latestEmotion;
-  FocusState? _latestFocus;
+  String? _latestHSI;
 
   // Stream Subscriptions
-  StreamSubscription<HSI11Payload>? _hsiSubscription;
-  StreamSubscription<EmotionState>? _emotionSubscription;
-  StreamSubscription<FocusState>? _focusSubscription;
+  StreamSubscription<String>? _hsiSubscription;
 
   // Consent State
   ConsentStatus _consentStatus = ConsentStatus.pending;
@@ -60,14 +54,10 @@ class SynheartProvider extends ChangeNotifier {
   bool get hasError => _errorMessage != null;
 
   bool get cloudSyncEnabled => _cloudSyncEnabled;
-  bool get emotionEnabled => _emotionEnabled;
-  bool get focusEnabled => _focusEnabled;
 
-  HSI11Payload? get latestHSI => _latestHSI;
+  String? get latestHSI => _latestHSI;
   /// Backward-compatible alias for UI screens
-  HSI11Payload? get latestHSV => _latestHSI;
-  EmotionState? get latestEmotion => _latestEmotion;
-  FocusState? get latestFocus => _latestFocus;
+  String? get latestHSV => _latestHSI;
 
   ConsentStatus get consentStatus => _consentStatus;
   ConsentToken? get currentToken => _currentToken;
@@ -293,112 +283,6 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
-  /// Enable emotion feature
-  void enableEmotion() {
-    if (!_isInitialized) {
-      throw StateError('SDK must be initialized first');
-    }
-
-    if (_emotionEnabled) {
-      return;
-    }
-
-    try {
-      Synheart.activate(SynheartFeature.emotion);
-      _emotionEnabled = true;
-      _startEmotionListening();
-      _errorMessage = null;
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to enable emotion: $e';
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// Disable emotion feature
-  void disableEmotion() {
-    if (!_emotionEnabled) {
-      return;
-    }
-
-    try {
-      Synheart.deactivate(SynheartFeature.emotion);
-      _emotionSubscription?.cancel();
-      _emotionSubscription = null;
-      _emotionEnabled = false;
-      _latestEmotion = null;
-      _errorMessage = null;
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to disable emotion: $e';
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// Start listening to emotion updates
-  void _startEmotionListening() {
-    _emotionSubscription?.cancel();
-    _emotionSubscription = Synheart.onEmotionUpdate.listen((emotion) {
-      _latestEmotion = emotion;
-      notifyListeners();
-    });
-  }
-
-  /// Enable focus feature
-  void enableFocus() {
-    if (!_isInitialized) {
-      throw StateError('SDK must be initialized first');
-    }
-
-    if (_focusEnabled) {
-      return;
-    }
-
-    try {
-      Synheart.activate(SynheartFeature.focus);
-      _focusEnabled = true;
-      _startFocusListening();
-      _errorMessage = null;
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to enable focus: $e';
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// Disable focus feature
-  void disableFocus() {
-    if (!_focusEnabled) {
-      return;
-    }
-
-    try {
-      Synheart.deactivate(SynheartFeature.focus);
-      _focusSubscription?.cancel();
-      _focusSubscription = null;
-      _focusEnabled = false;
-      _latestFocus = null;
-      _errorMessage = null;
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to disable focus: $e';
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// Start listening to focus updates
-  void _startFocusListening() {
-    _focusSubscription?.cancel();
-    _focusSubscription = Synheart.onFocusUpdate.listen((focus) {
-      _latestFocus = focus;
-      notifyListeners();
-    });
-  }
-
   /// Check consent status
   void _checkConsentStatus() {
     try {
@@ -534,10 +418,6 @@ class SynheartProvider extends ChangeNotifier {
       // Cancel subscriptions first
       await _hsiSubscription?.cancel();
       _hsiSubscription = null;
-      await _emotionSubscription?.cancel();
-      _emotionSubscription = null;
-      await _focusSubscription?.cancel();
-      _focusSubscription = null;
 
       // Dispose the SDK to allow re-initialization
       // This fully cleans up and resets the configuration state
@@ -545,14 +425,10 @@ class SynheartProvider extends ChangeNotifier {
 
       // Reset state
       _isInitialized = false;
-      _emotionEnabled = false;
-      _focusEnabled = false;
       _cloudSyncEnabled = false;
 
       // Clear cached data
       _latestHSI = null;
-      _latestEmotion = null;
-      _latestFocus = null;
 
       _errorMessage = null;
       notifyListeners();
@@ -787,8 +663,6 @@ class SynheartProvider extends ChangeNotifier {
   @override
   void dispose() {
     _hsiSubscription?.cancel();
-    _emotionSubscription?.cancel();
-    _focusSubscription?.cancel();
     _wearSampleSubscription?.cancel();
     _behaviorEventSubscription?.cancel();
     // Only dispose SDK if it's still initialized

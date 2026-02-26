@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:synheart_core/synheart_core.dart';
 import 'dart:convert';
 
 /// HSI export viewer widget
 class HSIExportViewer extends StatelessWidget {
-  final HSI11Payload? hsv;
+  final String? hsv;
 
   const HSIExportViewer({super.key, this.hsv});
 
@@ -16,8 +15,7 @@ class HSIExportViewer extends StatelessWidget {
     }
 
     try {
-      final json = hsv!.toJson();
-      final jsonString = JsonEncoder.withIndent('  ').convert(json);
+      final jsonString = hsv!;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

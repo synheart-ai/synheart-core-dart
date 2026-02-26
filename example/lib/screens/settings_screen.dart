@@ -40,23 +40,6 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
               ],
-              FeatureToggleCard(
-                title: 'Emotion Module',
-                description: 'Real-time emotion estimation',
-                enabled: provider.emotionEnabled,
-                icon: Icons.psychology,
-                enabledColor: Colors.purple,
-                onToggle: () => _handleEmotionToggle(context, provider),
-              ),
-              const SizedBox(height: 12),
-              FeatureToggleCard(
-                title: 'Focus Module',
-                description: 'Real-time focus and engagement estimation',
-                enabled: provider.focusEnabled,
-                icon: Icons.center_focus_strong,
-                enabledColor: Colors.blue,
-                onToggle: () => _handleFocusToggle(context, provider),
-              ),
               const SizedBox(height: 24),
 
               // SDK Status
@@ -159,46 +142,6 @@ class SettingsScreen extends StatelessWidget {
           ),
         );
       }
-    }
-  }
-
-  void _handleEmotionToggle(BuildContext context, SynheartProvider provider) {
-    if (provider.emotionEnabled) {
-      provider.disableEmotion();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Emotion module disabled'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    } else {
-      provider.enableEmotion();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Emotion module enabled'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }
-  }
-
-  void _handleFocusToggle(BuildContext context, SynheartProvider provider) {
-    if (provider.focusEnabled) {
-      provider.disableFocus();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Focus module disabled'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    } else {
-      provider.enableFocus();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Focus module enabled'),
-          backgroundColor: Colors.green,
-        ),
-      );
     }
   }
 }

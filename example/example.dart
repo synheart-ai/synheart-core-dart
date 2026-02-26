@@ -23,13 +23,9 @@ Future<void> main() async {
     cloudUpload: false,
   );
 
-  // Subscribe to HSI updates
-  Synheart.onHSIUpdate.listen((hsi) {
-    print('HSI v${hsi.hsiVersion} at ${hsi.observedAtUtc}');
-    final physiologicalReadings = hsi.axes?.physiological?.readings ?? [];
-    for (final r in physiologicalReadings) {
-      print('  ${r.axis}: ${r.score}');
-    }
+  // Subscribe to HSI updates (raw HSI JSON from synheart-runtime)
+  Synheart.onHSIUpdate.listen((hsiJson) {
+    print('HSI JSON: $hsiJson');
   });
 
   // Start session — data collection begins

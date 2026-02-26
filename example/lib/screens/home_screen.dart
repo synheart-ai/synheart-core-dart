@@ -10,8 +10,6 @@ import '../widgets/metric_card.dart';
 import '../widgets/session_summary_dialog.dart';
 import '../widgets/status_indicator.dart';
 import 'hsv_screen.dart';
-import 'emotion_screen.dart';
-import 'focus_screen.dart';
 import 'consent_screen.dart';
 import 'settings_screen.dart';
 import 'on_demand_screen.dart';
@@ -445,24 +443,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 12),
                 ],
 
-                // Interpretation Modules (Emotion and Focus)
-                FeatureToggleCard(
-                  title: 'Emotion Module',
-                  description: 'Real-time emotion estimation',
-                  enabled: provider.emotionEnabled,
-                  icon: Icons.psychology,
-                  enabledColor: Colors.purple,
-                  onToggle: () => _handleEmotionToggle(context, provider),
-                ),
-                const SizedBox(height: 12),
-                FeatureToggleCard(
-                  title: 'Focus Module',
-                  description: 'Real-time focus and engagement estimation',
-                  enabled: provider.focusEnabled,
-                  icon: Icons.center_focus_strong,
-                  enabledColor: Colors.blue,
-                  onToggle: () => _handleFocusToggle(context, provider),
-                ),
                 const SizedBox(height: 24),
 
                 // Quick Metrics Preview
@@ -474,72 +454,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: MetricCard(
-                          label: 'Arousal',
-                          value: _findReading(provider.latestHSI?.axes?.physiological, 'arousal'),
-                          color: Colors.red,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: MetricCard(
-                          label: 'Focus',
-                          value: _findReading(provider.latestHSI?.axes?.engagement, 'focus_score'),
-                          color: Colors.green,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (provider.emotionEnabled &&
-                      provider.latestEmotion != null) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: MetricCard(
-                            label: 'Stress',
-                            value: provider.latestEmotion!.stress,
-                            color: Colors.red,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: MetricCard(
-                            label: 'Calm',
-                            value: provider.latestEmotion!.calm,
-                            color: Colors.blue,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (provider.focusEnabled &&
-                      provider.latestFocus != null) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: MetricCard(
-                            label: 'Focus',
-                            value: provider.latestFocus!.score,
-                            color: Colors.blue,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: MetricCard(
-                            label: 'Cognitive Load',
-                            value: provider.latestFocus!.cognitiveLoad,
-                            color: Colors.orange,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                  ],
                 ],
 
                 // Navigation Cards
@@ -591,32 +505,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   Colors.amber,
                   () => _endSessionAndShowResults(),
                 ),
-                if (provider.emotionEnabled) ...[
-                  const SizedBox(height: 12),
-                  _buildNavigationCard(
-                    context,
-                    'Emotion',
-                    'Emotion metrics',
-                    Icons.psychology,
-                    Colors.purple,
-                    () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const EmotionScreen()),
-                    ),
-                  ),
-                ],
-                if (provider.focusEnabled) ...[
-                  const SizedBox(height: 12),
-                  _buildNavigationCard(
-                    context,
-                    'Focus',
-                    'Focus metrics',
-                    Icons.center_focus_strong,
-                    Colors.blue,
-                    () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const FocusScreen()),
-                    ),
-                  ),
-                ],
                 // Consent navigation - show if cloud config is provided
                 if (provider.sdkConfig?.cloudConfig != null) ...[
                   const SizedBox(height: 12),
@@ -660,16 +548,12 @@ class _HomeScreenState extends State<HomeScreen> {
           return FloatingActionButton(
             onPressed: () async {
               final lastHSI = provider.latestHSI;
-              final lastEmotion = provider.latestEmotion;
-              final lastFocus = provider.latestFocus;
               await provider.stop();
               if (context.mounted) {
                 showDialog(
                   context: context,
                   builder: (_) => SessionSummaryDialog(
-                    hsi: lastHSI,
-                    emotion: lastEmotion,
-                    focus: lastFocus,
+                    hsiJson: lastHSI,
                   ),
                 );
               }
@@ -812,18 +696,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   isActive: provider.latestHSI != null,
                   icon: Icons.analytics,
                 ),
-                if (provider.emotionEnabled)
-                  StatusIndicator(
-                    label: 'Emotion',
-                    isActive: provider.latestEmotion != null,
-                    icon: Icons.psychology,
-                  ),
-                if (provider.focusEnabled)
-                  StatusIndicator(
-                    label: 'Focus',
-                    isActive: provider.latestFocus != null,
-                    icon: Icons.center_focus_strong,
-                  ),
                 if (provider.sdkConfig?.cloudConfig != null &&
                     provider.cloudSyncEnabled)
                   StatusIndicator(
@@ -965,22 +837,6 @@ class _HomeScreenState extends State<HomeScreen> {
         provider.consentInfo['behavior'] ??
             'Collect behavioral data and interaction patterns',
       );
-    }
-  }
-
-  void _handleEmotionToggle(BuildContext context, SynheartProvider provider) {
-    if (provider.emotionEnabled) {
-      provider.disableEmotion();
-    } else {
-      provider.enableEmotion();
-    }
-  }
-
-  void _handleFocusToggle(BuildContext context, SynheartProvider provider) {
-    if (provider.focusEnabled) {
-      provider.disableFocus();
-    } else {
-      provider.enableFocus();
     }
   }
 
