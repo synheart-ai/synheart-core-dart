@@ -42,9 +42,37 @@ class SynheartProvider extends ChangeNotifier {
   bool _isGameActive = false;
   double? _latestGameHR;
 
+  // Watch session state
+  WatchStatus? _watchStatus;
+  bool _isWatchSessionActive = false;
+  String? _activeWatchSessionId;
+  SessionMode _selectedSessionMode = SessionMode.focus;
+  int _sessionDurationSec = 300;
+  int? _countdownSeconds;
+  Timer? _countdownTimer;
+  double? _liveWatchHR;
+  double? _liveWatchRMSSD;
+  double? _liveWatchSDNN;
+  int _watchFrameCount = 0;
+  int _watchElapsedSec = 0;
+  SessionSummary? _lastWatchSummary;
+  StreamSubscription<SessionEvent>? _watchSessionSubscription;
+  bool _watchStopRequested = false;
+
   // Stream subscriptions for raw data
   StreamSubscription<WearSample>? _wearSampleSubscription;
   StreamSubscription<BehaviorEvent>? _behaviorEventSubscription;
+
+  /// Main session progress: start time and timer for elapsed display.
+  DateTime? _sessionStartTime;
+  int _sessionElapsedSec = 0;
+  Timer? _sessionProgressTimer;
+
+  /// Throttle: avoid calling notifyListeners() on every wear sample / behavior event
+  /// (causes scroll jank when the whole home screen rebuilds).
+  bool _pendingNotify = false;
+  Timer? _notifyThrottleTimer;
+  static const _notifyThrottleMs = 500;
 
   // Getters
   bool get isInitialized => _isInitialized;
@@ -54,6 +82,13 @@ class SynheartProvider extends ChangeNotifier {
   bool get hasError => _errorMessage != null;
 
   bool get cloudSyncEnabled => _cloudSyncEnabled;
+
+  /// Whether the main data-collection session is running (Session SDK + modules).
+  bool get isSessionRunning =>
+      _isInitialized && Synheart.isSessionRunning;
+
+  /// Elapsed seconds since the main session started; 0 when not running.
+  int get sessionElapsedSec => _sessionElapsedSec;
 
   String? get latestHSI => _latestHSI;
   /// Backward-compatible alias for UI screens
@@ -75,6 +110,22 @@ class SynheartProvider extends ChangeNotifier {
   Map<String, dynamic>? get queriedFeatures => _queriedFeatures;
   bool get isGameActive => _isGameActive;
   double? get latestGameHR => _latestGameHR;
+
+  // Watch session getters
+  WatchStatus? get watchStatus => _watchStatus;
+  bool get isWatchSessionActive => _isWatchSessionActive;
+  String? get activeWatchSessionId => _activeWatchSessionId;
+  SessionMode get selectedSessionMode => _selectedSessionMode;
+  int get sessionDurationSec => _sessionDurationSec;
+  int? get countdownSeconds => _countdownSeconds;
+  bool get isCountingDown => _countdownSeconds != null;
+  double? get liveWatchHR => _liveWatchHR;
+  double? get liveWatchRMSSD => _liveWatchRMSSD;
+  double? get liveWatchSDNN => _liveWatchSDNN;
+  int get watchFrameCount => _watchFrameCount;
+  int get watchElapsedSec => _watchElapsedSec;
+  SessionSummary? get lastWatchSummary => _lastWatchSummary;
+  bool get isWatchStopRequested => _watchStopRequested;
 
   /// Runtime diagnostics from the native synheart-runtime bridge.
   Map<String, dynamic> get runtimeDiagnostics {
@@ -198,8 +249,10 @@ class SynheartProvider extends ChangeNotifier {
   /// Start listening to HSI updates
   void _startHSIListening() {
     _hsiSubscription?.cancel();
-    _hsiSubscription = Synheart.onHSIUpdate.listen((hsi) {
-      _latestHSI = hsi;
+    _hsiSubscription = Synheart.onHSIUpdate.listen((hsiJson) {
+      _latestHSI = hsiJson;
+      // Print full HSI 1.1 JSON to terminal for inspection
+      debugPrint(hsiJson);
       notifyListeners();
     });
   }
@@ -219,7 +272,7 @@ class SynheartProvider extends ChangeNotifier {
         if (_isGameActive && sample.hr != null) {
           _latestGameHR = sample.hr;
         }
-        notifyListeners();
+        _throttledNotify();
       });
     } catch (e) {
       // Stream not available yet (module not started)
@@ -234,11 +287,24 @@ class SynheartProvider extends ChangeNotifier {
         if (_recentBehaviorEvents.length > 100) {
           _recentBehaviorEvents.removeAt(0);
         }
-        notifyListeners();
+        _throttledNotify();
       });
     } catch (e) {
       // Stream not available yet (module not started)
     }
+  }
+
+  /// Notify at most every [_notifyThrottleMs] ms for high-frequency stream updates.
+  void _throttledNotify() {
+    _pendingNotify = true;
+    _notifyThrottleTimer?.cancel();
+    _notifyThrottleTimer = Timer(const Duration(milliseconds: _notifyThrottleMs), () {
+      _notifyThrottleTimer = null;
+      if (_pendingNotify) {
+        _pendingNotify = false;
+        notifyListeners();
+      }
+    });
   }
 
   /// Enable cloud sync (requires consent)
@@ -405,6 +471,55 @@ class SynheartProvider extends ChangeNotifier {
       _errorMessage = 'Failed to revoke consent for $consentType: $e';
       notifyListeners();
       rethrow;
+    }
+  }
+
+  /// Start the main data-collection session (Session SDK + all modules).
+  /// [durationSec] if set, session ends after that many seconds; if null, runs until [stopSession].
+  Future<void> startSession({int? durationSec}) async {
+    if (!_isInitialized) {
+      throw StateError('SDK must be initialized first');
+    }
+    try {
+      await Synheart.startSession(durationSec: durationSec);
+      _sessionStartTime = DateTime.now();
+      _sessionElapsedSec = 0;
+      _sessionProgressTimer?.cancel();
+      _sessionProgressTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!Synheart.isSessionRunning) {
+          _sessionProgressTimer?.cancel();
+          _sessionProgressTimer = null;
+          _sessionStartTime = null;
+          _sessionElapsedSec = 0;
+          notifyListeners();
+          return;
+        }
+        if (_sessionStartTime != null) {
+          _sessionElapsedSec = DateTime.now().difference(_sessionStartTime!).inSeconds;
+          notifyListeners();
+        }
+      });
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to start session: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Stop the main data-collection session (keeps SDK initialized).
+  Future<void> stopSession() async {
+    if (!_isInitialized) return;
+    _sessionProgressTimer?.cancel();
+    _sessionProgressTimer = null;
+    _sessionStartTime = null;
+    _sessionElapsedSec = 0;
+    try {
+      await Synheart.stopSession();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to stop session: $e';
+      notifyListeners();
     }
   }
 
@@ -660,13 +775,181 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
+  // ── Watch Session Methods ──────────────────────────────────────────────
+
+  /// Check watch connectivity status.
+  Future<void> checkWatchStatus() async {
+    try {
+      _watchStatus = await Synheart.getWatchStatus();
+      notifyListeners();
+    } catch (e) {
+      // debugPrint('Failed to check watch status: $e');
+    }
+  }
+
+  /// Update the selected session mode.
+  void setSessionMode(SessionMode mode) {
+    _selectedSessionMode = mode;
+    notifyListeners();
+  }
+
+  /// Update the session duration (in seconds).
+  void setSessionDuration(int durationSec) {
+    _sessionDurationSec = durationSec;
+    notifyListeners();
+  }
+
+  /// Start a watch session with a 3-second countdown.
+  void startWatchSessionWithCountdown() {
+    if (_isWatchSessionActive || _countdownSeconds != null) return;
+
+    _countdownSeconds = 3;
+    _lastWatchSummary = null;
+    notifyListeners();
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _countdownSeconds = _countdownSeconds! - 1;
+      notifyListeners();
+
+      if (_countdownSeconds! <= 0) {
+        timer.cancel();
+        _countdownTimer = null;
+        _countdownSeconds = null;
+        _startWatchSession();
+      }
+    });
+  }
+
+  /// Cancel the countdown before it reaches zero.
+  void cancelCountdown() {
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    _countdownSeconds = null;
+    notifyListeners();
+  }
+
+  void _startWatchSession() {
+    try {
+      final config = SessionConfig(
+        mode: _selectedSessionMode,
+        durationSec: _sessionDurationSec,
+        profile: const ComputeProfile(windowSec: 60, emitIntervalSec: 5),
+      );
+
+      final stream = Synheart.startWatchSession(config);
+      _activeWatchSessionId = config.sessionId;
+      _isWatchSessionActive = true;
+      _liveWatchHR = null;
+      _liveWatchRMSSD = null;
+      _liveWatchSDNN = null;
+      _watchFrameCount = 0;
+      _watchElapsedSec = 0;
+      notifyListeners();
+
+      _watchSessionSubscription = stream.listen(
+        _handleWatchSessionEvent,
+        onError: (Object error) {
+          _errorMessage = 'Watch session error: $error';
+          _resetWatchSession();
+          notifyListeners();
+        },
+        onDone: () {
+          if (_isWatchSessionActive) {
+            _resetWatchSession();
+            notifyListeners();
+          }
+        },
+      );
+    } catch (e) {
+      _errorMessage = 'Failed to start watch session: $e';
+      _resetWatchSession();
+      notifyListeners();
+    }
+  }
+
+  void _handleWatchSessionEvent(SessionEvent event) {
+    switch (event) {
+      case SessionStarted():
+        // debugPrint('Watch session started: ${event.sessionId}');
+      case SessionFrame():
+        final frame = event as SessionFrame;
+        _watchFrameCount = frame.seq;
+        final metrics = frame.metrics;
+        final hr = (metrics['hr_mean_bpm'] as num?)?.toDouble();
+        final rmssd = (metrics['rmssd_ms'] as num?)?.toDouble();
+        final sdnn = (metrics['sdnn_ms'] as num?)?.toDouble() ??
+            (metrics['hr_sdnn_ms'] as num?)?.toDouble();
+        // debugPrint(
+        //   'WatchSession frame seq=${frame.seq} hr=$hr rmssd=$rmssd sdnn=$sdnn',
+        // );
+        // HR: accept first value or any positive (don't overwrite real HR with 0 from local frames)
+        if (hr != null && (hr > 0 || _liveWatchHR == null)) _liveWatchHR = hr;
+        // RMSSD/SDNN: accept any value including 0 so we show "0.0 ms" instead of "--"
+        if (rmssd != null) _liveWatchRMSSD = rmssd;
+        if (sdnn != null) _liveWatchSDNN = sdnn;
+        final emitInterval =
+            (metrics['emit_interval_sec'] as num?)?.toInt() ?? 5;
+        _watchElapsedSec = frame.seq * emitInterval;
+        notifyListeners();
+      case SessionSummary():
+        // Prefer summary with real HR (watch) over zeroed (local); always take the one with higher hr_mean_bpm
+        final hrSummary = (event.metrics['hr_mean_bpm'] as num?)?.toDouble();
+        final currentHr = _lastWatchSummary != null
+            ? (_lastWatchSummary!.metrics['hr_mean_bpm'] as num?)?.toDouble()
+            : null;
+        final useThis = _lastWatchSummary == null ||
+            (hrSummary != null && (currentHr == null || hrSummary > currentHr));
+        if (useThis) _lastWatchSummary = event;
+        _resetWatchSession();
+        notifyListeners();
+      case SessionError():
+        _errorMessage = 'Watch: ${event.message}';
+        _resetWatchSession();
+        notifyListeners();
+      default:
+        break;
+    }
+  }
+
+  /// Stop the active watch session.
+  Future<void> stopWatchSession() async {
+    if (!_isWatchSessionActive) return;
+    _watchStopRequested = true;
+    notifyListeners();
+    try {
+      await Synheart.stopWatchSession();
+    } catch (e) {
+      _errorMessage = 'Failed to stop watch session: $e';
+      _watchStopRequested = false;
+      _resetWatchSession();
+      notifyListeners();
+    }
+  }
+
+  void _resetWatchSession() {
+    _watchSessionSubscription?.cancel();
+    _watchSessionSubscription = null;
+    _isWatchSessionActive = false;
+    _activeWatchSessionId = null;
+    _watchStopRequested = false;
+  }
+
+  /// Dismiss the last watch summary.
+  void clearWatchSummary() {
+    _lastWatchSummary = null;
+    notifyListeners();
+  }
+
+  // ── End Watch Session Methods ─────────────────────────────────────────
+
   @override
   void dispose() {
+    _notifyThrottleTimer?.cancel();
     _hsiSubscription?.cancel();
     _wearSampleSubscription?.cancel();
     _behaviorEventSubscription?.cancel();
-    // Only dispose SDK if it's still initialized
-    // (if stop() was called, it already disposed the SDK)
+    _watchSessionSubscription?.cancel();
+    _countdownTimer?.cancel();
     if (_isInitialized) {
       Synheart.dispose();
     }

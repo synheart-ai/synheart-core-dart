@@ -5,11 +5,12 @@
 class SynheartDefaults {
   SynheartDefaults._();
 
-  /// Default runtime window duration in milliseconds (60 seconds).
-  static const int runtimeWindowMs = 60000;
+  /// Default runtime window duration in milliseconds.
+  /// Use 10s so the first HSI completes after ~10–15s; 60s would require a full minute before any output.
+  static const int runtimeWindowMs = 10000;
 
-  /// Default runtime step interval in milliseconds (5 seconds).
-  static const int runtimeStepMs = 5000;
+  /// Default runtime step interval in milliseconds (emit every 10s when window=10s).
+  static const int runtimeStepMs = 10000;
 
   /// Default runtime tick interval in seconds.
   static const int runtimeTickIntervalSeconds = 5;

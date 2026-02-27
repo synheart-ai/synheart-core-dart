@@ -28,6 +28,8 @@ import 'config/activation_manager.dart';
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
 import 'modules/consent/consent_ui.dart';
+import 'modules/session/watch_session_module.dart';
+import 'package:synheart_session/synheart_session.dart';
 
 /// Synheart Core SDK - Main Entry Point
 ///
@@ -82,6 +84,14 @@ class Synheart {
   RuntimeModule? _runtimeModule;
   SRMModule? _srmModule;
   CloudConnectorModule? _cloudConnector;
+
+  // Watch session module
+  WatchSessionModule? _watchSessionModule;
+
+  // Main data-collection session (Session SDK) — RFC: open/close sessions via Session SDK
+  SynheartSession? _mainSession;
+  String? _activeMainSessionId;
+  StreamSubscription<SessionEvent>? _mainSessionSubscription;
 
   StreamSubscription? _hsvSubscription;
 
@@ -234,6 +244,8 @@ class Synheart {
       _wearModule = WearModule(
         capabilities: _capabilityModule!,
         consent: _consentModule!,
+        focusEnabled: true, // 1s interval so runtime gets enough samples per 10s window for HSI
+        emotionEnabled: true,
       );
       _phoneModule = PhoneModule(
         capabilities: _capabilityModule!,
@@ -265,13 +277,13 @@ class Synheart {
       );
 
       SynheartLogger.log('[Synheart] Initializing Runtime...');
+      final runtimeConfig = RuntimeConfig(
+        subjectId: _userId!,
+        sessionId: 'sess_${DateTime.now().millisecondsSinceEpoch}',
+      );
+      debugPrint('[Runtime in] config: ${runtimeConfig.toJson()}');
       _runtimeModule = RuntimeModule(
-        runtime: RuntimeBridge.createIfAvailable(
-          RuntimeConfig(
-            subjectId: _userId!,
-            sessionId: 'sess_${DateTime.now().millisecondsSinceEpoch}',
-          ),
-        ),
+        runtime: RuntimeBridge.createIfAvailable(runtimeConfig),
         wearSampleStream: _wearModule!.rawSampleStream,
         behaviorEventStream: _behaviorModule!.eventStream.events,
       );
@@ -293,6 +305,11 @@ class Synheart {
           dependsOn: ['capabilities', 'consent', 'hsi_runtime'],
         );
       }
+
+      _watchSessionModule = WatchSessionModule();
+      _watchSessionModule!.initialize();
+
+      _mainSession = SynheartSession();
 
       SynheartLogger.log('[Synheart] Initializing all modules...');
       await _moduleManager.initializeAll();
@@ -361,9 +378,15 @@ class Synheart {
   ///
   /// Must be called after initialize(). No data collection occurs until
   /// this method is called (RFC §3.3).
-  static Future<void> startSession() async {
-    return shared._startDataCollection();
+  ///
+  /// [durationSec] if set, the session will end automatically after that many
+  /// seconds (Session SDK boundary). If null, session runs until [stopSession].
+  static Future<void> startSession({int? durationSec}) async {
+    return shared._startDataCollection(durationSec: durationSec);
   }
+
+  /// Whether the main data-collection session is currently running.
+  static bool get isSessionRunning => shared._isRunning;
 
   /// Stop the current session — halts module streaming and clears ephemeral buffers.
   ///
@@ -453,6 +476,90 @@ class Synheart {
 
   /// Check if phone module is collecting data
   static bool get isPhoneCollecting => shared._isPhoneCollecting;
+
+  // ── Watch Session API ─────────────────────────────────────────────────
+
+  /// Whether a watch session is currently active.
+  static bool get isWatchSessionActive =>
+      shared._watchSessionModule?.isActive ?? false;
+
+  /// The active watch session ID, if any.
+  static String? get activeWatchSessionId =>
+      shared._watchSessionModule?.activeSessionId;
+
+  /// Stream of [SessionEvent]s from the active watch session.
+  ///
+  /// Events flow: `SessionStarted` -> `SessionFrame*` -> `SessionSummary`.
+  /// Each [SessionFrame] carries HR metrics (hr_mean_bpm, rmssd_ms, sdnn_ms).
+  static Stream<SessionEvent> get watchSessionEvents {
+    final mod = shared._watchSessionModule;
+    if (mod == null) {
+      throw StateError(
+        'WatchSessionModule not initialized. Call initialize() first.',
+      );
+    }
+    return mod.events;
+  }
+
+  /// Query watch connectivity status.
+  ///
+  /// Returns [WatchStatus] with `reachable`, `paired`, `installed`, `supported`.
+  /// Returns null if the module is not initialized or the platform doesn't
+  /// support watch connectivity.
+  ///
+  /// Example:
+  /// ```dart
+  /// final status = await Synheart.getWatchStatus();
+  /// if (status?.reachable == true) {
+  ///   print('Watch is reachable');
+  /// }
+  /// ```
+  static Future<WatchStatus?> getWatchStatus() async {
+    return shared._watchSessionModule?.getWatchStatus();
+  }
+
+  /// Start a session on the companion watch.
+  ///
+  /// Sends a start command to the paired watch via the Wearable Data Layer
+  /// (Wear OS MessageClient / Apple Watch WCSession). The watch begins
+  /// reading HR data and streams [SessionFrame] events back.
+  ///
+  /// Returns a broadcast stream of [SessionEvent]s.
+  ///
+  /// Example:
+  /// ```dart
+  /// final stream = Synheart.startWatchSession(
+  ///   SessionConfig(
+  ///     mode: SessionMode.focus,
+  ///     durationSec: 300,
+  ///     profile: ComputeProfile(windowSec: 60, emitIntervalSec: 5),
+  ///   ),
+  /// );
+  /// stream.listen((event) {
+  ///   if (event is SessionFrame) {
+  ///     print('HR: ${event.metrics['hr_mean_bpm']}');
+  ///   }
+  /// });
+  /// ```
+  static Stream<SessionEvent> startWatchSession(SessionConfig config) {
+    final mod = shared._watchSessionModule;
+    if (mod == null) {
+      throw StateError(
+        'WatchSessionModule not initialized. Call initialize() first.',
+      );
+    }
+    return mod.startSession(config);
+  }
+
+  /// Stop the active watch session.
+  ///
+  /// Sends a stop command to the watch. A [SessionSummary] event will be
+  /// emitted on the session stream before it closes.
+  static Future<void> stopWatchSession() async {
+    await shared._watchSessionModule?.stopSession();
+  }
+
+  // ── End Watch Session API ─────────────────────────────────────────────
 
   /// Stream of raw wear samples
   ///
@@ -739,8 +846,21 @@ class Synheart {
     return _phoneModule?.status == ModuleStatus.running;
   }
 
+  /// Log runtime (native synheart-runtime) summary to the Flutter terminal.
+  void _logRuntimeSummary() {
+    final bridge = _runtimeModule?.bridge;
+    if (bridge == null) return;
+    final fc = bridge.frameCount();
+    final q = bridge.lastQuality();
+    final wearSamples = _runtimeModule?.wearSampleCount ?? 0;
+    debugPrint(
+      '[Runtime] Session end: frameCount=$fc lastQuality=$q'
+      '${fc == 0 ? " (no HSI produced — no window completed, wearSamplesReceived=$wearSamples)" : ""}',
+    );
+  }
+
   /// Start all data collection modules
-  Future<void> _startDataCollection() async {
+  Future<void> _startDataCollection({int? durationSec}) async {
     if (!_isConfigured) {
       throw StateError(
         'Synheart must be initialized before starting data collection',
@@ -753,10 +873,52 @@ class Synheart {
     }
 
     SynheartLogger.log('[Synheart] Starting all data collection modules...');
+
+    // Open main collection session via Session SDK (RFC: session boundary)
+    final sessionId = 'core_${DateTime.now().millisecondsSinceEpoch}';
+    final sec = durationSec ?? 86400; // default 24h — long-lived; stop explicitly
+    final config = SessionConfig(
+      mode: SessionMode.focus,
+      durationSec: sec,
+      sessionId: sessionId,
+    );
+    _activeMainSessionId = sessionId;
+    _mainSessionSubscription = _mainSession!
+        .startSession(config)
+        .listen(
+          (_) {},
+          onDone: () {
+            _activeMainSessionId = null;
+            if (_isRunning) {
+              _isRunning = false;
+              _reevaluateAllFeatures();
+              _logRuntimeSummary();
+              _moduleManager.stopAll();
+              SynheartLogger.log(
+                '[Synheart] Main session ended (duration or stream closed)',
+              );
+              // debugPrint('[Synheart] Session ended (duration reached or stream closed)');
+            }
+          },
+          onError: (e, st) {
+            SynheartLogger.log(
+              '[Synheart] Main session stream error: $e',
+              error: e,
+              stackTrace: st,
+            );
+            _activeMainSessionId = null;
+          },
+        );
+
     await _moduleManager.startAll();
     _isRunning = true;
     _reevaluateAllFeatures();
     SynheartLogger.log('[Synheart] Data collection started');
+    // if (durationSec != null) {
+    //   debugPrint('[Synheart] Session started (duration: ${durationSec}s)');
+    // } else {
+    //   debugPrint('[Synheart] Session started (until stopped)');
+    // }
   }
 
   /// Stop all data collection modules
@@ -773,10 +935,21 @@ class Synheart {
     }
 
     SynheartLogger.log('[Synheart] Stopping all data collection modules...');
+
+    // Close main collection session via Session SDK
+    if (_activeMainSessionId != null) {
+      await _mainSession?.stopSession(_activeMainSessionId!);
+      await _mainSessionSubscription?.cancel();
+      _mainSessionSubscription = null;
+      _activeMainSessionId = null;
+    }
+
     _isRunning = false;
     _reevaluateAllFeatures();
+    _logRuntimeSummary();
     await _moduleManager.stopAll();
     SynheartLogger.log('[Synheart] Data collection stopped');
+    // debugPrint('[Synheart] Session stopped by user');
   }
 
   /// Start wear data collection
@@ -792,7 +965,7 @@ class Synheart {
     }
 
     if (_isWearCollecting) {
-      SynheartLogger.log('[Synheart] Wear collection already running');
+      // SynheartLogger.log('[Synheart] Wear collection already running');
       // If interval changed, update it
       if (interval != null) {
         await _wearModule!.updateCollectionInterval(interval);
@@ -800,12 +973,12 @@ class Synheart {
       return;
     }
 
-    SynheartLogger.log('[Synheart] Starting wear data collection...');
+    // SynheartLogger.log('[Synheart] Starting wear data collection...');
     if (interval != null) {
       await _wearModule!.updateCollectionInterval(interval);
     }
     await _wearModule!.start();
-    SynheartLogger.log('[Synheart] Wear data collection started');
+    // SynheartLogger.log('[Synheart] Wear data collection started');
   }
 
   /// Stop wear data collection
@@ -821,13 +994,13 @@ class Synheart {
     }
 
     if (!_isWearCollecting) {
-      SynheartLogger.log('[Synheart] Wear collection already stopped');
+      // SynheartLogger.log('[Synheart] Wear collection already stopped');
       return;
     }
 
-    SynheartLogger.log('[Synheart] Stopping wear data collection...');
+    // SynheartLogger.log('[Synheart] Stopping wear data collection...');
     await _wearModule!.stop();
-    SynheartLogger.log('[Synheart] Wear data collection stopped');
+    // SynheartLogger.log('[Synheart] Wear data collection stopped');
   }
 
   /// Start behavior data collection
@@ -843,13 +1016,13 @@ class Synheart {
     }
 
     if (_isBehaviorCollecting) {
-      SynheartLogger.log('[Synheart] Behavior collection already running');
+      // SynheartLogger.log('[Synheart] Behavior collection already running');
       return;
     }
 
-    SynheartLogger.log('[Synheart] Starting behavior data collection...');
+    // SynheartLogger.log('[Synheart] Starting behavior data collection...');
     await _behaviorModule!.start();
-    SynheartLogger.log('[Synheart] Behavior data collection started');
+    // SynheartLogger.log('[Synheart] Behavior data collection started');
   }
 
   /// Stop behavior data collection
@@ -865,13 +1038,13 @@ class Synheart {
     }
 
     if (!_isBehaviorCollecting) {
-      SynheartLogger.log('[Synheart] Behavior collection already stopped');
+      // SynheartLogger.log('[Synheart] Behavior collection already stopped');
       return;
     }
 
-    SynheartLogger.log('[Synheart] Stopping behavior data collection...');
+    // SynheartLogger.log('[Synheart] Stopping behavior data collection...');
     await _behaviorModule!.stop();
-    SynheartLogger.log('[Synheart] Behavior data collection stopped');
+    // SynheartLogger.log('[Synheart] Behavior data collection stopped');
   }
 
   /// Start phone context data collection
@@ -937,15 +1110,15 @@ class Synheart {
       );
     }
 
-    SynheartLogger.log('[Synheart] Starting behavior session...');
+    // SynheartLogger.log('[Synheart] Starting behavior session...');
     final session = await synheartBehavior.startSession();
 
     // Track the session so we can end it later
     _activeBehaviorSessions[session.sessionId] = session;
 
-    SynheartLogger.log(
-      '[Synheart] Behavior session started: ${session.sessionId}',
-    );
+    // SynheartLogger.log(
+    //   '[Synheart] Behavior session started: ${session.sessionId}',
+    // );
     return session.sessionId;
   }
 
@@ -976,7 +1149,7 @@ class Synheart {
       );
     }
 
-    SynheartLogger.log('[Synheart] Stopping behavior session: $sessionId...');
+    // SynheartLogger.log('[Synheart] Stopping behavior session: $sessionId...');
 
     // End the session and get summary
     final summary = await session.end();
@@ -984,7 +1157,7 @@ class Synheart {
     // Remove from tracking
     _activeBehaviorSessions.remove(sessionId);
 
-    SynheartLogger.log('[Synheart] Behavior session stopped: $sessionId');
+    // SynheartLogger.log('[Synheart] Behavior session stopped: $sessionId');
     return BehaviorSessionResults.fromSummary(summary);
   }
 
@@ -1638,19 +1811,15 @@ class Synheart {
     switch (feature) {
       case SynheartFeature.wear:
         if (isOperational && _wearModule?.status != ModuleStatus.running) {
-          _wearModule?.start().catchError((e) =>
-              SynheartLogger.log('[Synheart] Error starting wear: $e', error: e));
+          _wearModule?.start().catchError((e, st) {}); // wear log commented
         } else if (!isOperational && _wearModule?.status == ModuleStatus.running) {
-          _wearModule?.stop().catchError((e) =>
-              SynheartLogger.log('[Synheart] Error stopping wear: $e', error: e));
+          _wearModule?.stop().catchError((e, st) {}); // wear log commented
         }
       case SynheartFeature.behavior:
         if (isOperational && _behaviorModule?.status != ModuleStatus.running) {
-          _behaviorModule?.start().catchError((e) =>
-              SynheartLogger.log('[Synheart] Error starting behavior: $e', error: e));
+          _behaviorModule?.start().catchError((e, st) {}); // behavior log commented
         } else if (!isOperational && _behaviorModule?.status == ModuleStatus.running) {
-          _behaviorModule?.stop().catchError((e) =>
-              SynheartLogger.log('[Synheart] Error stopping behavior: $e', error: e));
+          _behaviorModule?.stop().catchError((e, st) {}); // behavior log commented
         }
       case SynheartFeature.phoneContext:
         if (isOperational && _phoneModule?.status != ModuleStatus.running) {
@@ -1775,6 +1944,15 @@ class Synheart {
       await _moduleManager.disposeAll();
 
       await _hsvStream.close();
+
+      await _mainSessionSubscription?.cancel();
+      _mainSessionSubscription = null;
+      _mainSession?.dispose();
+      _mainSession = null;
+      _activeMainSessionId = null;
+
+      _watchSessionModule?.dispose();
+      _watchSessionModule = null;
 
       _consentModule = null;
       _capabilityModule = null;

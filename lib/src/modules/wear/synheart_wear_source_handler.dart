@@ -124,14 +124,14 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     if (_hrSubscription == null &&
         _synheartWear != null &&
         _controller != null) {
-      SynheartLogger.log(
-        '[SynheartWearSourceHandler] Starting HR streaming...',
-      );
+      // SynheartLogger.log(
+      //   '[SynheartWearSourceHandler] Starting HR streaming...',
+      // );
       _startStreaming();
     } else {
-      SynheartLogger.log(
-        '[SynheartWearSourceHandler] Cannot start streaming: hrSubscription=${_hrSubscription != null}, sdk=${_synheartWear != null}, controller=${_controller != null}',
-      );
+      // SynheartLogger.log(
+      //   '[SynheartWearSourceHandler] Cannot start streaming: hrSubscription=${_hrSubscription != null}, sdk=${_synheartWear != null}, controller=${_controller != null}',
+      // );
     }
   }
 
@@ -301,7 +301,7 @@ class SynheartWearSourceHandler implements WearSourceHandler {
 
   @override
   Future<void> stop() async {
-    SynheartLogger.log('[SynheartWearSourceHandler] Stopping HR streaming...');
+    // SynheartLogger.log('[SynheartWearSourceHandler] Stopping HR streaming...');
 
     // Cancel subscriptions to stop receiving data
     await _hrSubscription?.cancel();
@@ -315,9 +315,9 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     if (_synheartWear != null) {
       _synheartWear!.dispose();
       _synheartWear = null;
-      SynheartLogger.log(
-        '[SynheartWearSourceHandler] synheart_wear SDK disposed',
-      );
+      // SynheartLogger.log(
+      //   '[SynheartWearSourceHandler] synheart_wear SDK disposed',
+      // );
     }
 
     // Note: _isInitialized remains true to allow checking if re-init is needed

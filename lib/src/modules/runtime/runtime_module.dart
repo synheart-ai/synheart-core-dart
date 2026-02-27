@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:rxdart/rxdart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,6 +9,7 @@ import '../base/synheart_module.dart';
 import '../behavior/behavior_events.dart';
 import '../wear/wear_source_handler.dart';
 import 'runtime_bridge.dart';
+import '../../core/defaults.dart';
 
 /// Runtime Module — streams wear and behavior data into the synheart-runtime
 /// C ABI and periodically ticks to produce HSI JSON frames.
@@ -32,6 +34,16 @@ class RuntimeModule extends BaseSynheartModule {
   StreamSubscription? _wearSubscription;
   StreamSubscription? _behaviorSubscription;
 
+  /// True after we have started the tick timer (after first push, per runtime contract).
+  bool _tickTimerStarted = false;
+
+  /// Number of wear samples received this session (diagnostic for "no HSI" debugging).
+  int _wearSampleCount = 0;
+
+  /// Last timestamp (ms) sent to the runtime for ANY push (RR, HR, behavior, accel).
+  /// Pipeline requires events monotonically non-decreasing by ts_ms across all types.
+  int? _lastPushedTsMs;
+
   final BehaviorSubject<String> _hsiStream = BehaviorSubject<String>();
 
   /// Stream of HSI JSON strings emitted each time the runtime produces a frame.
@@ -39,6 +51,9 @@ class RuntimeModule extends BaseSynheartModule {
 
   /// The underlying RuntimeBridge (nullable — null when native library unavailable).
   RuntimeBridge? get bridge => _runtime;
+
+  /// Number of wear samples received this session (diagnostic).
+  int get wearSampleCount => _wearSampleCount;
 
   RuntimeModule({
     RuntimeBridge? runtime,
@@ -85,6 +100,7 @@ class RuntimeModule extends BaseSynheartModule {
 
     // Subscribe to wear samples
     if (_wearSampleStream != null) {
+      _wearSampleCount = 0;
       _wearSubscription = _wearSampleStream!.listen(
         _handleWearSample,
         onError: (e, st) => SynheartLogger.log(
@@ -107,19 +123,40 @@ class RuntimeModule extends BaseSynheartModule {
       );
     }
 
-    // Tick every 5 seconds
-    _tickTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      final hsiJson = _runtime?.tick(DateTime.now().millisecondsSinceEpoch);
-      if (hsiJson != null) {
-        _hsiStream.add(hsiJson);
-      }
-    });
-
+    // Do NOT start the tick timer here. The runtime anchors the window to the
+    // first tick(now_ms). Start the timer only after the first push (wear or
+    // behavior); see _handleWearSample and _handleBehaviorEvent.
     SynheartLogger.log('[RuntimeModule] Started');
   }
 
   @override
   Future<void> onStop() async {
+    if (_runtime != null) {
+      // Flush any completed window before stopping (in case we're between timer fires).
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final hsiJson = _runtime!.tick(nowMs);
+      if (hsiJson != null) {
+        final fc = _runtime!.frameCount();
+        final q = _runtime!.lastQuality();
+        debugPrint('[Runtime] HSI frame #$fc (on stop)${q != null ? ' quality=$q' : ''}');
+        debugPrint('[Runtime] HSI JSON: $hsiJson');
+        SynheartLogger.log('[Runtime] HSI (tick result, on stop): $hsiJson');
+        _hsiStream.add(hsiJson);
+      }
+
+      final fc = _runtime!.frameCount();
+      final q = _runtime!.lastQuality();
+      debugPrint(
+        '[Runtime] Stopping: frameCount=$fc lastQuality=$q'
+        '${fc == 0 ? " (no HSI produced, wearSamplesReceived=$_wearSampleCount)" : ""}',
+      );
+      if (fc == 0) {
+        final preprocessed = _runtime!.lastPreprocessed();
+        if (preprocessed != null && preprocessed.isNotEmpty) {
+          debugPrint('[Runtime] Last preprocessed (input to Flux): $preprocessed');
+        }
+      }
+    }
     SynheartLogger.log('[RuntimeModule] Stopping...');
 
     // Persist SRM baselines for next session
@@ -138,6 +175,7 @@ class RuntimeModule extends BaseSynheartModule {
 
     _tickTimer?.cancel();
     _tickTimer = null;
+    _tickTimerStarted = false;
 
     await _wearSubscription?.cancel();
     _wearSubscription = null;
@@ -159,38 +197,122 @@ class RuntimeModule extends BaseSynheartModule {
   // --- Private helpers ---
 
   void _handleWearSample(WearSample sample) {
-    final tsMs = sample.timestamp.millisecondsSinceEpoch;
+    _wearSampleCount += 1;
+    int tsMs = sample.timestamp.millisecondsSinceEpoch;
+    final lastTsMs = _lastPushedTsMs;
+    // Pipeline requires monotonically non-decreasing ts_ms across ALL pushes (RR, HR, behavior).
+    if (lastTsMs != null && tsMs <= lastTsMs) {
+      tsMs = DateTime.now().millisecondsSinceEpoch;
+      if (tsMs <= lastTsMs) tsMs = lastTsMs + 1;
+    }
+    _lastPushedTsMs = tsMs;
 
-    // Push individual RR intervals
-    if (sample.rrIntervals != null) {
+    // Log every exact push to the runtime (same as C API: push_rr, push_hr)
+    if (sample.rrIntervals != null && sample.rrIntervals!.isNotEmpty) {
       for (final rr in sample.rrIntervals!) {
+        debugPrint('[Runtime in] push_rr ts_ms=$tsMs rr_ms=$rr');
         _runtime!.pushRr(tsMs, rr);
       }
     }
+    if (sample.hr != null && sample.hr! > 0) {
+      if (sample.rrIntervals != null && sample.rrIntervals!.isNotEmpty) {
+        debugPrint('[Runtime in] push_hr ts_ms=$tsMs bpm=${sample.hr}');
+        _runtime!.pushHr(tsMs, sample.hr!);
+      } else {
+        // No RR from source (e.g. Health only gives HR). Send explicit RR so runtime
+        // receives push_rr (some session runtimes count only explicit RR for quality/HRV).
+        final rrMs = (SynheartDefaults.msPerMinute / sample.hr!)
+            .clamp(SynheartDefaults.rrMinMs, SynheartDefaults.rrMaxMs);
+        debugPrint('[Runtime in] push_rr ts_ms=$tsMs rr_ms=$rrMs (from hr=${sample.hr})');
+        _runtime!.pushRr(tsMs, rrMs);
+      }
+    }
 
-    // Push heart rate
-    if (sample.hr != null) {
-      _runtime!.pushHr(tsMs, sample.hr!);
+    // Start tick timer and anchor window AFTER first push (matches synthetic_pipeline: push then tick(0)).
+    if (!_tickTimerStarted) {
+      _startTickTimer();
+      _tickTimerStarted = true;
+      _runtime!.tick(tsMs);
     }
   }
 
   void _handleBehaviorEvent(BehaviorEvent event) {
-    final tsMs = event.timestamp.millisecondsSinceEpoch;
+    int tsMs = event.timestamp.millisecondsSinceEpoch;
+    final lastTsMs = _lastPushedTsMs;
+    // Pipeline requires monotonically non-decreasing ts_ms across ALL pushes.
+    if (lastTsMs != null && tsMs <= lastTsMs) {
+      tsMs = DateTime.now().millisecondsSinceEpoch;
+      if (tsMs <= lastTsMs) tsMs = lastTsMs + 1;
+    }
+    _lastPushedTsMs = tsMs;
 
+    // Runtime event_type: 0=ScreenOn, 1=ScreenOff, 2=Touch, 3=AppSwitch,
+    // 4=NotificationReceived, 5=Scroll, 6=Swipe, 7=Call
+    final int eventType;
+    final double value;
     switch (event.type) {
       case BehaviorEventType.tap:
-      case BehaviorEventType.scroll:
       case BehaviorEventType.keyDown:
       case BehaviorEventType.keyUp:
-        // Touch / input — event_type 2
-        _runtime!.pushBehavior(tsMs, 2, 1.0);
+        eventType = 2; // Touch
+        value = 1.0;
+        break;
+      case BehaviorEventType.scroll:
+        eventType = 5; // Scroll (runtime 5=Scroll)
+        value = event.metadata?['delta'] is num
+            ? (event.metadata!['delta'] as num).toDouble()
+            : 1.0;
+        break;
       case BehaviorEventType.appSwitch:
-        // App switch — event_type 3
-        _runtime!.pushBehavior(tsMs, 3, 1.0);
+        eventType = 3; // AppSwitch
+        value = 1.0;
+        break;
       case BehaviorEventType.notificationReceived:
       case BehaviorEventType.notificationOpened:
-        // Notification — event_type 4
-        _runtime!.pushBehavior(tsMs, 4, 1.0);
+        eventType = 4; // NotificationReceived
+        value = 1.0;
+        break;
     }
+    debugPrint('[Runtime in] push_behavior ts_ms=$tsMs event_type=$eventType value=$value');
+    _runtime!.pushBehavior(tsMs, eventType, value);
+
+    // Anchor window on first push of any type (matches Rust batch_ingest: t0 = min(ts_ms)).
+    if (!_tickTimerStarted) {
+      _startTickTimer();
+      _tickTimerStarted = true;
+      _runtime!.tick(tsMs);
+    }
+  }
+
+  /// Starts the periodic tick timer. Called once after the first push (wear or behavior)
+  /// so the first tick(now_ms) anchors the window to the earliest event timestamp.
+  void _startTickTimer() {
+    if (_runtime == null || _tickTimer != null) return;
+    const intervalSec = 1; // Tick every 1s so we complete the first window within ~1s of 10s boundary.
+    _tickTimer = Timer.periodic(const Duration(seconds: intervalSec), (_) {
+      final hsiJson = _runtime?.tick(DateTime.now().millisecondsSinceEpoch);
+      if (hsiJson != null) {
+        final fc = _runtime.frameCount();
+        final q = _runtime.lastQuality();
+        debugPrint(
+          '[Runtime] HSI frame #$fc${q != null ? ' quality=$q' : ''}',
+        );
+        debugPrint('[Runtime] HSI JSON: $hsiJson');
+        SynheartLogger.log('[Runtime] HSI (tick result): $hsiJson');
+        _hsiStream.add(hsiJson);
+      } else {
+        final fc = _runtime!.frameCount();
+        if (fc == 0) {
+          debugPrint(
+            '[Runtime] tick: no HSI yet (window not completed, frameCount=0, wearSamplesReceived=$_wearSampleCount)',
+          );
+          final preprocessed = _runtime!.lastPreprocessed();
+          if (preprocessed != null && preprocessed.isNotEmpty) {
+            debugPrint('[Runtime] Last preprocessed (input to Flux): $preprocessed');
+          }
+        }
+      }
+    });
+    SynheartLogger.log('[RuntimeModule] Tick timer started (after first push)');
   }
 }

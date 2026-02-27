@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:ui' show FontFeature;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../behavior_metrics/session_results_screen.dart';
 import 'package:provider/provider.dart';
@@ -40,6 +42,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSessionActive = false;
   StreamSubscription<sb.BehaviorEvent>? _eventSubscription;
 
+  /// Throttle setState for behavior events to avoid rebuild on every tap/scroll (causes freeze).
+  bool _pendingEventNotify = false;
+  Timer? _eventNotifyTimer;
+  static const _eventNotifyThrottleMs = 600;
+
+  /// Selected duration in seconds for main session; null = until stopped.
+  int? _mainSessionDurationSec = 300;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _eventNotifyTimer?.cancel();
     _eventSubscription?.cancel();
     super.dispose();
   }
@@ -63,33 +74,33 @@ class _HomeScreenState extends State<HomeScreen> {
       // Listen to events from the behavior SDK
       _eventSubscription?.cancel();
       _eventSubscription = synheartBehavior.onEvent.listen((event) {
-        setState(() {
-          // Store events for current session (if session is active)
-          if (_isSessionActive && _currentSession != null) {
-            if (event.sessionId == _currentSession!.sessionId) {
-              _sessionEvents.add(event);
-              print(
-                '[HomeScreen] 📥 Event collected: ${event.eventType.name}, '
-                'sessionId: ${event.sessionId}, timestamp: ${event.timestamp}, '
-                'total: ${_sessionEvents.length}',
-              );
-            } else {
-              print(
-                '[HomeScreen] ⚠️ Event sessionId mismatch: ${event.sessionId} vs ${_currentSession!.sessionId}',
-              );
-            }
-          } else {
-            print(
-              '[HomeScreen] ⚠️ Event received but no active session. '
-              'isSessionActive: $_isSessionActive, session: ${_currentSession?.sessionId}',
-            );
-          }
-        });
+        // Update state only (no print on every event - reduces log spam and I/O).
+        if (_isSessionActive && _currentSession != null &&
+            event.sessionId == _currentSession!.sessionId) {
+          _sessionEvents.add(event);
+          _throttledEventNotify();
+        } else if (_isSessionActive && _currentSession != null &&
+            kDebugMode && _sessionEvents.length % 20 == 0) {
+          // debugPrint('[HomeScreen] Event sessionId mismatch: ${event.sessionId}');
+        }
       });
 
       // Start session if behavior consent is granted
       _checkAndStartSession();
     }
+  }
+
+  /// Debounce setState for behavior events so we don't rebuild on every tap/scroll.
+  void _throttledEventNotify() {
+    _pendingEventNotify = true;
+    _eventNotifyTimer?.cancel();
+    _eventNotifyTimer = Timer(const Duration(milliseconds: _eventNotifyThrottleMs), () {
+      _eventNotifyTimer = null;
+      if (_pendingEventNotify && mounted) {
+        _pendingEventNotify = false;
+        setState(() {});
+      }
+    });
   }
 
   /// Check if behavior consent is granted and start session
@@ -98,24 +109,24 @@ class _HomeScreenState extends State<HomeScreen> {
     if (consentStatusMap['behavior'] == true && _behavior != null) {
       await _startBehaviorSession();
     } else {
-      print(
-        '[HomeScreen] Behavior consent not granted or behavior is null. '
-        'consent: ${consentStatusMap['behavior']}, behavior: $_behavior',
-      );
+      // print(
+      //   '[HomeScreen] Behavior consent not granted or behavior is null. '
+      //   'consent: ${consentStatusMap['behavior']}, behavior: $_behavior',
+      // );
     }
   }
 
   /// Start a behavior session
   Future<void> _startBehaviorSession() async {
     if (_behavior == null) {
-      print('[HomeScreen] ⚠️ Cannot start session: behavior is null');
+      // print('[HomeScreen] ⚠️ Cannot start session: behavior is null');
       return;
     }
 
     if (_isSessionActive) {
-      print(
-        '[HomeScreen] ⚠️ Session already active: ${_currentSession?.sessionId}',
-      );
+      // print(
+      //   '[HomeScreen] ⚠️ Session already active: ${_currentSession?.sessionId}',
+      // );
       return;
     }
 
@@ -126,16 +137,16 @@ class _HomeScreenState extends State<HomeScreen> {
         _isSessionActive = true;
         _sessionEvents = []; // Clear previous session events
       });
-      print(
-        '[HomeScreen] ✅ Behavior session started: ${session.sessionId}, '
-        'startTime: ${DateTime.fromMillisecondsSinceEpoch(session.startTimestamp)}',
-      );
-      print(
-        '[HomeScreen] Current session ID in SDK: ${_behavior!.currentSessionId}',
-      );
+      // print(
+      //   '[HomeScreen] ✅ Behavior session started: ${session.sessionId}, '
+      //   'startTime: ${DateTime.fromMillisecondsSinceEpoch(session.startTimestamp)}',
+      // );
+      // print(
+      //   '[HomeScreen] Current session ID in SDK: ${_behavior!.currentSessionId}',
+      // );
     } catch (e, stackTrace) {
-      print('[HomeScreen] ❌ Failed to start behavior session: $e');
-      print('[HomeScreen] Stack trace: $stackTrace');
+      // print('[HomeScreen] ❌ Failed to start behavior session: $e');
+      // print('[HomeScreen] Stack trace: $stackTrace');
     }
   }
 
@@ -155,9 +166,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _isSessionActive = false;
         _sessionEvents = [];
       });
-      print('[HomeScreen] ✅ Behavior session stopped');
+      // print('[HomeScreen] ✅ Behavior session stopped');
     } catch (e) {
-      print('[HomeScreen] ❌ Failed to stop behavior session: $e');
+      // print('[HomeScreen] ❌ Failed to stop behavior session: $e');
       // Clear state even if ending failed
       setState(() {
         _currentSession = null;
@@ -208,13 +219,13 @@ class _HomeScreenState extends State<HomeScreen> {
       final sessionStartTime = DateTime.parse(summary.startAt).toUtc();
       final sessionEndTime = DateTime.parse(summary.endAt).toUtc();
 
-      print(
-        '[HomeScreen] Session start time (UTC): $sessionStartTime (${summary.startAt})',
-      );
-      print('[HomeScreen] Session end time (UTC): $sessionEndTime');
-      print(
-        '[HomeScreen] Summary total_events from native SDK: ${summary.activitySummary.totalEvents}',
-      );
+      // print(
+      //   '[HomeScreen] Session start time (UTC): $sessionStartTime (${summary.startAt})',
+      // );
+      // print('[HomeScreen] Session end time (UTC): $sessionEndTime');
+      // print(
+      //   '[HomeScreen] Summary total_events from native SDK: ${summary.activitySummary.totalEvents}',
+      // );
 
       // Filter events by session time range (start to end)
       // Both times are in UTC, so we can compare directly
@@ -232,42 +243,42 @@ class _HomeScreenState extends State<HomeScreen> {
               eventTimeMs >= sessionStartMs && eventTimeMs <= sessionEndMs;
 
           if (!inRange) {
-            print(
-              '[HomeScreen] ⚠️ Event outside session range: ${event.eventType.name}, '
-              'eventTime: $eventTime (${event.timestamp}), '
-              'sessionRange: $sessionStartTime to $sessionEndTime',
-            );
+            // print(
+            //   '[HomeScreen] ⚠️ Event outside session range: ${event.eventType.name}, '
+            //   'eventTime: $eventTime (${event.timestamp}), '
+            //   'sessionRange: $sessionStartTime to $sessionEndTime',
+            // );
           }
           return inRange;
         } catch (e) {
-          print(
-            '[HomeScreen] ⚠️ Invalid event timestamp: ${event.timestamp}, error: $e',
-          );
+          // print(
+          //   '[HomeScreen] ⚠️ Invalid event timestamp: ${event.timestamp}, error: $e',
+          // );
           return false;
         }
       }).toList();
 
-      print(
-        '[HomeScreen] Session ended. '
-        'Total events collected: ${_sessionEvents.length}, '
-        'Events in session range: ${sessionEvents.length}, '
-        'Native SDK events: ${summary.activitySummary.totalEvents}, '
-        'Summary: ${summary.sessionId}',
-      );
+      // print(
+      //   '[HomeScreen] Session ended. '
+      //   'Total events collected: ${_sessionEvents.length}, '
+      //   'Events in session range: ${sessionEvents.length}, '
+      //   'Native SDK events: ${summary.activitySummary.totalEvents}, '
+      //   'Summary: ${summary.sessionId}',
+      // );
 
-      // Debug: Print event breakdown
+      // Debug: Print event breakdown (commented to reduce log noise)
       if (sessionEvents.isNotEmpty) {
         final eventTypes = <String, int>{};
         for (final event in sessionEvents) {
           eventTypes[event.eventType.name] =
               (eventTypes[event.eventType.name] ?? 0) + 1;
         }
-        print('[HomeScreen] Event breakdown: $eventTypes');
+        // print('[HomeScreen] Event breakdown: $eventTypes');
       } else {
-        print(
-          '[HomeScreen] ⚠️ WARNING: No events in session range! '
-          'This might indicate events are not being stored in native SDK.',
-        );
+        // print(
+        //   '[HomeScreen] ⚠️ WARNING: No events in session range! '
+        //   'This might indicate events are not being stored in native SDK.',
+        // );
       }
 
       // Clear session state
@@ -297,8 +308,8 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } catch (e, stackTrace) {
-      print('[HomeScreen] ERROR ending session: $e');
-      print('[HomeScreen] Stack trace: $stackTrace');
+      // print('[HomeScreen] ERROR ending session: $e');
+      // print('[HomeScreen] Stack trace: $stackTrace');
 
       // Close loading dialog if still open
       if (mounted && Navigator.of(context).canPop()) {
@@ -361,6 +372,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 // SDK Status Card
                 _buildSDKStatusCard(context, provider),
                 const SizedBox(height: 16),
+
+                // Data collection session (main page) — only when initialized
+                if (provider.isInitialized) ...[
+                  _buildMainSessionCard(context, provider),
+                  const SizedBox(height: 16),
+                ],
 
                 // Error Message
                 if (provider.hasError) ...[
@@ -709,6 +726,117 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildMainSessionCard(
+    BuildContext context,
+    SynheartProvider provider,
+  ) {
+    final isRunning = provider.isSessionRunning;
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Data collection session',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            if (isRunning) ...[
+              Row(
+                children: [
+                  Icon(Icons.play_circle_filled,
+                      color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Session running',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Colors.green.shade700,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _formatElapsed(provider.sessionElapsedSec),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => provider.stopSession(),
+                  icon: const Icon(Icons.stop),
+                  label: const Text('Stop session'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    side: BorderSide(color: Colors.red.shade300),
+                  ),
+                ),
+              ),
+            ] else ...[
+              Text(
+                'Duration',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Theme.of(context)
+                          .colorScheme.onSurface
+                          .withOpacity(0.7),
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _mainSessionDurationChip(30, '30 sec'),
+                  _mainSessionDurationChip(60, '1 min'),
+                  _mainSessionDurationChip(300, '5 min'),
+                  _mainSessionDurationChip(1800, '30 min'),
+                  _mainSessionDurationChip(null, 'Until stopped'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => provider.startSession(
+                    durationSec: _mainSessionDurationSec,
+                  ),
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Start session'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mainSessionDurationChip(int? seconds, String label) {
+    final selected = _mainSessionDurationSec == seconds;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (v) {
+        if (v == true) setState(() => _mainSessionDurationSec = seconds);
+      },
+    );
+  }
+
+  /// Format elapsed seconds as MM:SS.
+  static String _formatElapsed(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   Widget _buildNavigationCard(

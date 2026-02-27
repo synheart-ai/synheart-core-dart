@@ -6,6 +6,7 @@ import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
 
 import '../../core/defaults.dart';
+import '../../core/logger.dart';
 
 // --- C function typedefs (native signatures) ---
 
@@ -159,17 +160,17 @@ class RuntimeBridge {
   late final _RuntimePushBehaviorDart _pushBehaviorFfi;
   late final _RuntimeTickDart _tickFfi;
   late final _RuntimeLastQualityDart _lastQualityFfi;
-  late final _RuntimeLastHsvDart _lastHsvFfi;
-  late final _RuntimeLastPreprocessedDart _lastPreprocessedFfi;
+  _RuntimeLastHsvDart? _lastHsvFfi;
+  _RuntimeLastPreprocessedDart? _lastPreprocessedFfi;
   late final _RuntimeFrameCountDart _frameCountFfi;
   late final _RuntimeResetDart _resetFfi;
   late final _RuntimeFreeStringDart _freeString;
 
-  // SRM
-  late final _RuntimeBaselinesJsonDart _baselinesJsonFfi;
-  late final _RuntimeBaselineSummaryDart _baselineSummaryFfi;
-  late final _RuntimeExportSrmSnapshotDart _exportSrmSnapshotFfi;
-  late final _RuntimeLoadSrmSnapshotDart _loadSrmSnapshotFfi;
+  // SRM (optional — may be missing in older .so; use make verify-android in synheart-runtime to check)
+  _RuntimeBaselinesJsonDart? _baselinesJsonFfi;
+  _RuntimeBaselineSummaryDart? _baselineSummaryFfi;
+  _RuntimeExportSrmSnapshotDart? _exportSrmSnapshotFfi;
+  _RuntimeLoadSrmSnapshotDart? _loadSrmSnapshotFfi;
 
   RuntimeBridge._(this._lib, this._handle) {
     _runtimeFree = _lib
@@ -200,14 +201,8 @@ class RuntimeBridge {
         .lookupFunction<_RuntimeLastQualityC, _RuntimeLastQualityDart>(
           'synheart_runtime_last_quality',
         );
-    _lastHsvFfi = _lib
-        .lookupFunction<_RuntimeLastHsvC, _RuntimeLastHsvDart>(
-          'synheart_runtime_last_hsv',
-        );
-    _lastPreprocessedFfi = _lib
-        .lookupFunction<_RuntimeLastPreprocessedC, _RuntimeLastPreprocessedDart>(
-          'synheart_runtime_last_preprocessed',
-        );
+    _lastHsvFfi = _lookupLastHsv(_lib);
+    _lastPreprocessedFfi = _lookupLastPreprocessed(_lib);
     _frameCountFfi = _lib
         .lookupFunction<_RuntimeFrameCountC, _RuntimeFrameCountDart>(
           'synheart_runtime_frame_count',
@@ -220,29 +215,93 @@ class RuntimeBridge {
         .lookupFunction<_RuntimeFreeStringC, _RuntimeFreeStringDart>(
           'synheart_runtime_free_string',
         );
-    _baselinesJsonFfi = _lib
-        .lookupFunction<_RuntimeBaselinesJsonC, _RuntimeBaselinesJsonDart>(
-          'synheart_runtime_baselines_json',
-        );
-    _baselineSummaryFfi = _lib
-        .lookupFunction<_RuntimeBaselineSummaryC, _RuntimeBaselineSummaryDart>(
-          'synheart_runtime_baseline_summary',
-        );
-    _exportSrmSnapshotFfi = _lib.lookupFunction<_RuntimeExportSrmSnapshotC,
-        _RuntimeExportSrmSnapshotDart>(
-      'synheart_runtime_export_srm_snapshot',
-    );
-    _loadSrmSnapshotFfi = _lib
-        .lookupFunction<_RuntimeLoadSrmSnapshotC, _RuntimeLoadSrmSnapshotDart>(
-          'synheart_runtime_load_srm_snapshot',
-        );
+    _baselinesJsonFfi = _lookupBaselinesJson(_lib);
+    _baselineSummaryFfi = _lookupBaselineSummary(_lib);
+    _exportSrmSnapshotFfi = _lookupExportSrmSnapshot(_lib);
+    _loadSrmSnapshotFfi = _lookupLoadSrmSnapshot(_lib);
+  }
+
+  static _RuntimeLastHsvDart? _lookupLastHsv(DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_RuntimeLastHsvC, _RuntimeLastHsvDart>(
+        'synheart_runtime_last_hsv',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _RuntimeLastPreprocessedDart? _lookupLastPreprocessed(
+    DynamicLibrary lib,
+  ) {
+    try {
+      return lib.lookupFunction<_RuntimeLastPreprocessedC,
+          _RuntimeLastPreprocessedDart>(
+        'synheart_runtime_last_preprocessed',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _RuntimeBaselinesJsonDart? _lookupBaselinesJson(DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_RuntimeBaselinesJsonC,
+          _RuntimeBaselinesJsonDart>('synheart_runtime_baselines_json');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _RuntimeBaselineSummaryDart? _lookupBaselineSummary(
+    DynamicLibrary lib,
+  ) {
+    try {
+      return lib.lookupFunction<_RuntimeBaselineSummaryC,
+          _RuntimeBaselineSummaryDart>(
+        'synheart_runtime_baseline_summary',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _RuntimeExportSrmSnapshotDart? _lookupExportSrmSnapshot(
+    DynamicLibrary lib,
+  ) {
+    try {
+      return lib.lookupFunction<_RuntimeExportSrmSnapshotC,
+          _RuntimeExportSrmSnapshotDart>(
+        'synheart_runtime_export_srm_snapshot',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _RuntimeLoadSrmSnapshotDart? _lookupLoadSrmSnapshot(
+    DynamicLibrary lib,
+  ) {
+    try {
+      return lib.lookupFunction<_RuntimeLoadSrmSnapshotC,
+          _RuntimeLoadSrmSnapshotDart>(
+        'synheart_runtime_load_srm_snapshot',
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Create a [RuntimeBridge] if the native library is available, otherwise null.
   static RuntimeBridge? createIfAvailable(RuntimeConfig config) {
     try {
       final lib = _loadLibrary();
-      if (lib == null) return null;
+      if (lib == null) {
+        SynheartLogger.log(
+          '[RuntimeBridge] libsynheart_runtime.so not loaded — check that the .so is in the app (e.g. example/android/app/src/main/jniLibs/<abi>/) and do a clean build.',
+        );
+        return null;
+      }
 
       final runtimeNew = lib
           .lookupFunction<_RuntimeNewC, _RuntimeNewDart>(
@@ -261,7 +320,12 @@ class RuntimeBridge {
       if (handle == nullptr) return null;
 
       return RuntimeBridge._(lib, handle);
-    } catch (_) {
+    } catch (e, st) {
+      SynheartLogger.log(
+        '[RuntimeBridge] createIfAvailable failed: $e',
+        error: e,
+        stackTrace: st,
+      );
       return null;
     }
   }
@@ -278,7 +342,12 @@ class RuntimeBridge {
         return DynamicLibrary.open('synheart_runtime.dll');
       }
       return null;
-    } catch (_) {
+    } catch (e, st) {
+      SynheartLogger.log(
+        '[RuntimeBridge] Failed to load libsynheart_runtime: $e',
+        error: e,
+        stackTrace: st,
+      );
       return null;
     }
   }
@@ -331,8 +400,12 @@ class RuntimeBridge {
   /// strain, sleep) with confidence and inference metadata. This is the
   /// canonical source for all HSV data — SDK-side head computation is
   /// deprecated in favour of this endpoint.
+  ///
+  /// Returns `null` if the native runtime does not export this symbol (older .so).
   String? lastHsv() {
-    final resultPtr = _lastHsvFfi(_handle);
+    final ffi = _lastHsvFfi;
+    if (ffi == null) return null;
+    final resultPtr = ffi(_handle);
     if (resultPtr == nullptr) return null;
     final json = resultPtr.toDartString();
     _freeString(resultPtr);
@@ -341,9 +414,12 @@ class RuntimeBridge {
 
   /// Get the last pre-processed window as JSON (internal use only).
   ///
-  /// Returns `null` if no window has completed yet.
+  /// Returns `null` if no window has completed yet, or if the symbol is not
+  /// present in the loaded .so.
   String? lastPreprocessed() {
-    final resultPtr = _lastPreprocessedFfi(_handle);
+    final ffi = _lastPreprocessedFfi;
+    if (ffi == null) return null;
+    final resultPtr = ffi(_handle);
     if (resultPtr == nullptr) return null;
     final json = resultPtr.toDartString();
     _freeString(resultPtr);
@@ -362,9 +438,11 @@ class RuntimeBridge {
 
   // -- SRM Baselines --
 
-  /// Return all SRM baselines as JSON, or `null`.
+  /// Return all SRM baselines as JSON, or `null` if unavailable or symbol not in .so.
   String? baselinesJson() {
-    final ptr = _baselinesJsonFfi(_handle);
+    final ffi = _baselinesJsonFfi;
+    if (ffi == null) return null;
+    final ptr = ffi(_handle);
     if (ptr == nullptr) return null;
     final json = ptr.toDartString();
     _freeString(ptr);
@@ -372,8 +450,11 @@ class RuntimeBridge {
   }
 
   /// Return baseline summary as JSON: `{"total":14,"ready":0,"warming":5,"empty":9}`.
+  /// Returns `null` if symbol not in .so.
   String? baselineSummary() {
-    final ptr = _baselineSummaryFfi(_handle);
+    final ffi = _baselineSummaryFfi;
+    if (ffi == null) return null;
+    final ptr = ffi(_handle);
     if (ptr == nullptr) return null;
     final json = ptr.toDartString();
     _freeString(ptr);
@@ -382,9 +463,12 @@ class RuntimeBridge {
 
   /// Export the SRM snapshot as JSON for persistence, or `null`.
   /// Internal: used by RuntimeModule for auto-save/load lifecycle.
+  /// Returns `null` if symbol not in .so.
   @visibleForTesting
   String? exportSrmSnapshot() {
-    final ptr = _exportSrmSnapshotFfi(_handle);
+    final ffi = _exportSrmSnapshotFfi;
+    if (ffi == null) return null;
+    final ptr = ffi(_handle);
     if (ptr == nullptr) return null;
     final json = ptr.toDartString();
     _freeString(ptr);
@@ -392,12 +476,15 @@ class RuntimeBridge {
   }
 
   /// Load an SRM snapshot from JSON. Returns 0 on success, error code on failure.
+  /// Returns -1 if the symbol is not present in the loaded .so.
   /// Internal: used by RuntimeModule for auto-save/load lifecycle.
   @visibleForTesting
   int loadSrmSnapshot(String json) {
+    final ffi = _loadSrmSnapshotFfi;
+    if (ffi == null) return -1;
     final native = json.toNativeUtf8();
     try {
-      return _loadSrmSnapshotFfi(_handle, native);
+      return ffi(_handle, native);
     } finally {
       malloc.free(native);
     }

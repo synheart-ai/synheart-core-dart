@@ -56,6 +56,9 @@ export 'src/modules/cloud/cloud_exceptions.dart';
 // Runtime Bridge (FFI to synheart-runtime, includes SRM baseline access)
 export 'src/modules/runtime/runtime_bridge.dart';
 
+// Watch Session (adapter around synheart_session for watch relay)
+export 'src/modules/session/watch_session_module.dart';
+
 // Services
 export 'src/services/auth_service.dart';
 
