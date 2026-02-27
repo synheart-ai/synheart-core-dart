@@ -46,6 +46,7 @@ export 'src/modules/consent/consent_profile.dart';
 export 'src/modules/consent/consent_token.dart';
 export 'src/modules/consent/consent_ui.dart';
 export 'src/modules/wear/wear_module.dart';
+export 'src/modules/wear/wear_source_handler.dart' show WearSample;
 export 'src/modules/phone/phone_module.dart';
 export 'src/modules/behavior/behavior_module.dart';
 export 'src/modules/runtime/runtime_module.dart';
