@@ -95,6 +95,12 @@ class Synheart {
 
   StreamSubscription? _hsvSubscription;
 
+  // Session data buffers — accumulate during session, persist after stop
+  List<String> _sessionHsiBuffer = [];
+  List<WearSample> _sessionWearBuffer = [];
+  StreamSubscription? _sessionHsiSubscription;
+  StreamSubscription? _sessionWearSubscription;
+
   // Activation manager (RFC-0005 four-authority model)
   ActivationManager? _activationManager;
 
@@ -113,8 +119,7 @@ class Synheart {
   _PendingConsent? _pendingConsent;
 
   // Streams
-  final BehaviorSubject<String> _hsvStream =
-      BehaviorSubject<String>();
+  final BehaviorSubject<String> _hsvStream = BehaviorSubject<String>();
 
   /// Static stream of HSI updates (core state representation, raw HSI JSON)
   static Stream<String> get onHSIUpdate => shared._hsvStream.stream;
@@ -184,7 +189,8 @@ class Synheart {
     required String userId,
     SynheartConfig? config,
     String? appKey,
-    bool autoStart = false, // Changed: RFC §3.3 — no collection before startSession()
+    bool autoStart =
+        false, // Changed: RFC §3.3 — no collection before startSession()
   }) async {
     return shared._configure(
       appKey: appKey ?? 'mock_app_key',
@@ -396,6 +402,16 @@ class Synheart {
   static Future<void> stopSession() async {
     return shared._stopDataCollection();
   }
+
+  /// Returns a snapshot of all HSI JSON windows accumulated during the current
+  /// (or most recent) session. The list is cleared when [startSession] is called.
+  static List<String> getSessionHsiWindows() =>
+      List.unmodifiable(shared._sessionHsiBuffer);
+
+  /// Returns a snapshot of all raw wear samples accumulated during the current
+  /// (or most recent) session. The list is cleared when [startSession] is called.
+  static List<WearSample> getSessionWearSamples() =>
+      List.unmodifiable(shared._sessionWearBuffer);
 
   /// Start wear data collection
   ///
@@ -912,6 +928,17 @@ class Synheart {
         );
 
     await _moduleManager.startAll();
+
+    // Clear session buffers and start accumulating
+    _sessionHsiBuffer = [];
+    _sessionWearBuffer = [];
+    _sessionHsiSubscription = _runtimeModule!.hsiStream.listen(
+      (hsiJson) => _sessionHsiBuffer.add(hsiJson),
+    );
+    _sessionWearSubscription = _wearModule!.rawSampleStream.listen(
+      (sample) => _sessionWearBuffer.add(sample),
+    );
+
     _isRunning = true;
     _reevaluateAllFeatures();
     SynheartLogger.log('[Synheart] Data collection started');
@@ -944,6 +971,11 @@ class Synheart {
       _mainSessionSubscription = null;
       _activeMainSessionId = null;
     }
+    // Cancel buffer subscriptions but keep buffers for post-session queries
+    await _sessionHsiSubscription?.cancel();
+    _sessionHsiSubscription = null;
+    await _sessionWearSubscription?.cancel();
+    _sessionWearSubscription = null;
 
     _isRunning = false;
     _reevaluateAllFeatures();
@@ -1807,28 +1839,61 @@ class Synheart {
     final activated = _activationManager?.isActivated(feature) ?? false;
     final hasConsent = _hasConsentForFeature(feature);
     final capabilityAllowed = _isCapabilityAllowed(feature);
-    final isOperational = activated && hasConsent && capabilityAllowed && _isRunning;
+    final isOperational =
+        activated && hasConsent && capabilityAllowed && _isRunning;
 
     switch (feature) {
       case SynheartFeature.wear:
         if (isOperational && _wearModule?.status != ModuleStatus.running) {
-          _wearModule?.start().catchError((e, st) {}); // wear log commented
-        } else if (!isOperational && _wearModule?.status == ModuleStatus.running) {
-          _wearModule?.stop().catchError((e, st) {}); // wear log commented
+          _wearModule?.start().catchError(
+            (e) => SynheartLogger.log(
+              '[Synheart] Error starting wear: $e',
+              error: e,
+            ),
+          );
+        } else if (!isOperational &&
+            _wearModule?.status == ModuleStatus.running) {
+          _wearModule?.stop().catchError(
+            (e) => SynheartLogger.log(
+              '[Synheart] Error stopping wear: $e',
+              error: e,
+            ),
+          );
         }
       case SynheartFeature.behavior:
         if (isOperational && _behaviorModule?.status != ModuleStatus.running) {
-          _behaviorModule?.start().catchError((e, st) {}); // behavior log commented
-        } else if (!isOperational && _behaviorModule?.status == ModuleStatus.running) {
-          _behaviorModule?.stop().catchError((e, st) {}); // behavior log commented
+          _behaviorModule?.start().catchError(
+            (e) => SynheartLogger.log(
+              '[Synheart] Error starting behavior: $e',
+              error: e,
+            ),
+          );
+        } else if (!isOperational &&
+            _behaviorModule?.status == ModuleStatus.running) {
+          _behaviorModule?.stop().catchError(
+            (e) => SynheartLogger.log(
+              '[Synheart] Error stopping behavior: $e',
+              error: e,
+            ),
+          );
         }
+
       case SynheartFeature.phoneContext:
         if (isOperational && _phoneModule?.status != ModuleStatus.running) {
-          _phoneModule?.start().catchError((e) =>
-              SynheartLogger.log('[Synheart] Error starting phone: $e', error: e));
-        } else if (!isOperational && _phoneModule?.status == ModuleStatus.running) {
-          _phoneModule?.stop().catchError((e) =>
-              SynheartLogger.log('[Synheart] Error stopping phone: $e', error: e));
+          _phoneModule?.start().catchError(
+            (e) => SynheartLogger.log(
+              '[Synheart] Error starting phone: $e',
+              error: e,
+            ),
+          );
+        } else if (!isOperational &&
+            _phoneModule?.status == ModuleStatus.running) {
+          _phoneModule?.stop().catchError(
+            (e) => SynheartLogger.log(
+              '[Synheart] Error stopping phone: $e',
+              error: e,
+            ),
+          );
         }
       case SynheartFeature.focus:
         // Focus is computed by synheart-runtime and available via lastHsv()
@@ -1837,14 +1902,24 @@ class Synheart {
         // Emotion is computed by synheart-runtime and available via lastHsv()
         break;
       case SynheartFeature.cloud:
-        if (isOperational && _cloudConnector != null &&
+        if (isOperational &&
+            _cloudConnector != null &&
             _cloudConnector!.status != ModuleStatus.running) {
-          _cloudConnector?.start().catchError((e) =>
-              SynheartLogger.log('[Synheart] Error starting cloud: $e', error: e));
-        } else if (!isOperational && _cloudConnector != null &&
+          _cloudConnector?.start().catchError(
+            (e) => SynheartLogger.log(
+              '[Synheart] Error starting cloud: $e',
+              error: e,
+            ),
+          );
+        } else if (!isOperational &&
+            _cloudConnector != null &&
             _cloudConnector!.status == ModuleStatus.running) {
-          _cloudConnector?.stop().catchError((e) =>
-              SynheartLogger.log('[Synheart] Error stopping cloud: $e', error: e));
+          _cloudConnector?.stop().catchError(
+            (e) => SynheartLogger.log(
+              '[Synheart] Error stopping cloud: $e',
+              error: e,
+            ),
+          );
         }
       case SynheartFeature.syni:
         break; // placeholder — no SyniHooksModule yet
@@ -1954,6 +2029,13 @@ class Synheart {
 
       _watchSessionModule?.dispose();
       _watchSessionModule = null;
+
+      await _sessionHsiSubscription?.cancel();
+      _sessionHsiSubscription = null;
+      await _sessionWearSubscription?.cancel();
+      _sessionWearSubscription = null;
+      _sessionHsiBuffer = [];
+      _sessionWearBuffer = [];
 
       _consentModule = null;
       _capabilityModule = null;
