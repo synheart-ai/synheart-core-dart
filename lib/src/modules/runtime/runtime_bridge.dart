@@ -3,7 +3,6 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
-import 'package:meta/meta.dart';
 
 import '../../core/defaults.dart';
 import '../../core/logger.dart';
@@ -97,6 +96,30 @@ typedef _RuntimeFreeStringDart = void Function(Pointer<Utf8> ptr);
 typedef _RuntimeVersionC = Pointer<Utf8> Function();
 typedef _RuntimeVersionDart = Pointer<Utf8> Function();
 
+// Sleep stages
+typedef _RuntimePushSleepStagesC = Void Function(
+    Pointer<Void> handle, Pointer<Utf8> json);
+typedef _RuntimePushSleepStagesDart = void Function(
+    Pointer<Void> handle, Pointer<Utf8> json);
+
+// Batch ingest
+typedef _RuntimeIngestBatchC = Pointer<Utf8> Function(
+    Pointer<Void> handle, Pointer<Utf8> batchJson, Int64 nowMs);
+typedef _RuntimeIngestBatchDart = Pointer<Utf8> Function(
+    Pointer<Void> handle, Pointer<Utf8> batchJson, int nowMs);
+
+// Diagnostics
+typedef _RuntimeLastErrorCodeC = Int32 Function(Pointer<Void> handle);
+typedef _RuntimeLastErrorCodeDart = int Function(Pointer<Void> handle);
+
+typedef _RuntimeDiagnosticsJsonC = Pointer<Utf8> Function(
+    Pointer<Void> handle);
+typedef _RuntimeDiagnosticsJsonDart = Pointer<Utf8> Function(
+    Pointer<Void> handle);
+
+typedef _RuntimeClearDiagnosticsC = Void Function(Pointer<Void> handle);
+typedef _RuntimeClearDiagnosticsDart = void Function(Pointer<Void> handle);
+
 // SRM
 typedef _RuntimeBaselinesJsonC = Pointer<Utf8> Function(Pointer<Void> handle);
 typedef _RuntimeBaselinesJsonDart = Pointer<Utf8> Function(Pointer<Void> handle);
@@ -166,7 +189,18 @@ class RuntimeBridge {
   late final _RuntimeResetDart _resetFfi;
   late final _RuntimeFreeStringDart _freeString;
 
-  // SRM (optional — may be missing in older .so; use make verify-android in synheart-runtime to check)
+  // Sleep stages (optional — may be missing in older .so)
+  _RuntimePushSleepStagesDart? _pushSleepStagesFfi;
+
+  // Batch ingest (optional)
+  _RuntimeIngestBatchDart? _ingestBatchFfi;
+
+  // Diagnostics (optional — may be missing in older .so)
+  _RuntimeLastErrorCodeDart? _lastErrorCodeFfi;
+  _RuntimeDiagnosticsJsonDart? _diagnosticsJsonFfi;
+  _RuntimeClearDiagnosticsDart? _clearDiagnosticsFfi;
+
+  // SRM (optional — may be missing in older .so)
   _RuntimeBaselinesJsonDart? _baselinesJsonFfi;
   _RuntimeBaselineSummaryDart? _baselineSummaryFfi;
   _RuntimeExportSrmSnapshotDart? _exportSrmSnapshotFfi;
@@ -215,10 +249,72 @@ class RuntimeBridge {
         .lookupFunction<_RuntimeFreeStringC, _RuntimeFreeStringDart>(
           'synheart_runtime_free_string',
         );
+    _pushSleepStagesFfi = _lookupPushSleepStages(_lib);
+    _ingestBatchFfi = _lookupIngestBatch(_lib);
+    _lastErrorCodeFfi = _lookupLastErrorCode(_lib);
+    _diagnosticsJsonFfi = _lookupDiagnosticsJson(_lib);
+    _clearDiagnosticsFfi = _lookupClearDiagnostics(_lib);
     _baselinesJsonFfi = _lookupBaselinesJson(_lib);
     _baselineSummaryFfi = _lookupBaselineSummary(_lib);
     _exportSrmSnapshotFfi = _lookupExportSrmSnapshot(_lib);
     _loadSrmSnapshotFfi = _lookupLoadSrmSnapshot(_lib);
+  }
+
+  static _RuntimePushSleepStagesDart? _lookupPushSleepStages(
+      DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_RuntimePushSleepStagesC,
+          _RuntimePushSleepStagesDart>(
+        'synheart_runtime_push_sleep_stages',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _RuntimeIngestBatchDart? _lookupIngestBatch(DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_RuntimeIngestBatchC, _RuntimeIngestBatchDart>(
+        'synheart_runtime_ingest_batch_json',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _RuntimeLastErrorCodeDart? _lookupLastErrorCode(DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_RuntimeLastErrorCodeC,
+          _RuntimeLastErrorCodeDart>(
+        'synheart_runtime_last_error_code',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _RuntimeDiagnosticsJsonDart? _lookupDiagnosticsJson(
+      DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_RuntimeDiagnosticsJsonC,
+          _RuntimeDiagnosticsJsonDart>(
+        'synheart_runtime_diagnostics_json',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _RuntimeClearDiagnosticsDart? _lookupClearDiagnostics(
+      DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_RuntimeClearDiagnosticsC,
+          _RuntimeClearDiagnosticsDart>(
+        'synheart_runtime_clear_diagnostics',
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   static _RuntimeLastHsvDart? _lookupLastHsv(DynamicLibrary lib) {
@@ -372,6 +468,50 @@ class RuntimeBridge {
     _pushBehaviorFfi(_handle, tsMs, eventType, value);
   }
 
+  /// Push vendor-reported sleep stage data as JSON.
+  ///
+  /// JSON fields (all optional): `total_sleep_minutes`, `time_in_bed_minutes`,
+  /// `deep_sleep_minutes`, `rem_sleep_minutes`, `awake_minutes`, `awakenings`,
+  /// `vendor_sleep_score`, `vendor_recovery_score`, `vendor_strain_score`.
+  ///
+  /// Returns false if the symbol is not present in the loaded .so.
+  bool pushSleepStages(String json) {
+    final ffi = _pushSleepStagesFfi;
+    if (ffi == null) return false;
+    final native = json.toNativeUtf8();
+    try {
+      ffi(_handle, native);
+      return true;
+    } finally {
+      malloc.free(native);
+    }
+  }
+
+  /// Ingest a JSON array of events and tick once. Returns output bundle JSON.
+  ///
+  /// Supported event forms:
+  /// - `{"type":"rr","ts_ms":123,"rr_ms":800.0}`
+  /// - `{"type":"hr","ts_ms":123,"bpm":72.0}`
+  /// - `{"type":"accel","ts_ms":123,"x":0.01,"y":0.02,"z":0.98}`
+  /// - `{"type":"behavior","ts_ms":123,"event_type":2,"value":1.0}`
+  /// - `{"type":"sleep_stages","total_sleep_minutes":420,...}`
+  ///
+  /// Returns null if the symbol is not present in the loaded .so.
+  String? ingestBatch(String batchJson, int nowMs) {
+    final ffi = _ingestBatchFfi;
+    if (ffi == null) return null;
+    final native = batchJson.toNativeUtf8();
+    try {
+      final resultPtr = ffi(_handle, native, nowMs);
+      if (resultPtr == nullptr) return null;
+      final json = resultPtr.toDartString();
+      _freeString(resultPtr);
+      return json;
+    } finally {
+      malloc.free(native);
+    }
+  }
+
   /// Advance the runtime clock and return HSI JSON if a new frame was produced.
   ///
   /// Returns `null` when the runtime has not accumulated enough data to emit
@@ -436,6 +576,38 @@ class RuntimeBridge {
     _resetFfi(_handle);
   }
 
+  // -- Diagnostics --
+
+  /// Get the last recorded error code (0 = no error).
+  ///
+  /// Error codes: 1001=out-of-order, 1002=concurrent call, 2001=flux error,
+  /// 3001=SRM schema mismatch, 3002=SRM config mismatch, 3003=SRM load failed.
+  /// Returns null if the symbol is not present in the loaded .so.
+  int? lastErrorCode() {
+    final ffi = _lastErrorCodeFfi;
+    if (ffi == null) return null;
+    return ffi(_handle);
+  }
+
+  /// Get diagnostics as compact JSON.
+  ///
+  /// Example: `{"config_id":"cfg_...","last_error_code":0,"out_of_order_events":0,...}`
+  /// Returns null if the symbol is not present in the loaded .so.
+  String? diagnosticsJson() {
+    final ffi = _diagnosticsJsonFfi;
+    if (ffi == null) return null;
+    final ptr = ffi(_handle);
+    if (ptr == nullptr) return null;
+    final json = ptr.toDartString();
+    _freeString(ptr);
+    return json;
+  }
+
+  /// Clear diagnostics counters and last error code.
+  void clearDiagnostics() {
+    _clearDiagnosticsFfi?.call(_handle);
+  }
+
   // -- SRM Baselines --
 
   /// Return all SRM baselines as JSON, or `null` if unavailable or symbol not in .so.
@@ -462,9 +634,8 @@ class RuntimeBridge {
   }
 
   /// Export the SRM snapshot as JSON for persistence, or `null`.
-  /// Internal: used by RuntimeModule for auto-save/load lifecycle.
+  /// Used by RuntimeModule for auto-save/load lifecycle.
   /// Returns `null` if symbol not in .so.
-  @visibleForTesting
   String? exportSrmSnapshot() {
     final ffi = _exportSrmSnapshotFfi;
     if (ffi == null) return null;
@@ -477,8 +648,7 @@ class RuntimeBridge {
 
   /// Load an SRM snapshot from JSON. Returns 0 on success, error code on failure.
   /// Returns -1 if the symbol is not present in the loaded .so.
-  /// Internal: used by RuntimeModule for auto-save/load lifecycle.
-  @visibleForTesting
+  /// Used by RuntimeModule for auto-save/load lifecycle.
   int loadSrmSnapshot(String json) {
     final ffi = _loadSrmSnapshotFfi;
     if (ffi == null) return -1;

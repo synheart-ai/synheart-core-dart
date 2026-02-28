@@ -277,8 +277,9 @@ class Synheart {
       );
 
       SynheartLogger.log('[Synheart] Initializing Runtime...');
+      final rawId = _userId!;
       final runtimeConfig = RuntimeConfig(
-        subjectId: _userId!,
+        subjectId: rawId.startsWith('sub_') ? rawId : 'sub_$rawId',
         sessionId: 'sess_${DateTime.now().millisecondsSinceEpoch}',
       );
       debugPrint('[Runtime in] config: ${runtimeConfig.toJson()}');

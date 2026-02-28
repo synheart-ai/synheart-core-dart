@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:rxdart/rxdart.dart';
@@ -146,10 +147,15 @@ class RuntimeModule extends BaseSynheartModule {
 
       final fc = _runtime!.frameCount();
       final q = _runtime!.lastQuality();
+      final errCode = _runtime!.lastErrorCode();
+      final diagJson = _runtime!.diagnosticsJson();
       debugPrint(
-        '[Runtime] Stopping: frameCount=$fc lastQuality=$q'
+        '[Runtime] Stopping: frameCount=$fc lastQuality=$q lastErrorCode=$errCode'
         '${fc == 0 ? " (no HSI produced, wearSamplesReceived=$_wearSampleCount)" : ""}',
       );
+      if (diagJson != null) {
+        debugPrint('[Runtime] Diagnostics: $diagJson');
+      }
       if (fc == 0) {
         final preprocessed = _runtime!.lastPreprocessed();
         if (preprocessed != null && preprocessed.isNotEmpty) {
@@ -200,40 +206,99 @@ class RuntimeModule extends BaseSynheartModule {
     _wearSampleCount += 1;
     int tsMs = sample.timestamp.millisecondsSinceEpoch;
     final lastTsMs = _lastPushedTsMs;
-    // Pipeline requires monotonically non-decreasing ts_ms across ALL pushes (RR, HR, behavior).
     if (lastTsMs != null && tsMs <= lastTsMs) {
       tsMs = DateTime.now().millisecondsSinceEpoch;
       if (tsMs <= lastTsMs) tsMs = lastTsMs + 1;
     }
-    _lastPushedTsMs = tsMs;
 
-    // Log every exact push to the runtime (same as C API: push_rr, push_hr)
     if (sample.rrIntervals != null && sample.rrIntervals!.isNotEmpty) {
-      for (final rr in sample.rrIntervals!) {
-        debugPrint('[Runtime in] push_rr ts_ms=$tsMs rr_ms=$rr');
-        _runtime!.pushRr(tsMs, rr);
+      final rrs = sample.rrIntervals!;
+
+      // Stagger RR timestamps so each beat gets a distinct ts_ms.
+      // Work backwards from the sample timestamp: the last RR ends at tsMs,
+      // so the first RR started at tsMs - sum(all RRs).
+      final totalRrMs = rrs.fold<double>(0, (sum, rr) => sum + rr);
+      var rrTs = tsMs - totalRrMs.round();
+
+      // Ensure the first staggered ts doesn't go backwards past the last push.
+      if (lastTsMs != null && rrTs <= lastTsMs) {
+        rrTs = lastTsMs + 1;
       }
+
+      for (final rr in rrs) {
+        debugPrint('[Runtime in] push_rr ts_ms=$rrTs rr_ms=$rr');
+        _runtime!.pushRr(rrTs, rr);
+        _lastPushedTsMs = rrTs;
+        rrTs += rr.round();
+      }
+      tsMs = rrTs; // advance past the last RR for any subsequent pushes
     }
+
     if (sample.hr != null && sample.hr! > 0) {
-      if (sample.rrIntervals != null && sample.rrIntervals!.isNotEmpty) {
-        debugPrint('[Runtime in] push_hr ts_ms=$tsMs bpm=${sample.hr}');
-        _runtime!.pushHr(tsMs, sample.hr!);
-      } else {
-        // No RR from source (e.g. Health only gives HR). Send explicit RR so runtime
-        // receives push_rr (some session runtimes count only explicit RR for quality/HRV).
+      if (sample.rrIntervals == null || sample.rrIntervals!.isEmpty) {
+        // No RR from source (e.g. Health only gives HR). Synthesize RR
+        // so the runtime has explicit RR data for quality/HRV.
         final rrMs = (SynheartDefaults.msPerMinute / sample.hr!)
             .clamp(SynheartDefaults.rrMinMs, SynheartDefaults.rrMaxMs);
+        if (_lastPushedTsMs != null && tsMs <= _lastPushedTsMs!) {
+          tsMs = _lastPushedTsMs! + 1;
+        }
         debugPrint('[Runtime in] push_rr ts_ms=$tsMs rr_ms=$rrMs (from hr=${sample.hr})');
         _runtime!.pushRr(tsMs, rrMs);
       }
     }
+    _lastPushedTsMs = tsMs;
 
-    // Start tick timer and anchor window AFTER first push (matches synthetic_pipeline: push then tick(0)).
+    // Start tick timer and anchor window AFTER first push.
     if (!_tickTimerStarted) {
       _startTickTimer();
       _tickTimerStarted = true;
       _runtime!.tick(tsMs);
     }
+  }
+
+  /// Push aggregate overnight sleep data into the runtime.
+  ///
+  /// Call this once per day (e.g. on app launch) with the previous night's
+  /// summary from your wearable platform. All fields are optional.
+  ///
+  /// Example:
+  /// ```dart
+  /// runtimeModule.pushSleepSummary(
+  ///   totalSleepMinutes: 420,
+  ///   timeInBedMinutes: 480,
+  ///   deepSleepMinutes: 84,
+  ///   remSleepMinutes: 105,
+  ///   awakeMinutes: 30,
+  ///   awakenings: 3,
+  ///   vendorSleepScore: 85,
+  /// );
+  /// ```
+  void pushSleepSummary({
+    double? totalSleepMinutes,
+    double? timeInBedMinutes,
+    double? deepSleepMinutes,
+    double? remSleepMinutes,
+    double? awakeMinutes,
+    int? awakenings,
+    double? vendorSleepScore,
+    double? vendorRecoveryScore,
+    double? vendorStrainScore,
+  }) {
+    if (_runtime == null) return;
+    final payload = <String, dynamic>{
+      if (totalSleepMinutes != null) 'total_sleep_minutes': totalSleepMinutes,
+      if (timeInBedMinutes != null) 'time_in_bed_minutes': timeInBedMinutes,
+      if (deepSleepMinutes != null) 'deep_sleep_minutes': deepSleepMinutes,
+      if (remSleepMinutes != null) 'rem_sleep_minutes': remSleepMinutes,
+      if (awakeMinutes != null) 'awake_minutes': awakeMinutes,
+      if (awakenings != null) 'awakenings': awakenings,
+      if (vendorSleepScore != null) 'vendor_sleep_score': vendorSleepScore,
+      if (vendorRecoveryScore != null) 'vendor_recovery_score': vendorRecoveryScore,
+      if (vendorStrainScore != null) 'vendor_strain_score': vendorStrainScore,
+    };
+    debugPrint('[Runtime in] push_sleep_stages $payload');
+    _runtime!.pushSleepStages(jsonEncode(payload));
   }
 
   void _handleBehaviorEvent(BehaviorEvent event) {
@@ -251,25 +316,43 @@ class RuntimeModule extends BaseSynheartModule {
     final int eventType;
     final double value;
     switch (event.type) {
+      case BehaviorEventType.screenOn:
+        eventType = 0;
+        value = 1.0;
+        break;
+      case BehaviorEventType.screenOff:
+        eventType = 1;
+        value = 1.0;
+        break;
       case BehaviorEventType.tap:
       case BehaviorEventType.keyDown:
       case BehaviorEventType.keyUp:
         eventType = 2; // Touch
         value = 1.0;
         break;
-      case BehaviorEventType.scroll:
-        eventType = 5; // Scroll (runtime 5=Scroll)
-        value = event.metadata?['delta'] is num
-            ? (event.metadata!['delta'] as num).toDouble()
-            : 1.0;
-        break;
       case BehaviorEventType.appSwitch:
-        eventType = 3; // AppSwitch
+        eventType = 3;
         value = 1.0;
         break;
       case BehaviorEventType.notificationReceived:
       case BehaviorEventType.notificationOpened:
-        eventType = 4; // NotificationReceived
+        eventType = 4;
+        value = 1.0;
+        break;
+      case BehaviorEventType.scroll:
+        eventType = 5;
+        value = event.metadata?['delta'] is num
+            ? (event.metadata!['delta'] as num).toDouble()
+            : 1.0;
+        break;
+      case BehaviorEventType.swipe:
+        eventType = 6;
+        value = event.metadata?['velocity'] is num
+            ? (event.metadata!['velocity'] as num).toDouble()
+            : 1.0;
+        break;
+      case BehaviorEventType.call:
+        eventType = 7;
         value = 1.0;
         break;
     }

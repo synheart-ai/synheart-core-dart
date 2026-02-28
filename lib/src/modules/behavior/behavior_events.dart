@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 
-/// Types of behavior events
+/// Types of behavior events.
+///
+/// Maps 1:1 to the synheart-runtime C ABI event_type codes:
+///   0=ScreenOn, 1=ScreenOff, 2=Touch, 3=AppSwitch,
+///   4=NotificationReceived, 5=Scroll, 6=Swipe, 7=Call
 enum BehaviorEventType {
+  screenOn,
+  screenOff,
   tap,
   scroll,
+  swipe,
   keyDown,
   keyUp,
   appSwitch,
   notificationReceived,
   notificationOpened,
+  call,
 }
 
 /// Behavior event captured from user interactions
@@ -23,6 +31,20 @@ class BehaviorEvent {
     this.metadata,
   });
 
+  factory BehaviorEvent.screenOn() {
+    return BehaviorEvent(
+      type: BehaviorEventType.screenOn,
+      timestamp: DateTime.now(),
+    );
+  }
+
+  factory BehaviorEvent.screenOff() {
+    return BehaviorEvent(
+      type: BehaviorEventType.screenOff,
+      timestamp: DateTime.now(),
+    );
+  }
+
   factory BehaviorEvent.tap(Offset position) {
     return BehaviorEvent(
       type: BehaviorEventType.tap,
@@ -36,6 +58,17 @@ class BehaviorEvent {
       type: BehaviorEventType.scroll,
       timestamp: DateTime.now(),
       metadata: {'delta': delta},
+    );
+  }
+
+  factory BehaviorEvent.swipe({double? velocity, String? direction}) {
+    return BehaviorEvent(
+      type: BehaviorEventType.swipe,
+      timestamp: DateTime.now(),
+      metadata: {
+        if (velocity != null) 'velocity': velocity,
+        if (direction != null) 'direction': direction,
+      },
     );
   }
 
@@ -70,6 +103,13 @@ class BehaviorEvent {
   factory BehaviorEvent.notificationOpened() {
     return BehaviorEvent(
       type: BehaviorEventType.notificationOpened,
+      timestamp: DateTime.now(),
+    );
+  }
+
+  factory BehaviorEvent.call() {
+    return BehaviorEvent(
+      type: BehaviorEventType.call,
       timestamp: DateTime.now(),
     );
   }
