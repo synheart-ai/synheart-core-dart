@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:synheart_core/synheart_core.dart';
 import 'package:synheart_core/src/modules/wear/wear_source_handler.dart';
 import 'package:synheart_core/src/modules/behavior/behavior_events.dart';
@@ -32,6 +34,11 @@ class SynheartProvider extends ChangeNotifier {
   // Config
   SynheartConfig? sdkConfig;
 
+  /// Runtime mode: true = batch ingest on stop, false = realtime HSI every ~10s.
+  /// Persisted; applies to next session start.
+  bool _batchIngestOnStop = false;
+  static const _keyBatchIngestOnStop = 'synheart.batch_ingest_on_stop';
+
   // On-demand collection state
   List<WearSample> _recentWearSamples = [];
   List<BehaviorEvent> _recentBehaviorEvents = [];
@@ -63,6 +70,12 @@ class SynheartProvider extends ChangeNotifier {
   StreamSubscription<WearSample>? _wearSampleSubscription;
   StreamSubscription<BehaviorEvent>? _behaviorEventSubscription;
 
+  /// Batch ingest runtime used for main session (flush every 5s; End session = flush + SRM persist).
+  // SynheartBatchRuntime? _batchRuntime;
+  // StreamSubscription<WearSample>? _batchWearSubscription;
+  // StreamSubscription<BehaviorEvent>? _batchBehaviorSubscription;
+  // int? _lastBatchPushedTsMs;
+
   /// Main session progress: start time and timer for elapsed display.
   DateTime? _sessionStartTime;
   int _sessionElapsedSec = 0;
@@ -83,6 +96,20 @@ class SynheartProvider extends ChangeNotifier {
 
   bool get cloudSyncEnabled => _cloudSyncEnabled;
 
+  /// Number of HSI snapshots pending cloud upload (0 if cloud not configured).
+  int get uploadQueueLength => Synheart.uploadQueueLength;
+  /// Batch id from the last successful cloud ingest; null if none yet.
+  String? get lastUploadBatchId => Synheart.lastUploadBatchId;
+  /// Time of the last successful cloud ingest; null if none yet.
+  DateTime? get lastUploadAt => Synheart.lastUploadAt;
+  /// Last upload error message; null when last attempt succeeded or no attempt yet.
+  String? get lastUploadError => Synheart.lastUploadError;
+  /// Time of the last upload attempt (success or failure); null if no attempt yet.
+  DateTime? get lastUploadAttemptAt => Synheart.lastUploadAttemptAt;
+
+  /// Whether runtime uses batch ingest on stop (true) or realtime (false). Persisted.
+  bool get batchIngestOnStop => _batchIngestOnStop;
+
   /// Whether the main data-collection session is running (Session SDK + modules).
   bool get isSessionRunning =>
       _isInitialized && Synheart.isSessionRunning;
@@ -93,6 +120,38 @@ class SynheartProvider extends ChangeNotifier {
   String? get latestHSI => _latestHSI;
   /// Backward-compatible alias for UI screens
   String? get latestHSV => _latestHSI;
+
+  /// Parsed valence, arousal, focus, capacity from latest HSI (axes.affect / axes.engagement).
+  /// null if no HSI or parse error; values may be null per axis.
+  Map<String, double?>? get latestLiveAxes {
+    final json = _latestHSI;
+    if (json == null || json.isEmpty) return null;
+    try {
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      final axes = map['axes'] as Map<String, dynamic>?;
+      if (axes == null) return null;
+      double? valence, arousal, focus, capacity;
+      final affect = axes['affect'] as List<dynamic>?;
+      if (affect != null) {
+        for (final r in affect) {
+          final m = r as Map<String, dynamic>;
+          if (m['name'] == 'valence') valence = (m['value'] as num?)?.toDouble();
+          if (m['name'] == 'arousal') arousal = (m['value'] as num?)?.toDouble();
+        }
+      }
+      final engagement = axes['engagement'] as List<dynamic>?;
+      if (engagement != null) {
+        for (final r in engagement) {
+          final m = r as Map<String, dynamic>;
+          if (m['name'] == 'focus') focus = (m['value'] as num?)?.toDouble();
+          if (m['name'] == 'capacity') capacity = (m['value'] as num?)?.toDouble();
+        }
+      }
+      return {'valence': valence, 'arousal': arousal, 'focus': focus, 'capacity': capacity};
+    } catch (_) {
+      return null;
+    }
+  }
 
   ConsentStatus get consentStatus => _consentStatus;
   ConsentToken? get currentToken => _currentToken;
@@ -180,6 +239,10 @@ class SynheartProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Load persisted runtime mode preference
+      final prefs = await SharedPreferences.getInstance();
+      _batchIngestOnStop = prefs.getBool(_keyBatchIngestOnStop) ?? false;
+
       // Create config with ConsentConfig and CloudConfig if not provided
       // NOTE: To use consent service features, you must provide your own appId and appApiKey.
       // See EXAMPLE_APP_SETUP.md for instructions on how to obtain these credentials.
@@ -190,25 +253,29 @@ class SynheartProvider extends ChangeNotifier {
             wearConfig: WearConfig(),
             phoneConfig: PhoneConfig(),
             behaviorConfig: BehaviorConfig(),
-            // // ConsentConfig now defaults to dev consent service URL
-            // // To enable consent service features, provide your own appId and appApiKey:
-            // consentConfig: ConsentConfig(
-            //   appId: 'app-123',
-            //   appApiKey: 'synheart_sk_live_3lzNKf-4kSqOzX5L6qQatecmI614brZGJqo6NO3Q5Tw',
-            //   platform: 'flutter',
-            //   userId: userId,
-            //   region: 'US',
-            // ),
-            // // CloudConfig is optional - only needed for cloud sync features
-            // // To enable cloud sync, provide your own credentials:
-            // cloudConfig: CloudConfig(
-            //   baseUrl: 'https://api.synheart.com',  // Or your custom API endpoint
-            //   tenantId: 'your-tenant-id',           // Your tenant identifier (kept for backward compatibility)
-            //   hmacSecret: 'your-hmac-secret',        // HMAC secret for request signing
-            //   subjectId: userId,                     // Pseudonymous user identifier (becomes user_id in payload)
-            //   instanceId: 'unique-instance-id',      // Unique instance identifier
-            //   apiKey: 'your-api-key',
-            // ),
+            batchIngestOnStop: _batchIngestOnStop,
+            // ConsentConfig: temporary credentials — change before production
+            consentConfig: ConsentConfig(
+              appId: 'app_synheart_and_LrmPLw',
+              appApiKey:
+                  'synheart_sk_live_zoVujnU5NOvxqSJrTP7NIoM-rIS4rFKX-YgL3yuFK_8',
+              platform: 'flutter',
+              userId: userId,
+              region: 'US',
+            ),
+            // Cloud ingest (enable to see "Pending uploads" / "Last ingested" in the app).
+            // Credentials below are from #Guidelines/request.txt — change for production.
+            cloudConfig: CloudConfig(
+              baseUrl: 'https://ingest-service-temp-dev.synheart.io',
+              tenantId: 'ten_synheart_eqf-5a_dev_Myk6rw',
+              hmacSecret:
+                  'synheart_whsec_exueLELQbr_UCASVQLbrQxjtM297D7lJTWx_-lwGlV8',
+              subjectId: userId,
+              instanceId: 'flutter-example-${userId ?? "unknown"}',
+              apiKey:
+                  'synheart_sk_live_zoVujnU5NOvxqSJrTP7NIoM-rIS4rFKX-YgL3yuFK_8',
+              orgId: 'org_synheart_eqf-5a',
+            ),
           );
 
       sdkConfig = finalConfig;
@@ -410,10 +477,15 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
-  /// Fetch available consent profiles
+  /// Fetch available consent profiles (only when ConsentConfig with appId/appApiKey is provided).
+  /// When not configured, leaves profiles empty; local consent toggles still work.
   Future<void> fetchConsentProfiles() async {
+    if (sdkConfig?.consentConfig?.isConfigured != true) {
+      return;
+    }
     try {
       _availableProfiles = await Synheart.getAvailableConsentProfiles();
+      _errorMessage = null;
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Failed to fetch profiles: $e';
@@ -495,7 +567,8 @@ class SynheartProvider extends ChangeNotifier {
           return;
         }
         if (_sessionStartTime != null) {
-          _sessionElapsedSec = DateTime.now().difference(_sessionStartTime!).inSeconds;
+          _sessionElapsedSec =
+              DateTime.now().difference(_sessionStartTime!).inSeconds;
           notifyListeners();
         }
       });
@@ -506,6 +579,28 @@ class SynheartProvider extends ChangeNotifier {
       rethrow;
     }
   }
+
+  // --- Batch ingest path (commented out — has bug; revisit later) ---
+  // Future<void> startSession({int? durationSec}) async {
+  //   if (!_isInitialized) { throw StateError('SDK must be initialized first'); }
+  //   try {
+  //     final uid = _userId ?? 'user_${DateTime.now().millisecondsSinceEpoch}';
+  //     final sessId = 'sess_${DateTime.now().millisecondsSinceEpoch}';
+  //     if (_batchRuntime == null || !_batchRuntime!.isAvailable) {
+  //       _batchRuntime = SynheartBatchRuntime(...);
+  //       await _batchRuntime!.initialize();
+  //       _batchRuntime!.onHsi = (hsi, hsv) { _latestHSI = jsonEncode(hsi); notifyListeners(); };
+  //     }
+  //     await Synheart.startWearCollection();
+  //     await Synheart.startBehaviorCollection();
+  //     _batchWearSubscription = Synheart.wearSampleStream.listen(_pushWearToBatch);
+  //     _batchBehaviorSubscription = Synheart.behaviorEventStream.listen(_pushBehaviorToBatch);
+  //     _batchRuntime!.start(flushIntervalSeconds: 5);
+  //     _sessionStartTime = DateTime.now(); ...
+  //   }
+  // }
+  // void _pushWearToBatch(WearSample sample) { ... }
+  // void _pushBehaviorToBatch(BehaviorEvent event) { ... }
 
   /// Stop the main data-collection session (keeps SDK initialized).
   Future<void> stopSession() async {
@@ -556,6 +651,21 @@ class SynheartProvider extends ChangeNotifier {
   /// Clear error
   void clearError() {
     _errorMessage = null;
+    notifyListeners();
+  }
+
+  /// Set runtime mode: true = batch ingest when session stops, false = realtime HSI every ~10s.
+  /// Persists preference; applies to the next session start. Safe to call when initialized.
+  Future<void> setBatchIngestOnStop(bool value) async {
+    if (_batchIngestOnStop == value) return;
+    _batchIngestOnStop = value;
+    if (_isInitialized) {
+      Synheart.setBatchIngestOnStop(value);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyBatchIngestOnStop, value);
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -948,6 +1058,10 @@ class SynheartProvider extends ChangeNotifier {
     _hsiSubscription?.cancel();
     _wearSampleSubscription?.cancel();
     _behaviorEventSubscription?.cancel();
+    // _batchWearSubscription?.cancel();
+    // _batchBehaviorSubscription?.cancel();
+    // _batchRuntime?.dispose();
+    // _batchRuntime = null;
     _watchSessionSubscription?.cancel();
     _countdownTimer?.cancel();
     if (_isInitialized) {

@@ -85,37 +85,56 @@ class UploadClient {
         final streamedResponse = await _httpClient.send(request);
         final response = await http.Response.fromStream(streamedResponse);
 
-        if (response.statusCode == 200) {
-          return UploadResponse.fromJson(jsonDecode(response.body));
+        // Success: 200 (legacy) or 202 Accepted (async processing per API guide)
+        if (response.statusCode == 200 || response.statusCode == 202) {
+          final body = jsonDecode(response.body) as Map<String, dynamic>;
+          return UploadResponse.fromJson(body);
         }
 
-        // Parse error response
-        final errorBody = jsonDecode(response.body);
-        final error = UploadErrorResponse.fromJson(errorBody);
+        // Parse error response (API may return { "error": { "code", "message", "details?" } })
+        final errorBody = jsonDecode(response.body) as Map<String, dynamic>;
+        UploadErrorResponse error;
+        try {
+          error = UploadErrorResponse.fromJson(errorBody);
+        } catch (_) {
+          throw CloudConnectorException(
+            'Upload failed: ${response.statusCode} ${response.body}',
+          );
+        }
 
-        // Handle specific errors
+        final code = error.errorCode.toLowerCase();
+        final message = error.errorMessage;
+
+        // Handle specific errors (backend uses INVALID_SIGNATURE etc.; support snake_case too)
         if (response.statusCode == 401) {
-          if (error.code == 'invalid_signature') {
+          if (code == 'invalid_signature' || code == 'invalid_api_key') {
             throw InvalidSignatureError();
-          } else if (error.code == 'invalid_token' ||
-              error.code == 'token_expired') {
+          } else if (code == 'invalid_token' || code == 'token_expired') {
             throw TokenExpiredError('Consent token expired or invalid');
           } else {
             throw InvalidSignatureError();
           }
-        } else if (response.statusCode == 403 &&
-            error.code == 'invalid_tenant') {
-          throw InvalidTenantError();
-        } else if (response.statusCode == 400 &&
-            error.code == 'schema_validation_failed') {
-          throw SchemaValidationError();
+        } else if (response.statusCode == 403) {
+          if (code == 'invalid_tenant' || code == 'invalid_signature') {
+            throw code == 'invalid_signature'
+                ? InvalidSignatureError()
+                : InvalidTenantError();
+          }
+          throw InvalidSignatureError();
+        } else if (response.statusCode == 400) {
+          if (code == 'schema_validation_failed' ||
+              code == 'validation_error' ||
+              code == 'hsi_schema_validation_failed') {
+            throw SchemaValidationError();
+          }
+          throw CloudConnectorException('Upload failed: $message');
         } else if (response.statusCode == 429) {
           throw RateLimitExceededError(error.retryAfter ?? 60);
         }
 
         // Generic error - retry
         if (attempts >= maxAttempts) {
-          throw CloudConnectorException('Upload failed: ${error.message}');
+          throw CloudConnectorException('Upload failed: $message');
         }
       } catch (e) {
         if (e is CloudConnectorException) {

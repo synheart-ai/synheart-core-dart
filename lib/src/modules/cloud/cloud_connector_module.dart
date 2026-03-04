@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../core/logger.dart';
 import '../base/synheart_module.dart';
@@ -13,6 +14,7 @@ import 'rate_limiter.dart';
 import 'network_monitor.dart';
 import 'upload_models.dart';
 import 'cloud_exceptions.dart';
+import 'platform_impl_stub.dart' if (dart.library.io) 'platform_impl_io.dart' as platform_impl;
 
 class CloudConnectorModule extends BaseSynheartModule {
   @override
@@ -32,6 +34,26 @@ class CloudConnectorModule extends BaseSynheartModule {
 
   StreamSubscription? _hsvSubscription;
   StreamSubscription? _networkSubscription;
+
+  /// Last successful upload batch id (from API response).
+  String? _lastUploadBatchId;
+  /// When the last successful upload completed.
+  DateTime? _lastUploadAt;
+  /// Last upload failure message (null after a success).
+  String? _lastUploadError;
+  /// When the last upload attempt (success or failure) occurred.
+  DateTime? _lastUploadAttemptAt;
+
+  /// Pending snapshots in the upload queue.
+  int get uploadQueueLength => _uploadQueue.length;
+  /// Batch id from the last successful ingest (null if none yet).
+  String? get lastUploadBatchId => _lastUploadBatchId;
+  /// Time of the last successful ingest (null if none yet).
+  DateTime? get lastUploadAt => _lastUploadAt;
+  /// Last upload error message (null when last attempt succeeded or no attempt yet).
+  String? get lastUploadError => _lastUploadError;
+  /// Time of the last upload attempt (success or failure); null if no attempt yet.
+  DateTime? get lastUploadAttemptAt => _lastUploadAttemptAt;
 
   CloudConnectorModule({
     required CapabilityProvider capabilities,
@@ -164,20 +186,26 @@ class CloudConnectorModule extends BaseSynheartModule {
           .split('.')
           .last; // Convert enum to string
 
-      // HSI JSON strings are already the canonical format from synheart-runtime
-      final snapshots = batch.map((hsiJson) {
-        return {
-          'hsi_json': hsiJson,
-          'timestamp': DateTime.now().toUtc().toIso8601String(),
-        };
-      }).toList();
+      // Build snapshots per API guide: each snapshot has "hsi" (object) and "timestamp" (ISO 8601).
+      // Use observed_at_utc or computed_at_utc from HSI when present; otherwise fallback to now.
+      final snapshots = <Map<String, dynamic>>[];
+      for (final hsiJson in batch) {
+        final hsiMap = jsonDecode(hsiJson) as Map<String, dynamic>;
+        final timestamp = (hsiMap['observed_at_utc'] as String?) ??
+            (hsiMap['computed_at_utc'] as String?) ??
+            DateTime.now().toUtc().toIso8601String();
+        snapshots.add({
+          'hsi': hsiMap,
+          'timestamp': timestamp,
+        });
+      }
 
       // Create upload payload
       final payload = UploadRequest(
         userId: _config.subjectId,
         metadata: UploadMetadata(
           sdkVersion: '1.0.0',
-          platform: 'dart',
+          platform: platform_impl.currentIngestPlatform,
           capabilityLevel: capabilityLevelStr,
           orgId: _config.orgId,
         ),
@@ -198,8 +226,13 @@ class CloudConnectorModule extends BaseSynheartModule {
       // Success - remove from queue
       _uploadQueue.confirmBatch(batch);
 
+      _lastUploadBatchId = response.batchId;
+      _lastUploadAt = DateTime.now();
+      _lastUploadError = null;
+      _lastUploadAttemptAt = DateTime.now();
+
       SynheartLogger.log(
-        '[CloudConnector] Upload successful: ${response.status}',
+        '[CloudConnector] Upload successful: ${response.batchId ?? response.message ?? response.status ?? "ok"}',
       );
     } catch (e) {
       // Handle token expiration - try to refresh
@@ -222,6 +255,9 @@ class CloudConnectorModule extends BaseSynheartModule {
 
       // Re-enqueue batch on failure
       await _uploadQueue.requeueBatch(batch);
+
+      _lastUploadError = e.toString();
+      _lastUploadAttemptAt = DateTime.now();
 
       // Log error (but don't throw - this is background operation)
       // Errors are logged but do not propagate to prevent blocking initialization

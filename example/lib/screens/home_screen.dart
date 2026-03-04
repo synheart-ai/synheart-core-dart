@@ -522,8 +522,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Colors.amber,
                   () => _endSessionAndShowResults(),
                 ),
-                // Consent navigation - show if cloud config is provided
-                if (provider.sdkConfig?.cloudConfig != null) ...[
+                // Consent: only show when SDK is initialized (consent module is ready)
+                if (provider.isInitialized) ...[
                   const SizedBox(height: 12),
                   _buildNavigationCard(
                     context,
@@ -722,6 +722,89 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
               ],
             ),
+            if (provider.isInitialized) _buildCloudIngestionStatus(context, provider),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCloudIngestionStatus(
+    BuildContext context,
+    SynheartProvider provider,
+  ) {
+    final hasCloudConfig = provider.sdkConfig?.cloudConfig != null;
+    final theme = Theme.of(context).textTheme;
+    final muted = theme.bodySmall?.copyWith(
+      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+    );
+    const topPadding = 12.0;
+
+    if (!hasCloudConfig) {
+      return Padding(
+        padding: const EdgeInsets.only(top: topPadding),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.cloud_off, size: 18, color: Colors.grey.shade600),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Cloud ingestion is off. Add CloudConfig when initializing the SDK to enable.',
+                style: muted,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final pending = provider.uploadQueueLength;
+    final lastBatchId = provider.lastUploadBatchId;
+    final lastAt = provider.lastUploadAt;
+    final lastError = provider.lastUploadError;
+    final lastAttemptAt = provider.lastUploadAttemptAt;
+
+    String lastIngestedText;
+    if (lastError != null) {
+      // Last attempt failed: show error (trim if very long)
+      final errShort = lastError.length > 120
+          ? '${lastError.substring(0, 117)}...'
+          : lastError;
+      lastIngestedText = 'Last attempt failed: $errShort';
+    } else if (lastAt != null) {
+      final time =
+          '${lastAt.hour.toString().padLeft(2, '0')}:${lastAt.minute.toString().padLeft(2, '0')}';
+      lastIngestedText = lastBatchId != null
+          ? 'Last ingested: $lastBatchId at $time'
+          : 'Last ingested at $time';
+    } else {
+      lastIngestedText = 'Last ingested: never';
+    }
+
+    final attemptTimeText = lastAttemptAt != null
+        ? 'Last attempt: ${lastAttemptAt.hour.toString().padLeft(2, '0')}:${lastAttemptAt.minute.toString().padLeft(2, '0')}'
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: topPadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Pending uploads: $pending', style: muted),
+          const SizedBox(height: 2),
+          Text(
+            lastIngestedText,
+            style: lastError != null
+                ? muted?.copyWith(color: Colors.red.shade700)
+                : muted,
+          ),
+          if (lastError != null && attemptTimeText != null) ...[
+            const SizedBox(height: 2),
+            Text(attemptTimeText, style: muted?.copyWith(color: Colors.red.shade700)),
+          ] else if (lastAt != null && attemptTimeText != null) ...[
+            const SizedBox(height: 2),
+            Text(attemptTimeText, style: muted),
           ],
         ],
       ),
@@ -747,6 +830,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
             ),
             const SizedBox(height: 16),
+            _buildRuntimeModeRow(context, provider),
+            const SizedBox(height: 12),
             if (isRunning) ...[
               Row(
                 children: [
@@ -782,6 +867,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
+              _buildLiveAxesSection(context, provider),
             ] else ...[
               Text(
                 'Duration',
@@ -817,6 +903,100 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildRuntimeModeRow(
+    BuildContext context,
+    SynheartProvider provider,
+  ) {
+    final isBatch = provider.batchIngestOnStop;
+    return Row(
+      children: [
+        Text(
+          'Runtime mode',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withOpacity(0.7),
+              ),
+        ),
+        const SizedBox(width: 12),
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: true, label: Text('Batch'), icon: Icon(Icons.inventory_2_outlined)),
+            ButtonSegment(value: false, label: Text('Realtime'), icon: Icon(Icons.show_chart)),
+          ],
+          selected: {isBatch},
+          onSelectionChanged: (Set<bool> selected) {
+            final value = selected.first;
+            provider.setBatchIngestOnStop(value);
+          },
+          showSelectedIcon: false,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLiveAxesSection(BuildContext context, SynheartProvider provider) {
+    final axes = provider.latestLiveAxes;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Live state',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withOpacity(0.7),
+                ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              _liveAxisChip(context, 'Valence', axes?['valence']),
+              _liveAxisChip(context, 'Arousal', axes?['arousal']),
+              _liveAxisChip(context, 'Focus', axes?['focus']),
+              _liveAxisChip(context, 'Capacity', axes?['capacity']),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _liveAxisChip(BuildContext context, String label, double? value) {
+    final display = value != null ? value.toStringAsFixed(2) : '—';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label: ',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                ),
+          ),
+          Text(
+            display,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
       ),
     );
   }

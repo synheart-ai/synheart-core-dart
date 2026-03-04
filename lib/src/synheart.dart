@@ -293,6 +293,7 @@ class Synheart {
         runtime: RuntimeBridge.createIfAvailable(runtimeConfig),
         wearSampleStream: _wearModule!.rawSampleStream,
         behaviorEventStream: _behaviorModule!.eventStream.events,
+        batchIngestOnStop: _config?.batchIngestOnStop ?? false,
       );
       _moduleManager.registerModule(
         _runtimeModule!,
@@ -309,7 +310,7 @@ class Synheart {
         );
         _moduleManager.registerModule(
           _cloudConnector!,
-          dependsOn: ['capabilities', 'consent', 'hsi_runtime'],
+          dependsOn: ['capabilities', 'consent', 'runtime'],
         );
       }
 
@@ -385,6 +386,9 @@ class Synheart {
   ///
   /// Must be called after initialize(). No data collection occurs until
   /// this method is called (RFC §3.3).
+  ///
+  /// At least one feature must be enabled (via [SynheartConfig] or [activate])
+  /// or this throws a [StateError].
   ///
   /// [durationSec] if set, the session will end automatically after that many
   /// seconds (Session SDK boundary). If null, session runs until [stopSession].
@@ -733,6 +737,24 @@ class Synheart {
     return shared._flushUploadQueue();
   }
 
+  /// Number of HSI snapshots pending upload (0 if cloud connector not enabled).
+  static int get uploadQueueLength =>
+      shared._cloudConnector?.uploadQueueLength ?? 0;
+
+  /// Batch id from the last successful cloud ingest (null if none yet).
+  static String? get lastUploadBatchId =>
+      shared._cloudConnector?.lastUploadBatchId;
+
+  /// Time of the last successful cloud ingest (null if none yet).
+  static DateTime? get lastUploadAt => shared._cloudConnector?.lastUploadAt;
+
+  /// Last upload error message (null when last attempt succeeded or no attempt yet).
+  static String? get lastUploadError => shared._cloudConnector?.lastUploadError;
+
+  /// Time of the last upload attempt (success or failure); null if no attempt yet.
+  static DateTime? get lastUploadAttemptAt =>
+      shared._cloudConnector?.lastUploadAttemptAt;
+
   Future<void> _flushUploadQueue() async {
     if (!_isConfigured) {
       throw StateError(
@@ -821,6 +843,18 @@ class Synheart {
   /// Get runtime module (for diagnostics and direct bridge access)
   RuntimeModule? get runtimeModule => _runtimeModule;
 
+  /// Whether the runtime uses batch ingest on stop (true) or streaming/realtime (false).
+  /// Can be read and set at runtime; changes apply to the next session start.
+  static bool get batchIngestOnStop =>
+      shared._runtimeModule?.batchIngestOnStop ?? false;
+
+  /// Set runtime mode: true = batch ingest when session stops, false = realtime HSI every ~10s.
+  /// Applies to the next session start; safe to call when initialized.
+  static void setBatchIngestOnStop(bool value) {
+    final rm = shared._runtimeModule;
+    if (rm != null) rm.batchIngestOnStop = value;
+  }
+
   // ── synheart-runtime SRM API (baselines live in the native Rust engine) ──
 
   /// Baseline summary from the native synheart-runtime.
@@ -887,6 +921,22 @@ class Synheart {
     if (_isRunning) {
       SynheartLogger.log('[Synheart] Data collection already running');
       return;
+    }
+
+    final activated = _activationManager?.activatedFeatures() ?? {};
+    if (activated.isEmpty) {
+      throw StateError(
+        'At least one feature must be enabled to start a session. '
+        'Configure SynheartConfig with at least one of: wearConfig, phoneConfig, '
+        'behaviorConfig, cloudConfig, or enableSyniHooks; or call Synheart.activate() for a feature.',
+      );
+    }
+
+    if (!_hasAtLeastOneFeatureWithConsent()) {
+      throw StateError(
+        'At least one feature must have consent to start a session. '
+        'Grant consent for at least one of: biosignals, behavior, phoneContext (e.g. via Synheart.grantConsent or the app consent UI).',
+      );
     }
 
     SynheartLogger.log('[Synheart] Starting all data collection modules...');
@@ -1951,6 +2001,15 @@ class Synheart {
       default:
         return false;
     }
+  }
+
+  /// True if at least one activated feature has consent (required to start a session).
+  bool _hasAtLeastOneFeatureWithConsent() {
+    final activated = _activationManager?.activatedFeatures() ?? {};
+    for (final feature in activated) {
+      if (_hasConsentForFeature(feature)) return true;
+    }
+    return false;
   }
 
   /// Check whether the CapabilityModule allows a given feature.

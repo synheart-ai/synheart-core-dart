@@ -45,6 +45,46 @@ class _ConsentScreenState extends State<ConsentScreen> {
       ),
       body: Consumer<SynheartProvider>(
         builder: (context, provider, child) {
+          // Require SDK to be initialized first (consent module is created during init)
+          if (!provider.isInitialized) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 64,
+                      color: theme.colorScheme.outline,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Initialize the SDK first',
+                      style: theme.textTheme.titleLarge,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Enter your User ID on the home screen and tap Initialize. '
+                      'Then you can manage consent here.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Back to Home'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           // If consent is needed, show consent form
           if (provider.needsConsent) {
             return _buildConsentForm(context, provider);

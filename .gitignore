@@ -49,3 +49,8 @@ app.*.map.json
 # Generated files (commented out - we publish these for pub.dev)
 # *.g.dart
 # *.freezed.dart
+.-flutter_guild.dart
+
+
+
+/#Guidelines/

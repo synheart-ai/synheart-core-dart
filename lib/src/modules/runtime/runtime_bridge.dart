@@ -497,6 +497,7 @@ class RuntimeBridge {
   /// - `{"type":"sleep_stages","total_sleep_minutes":420,...}`
   ///
   /// Returns null if the symbol is not present in the loaded .so.
+  /// Ingetst for runtime
   String? ingestBatch(String batchJson, int nowMs) {
     final ffi = _ingestBatchFfi;
     if (ffi == null) return null;

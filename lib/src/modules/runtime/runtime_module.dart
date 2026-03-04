@@ -15,6 +15,9 @@ import '../../core/defaults.dart';
 /// Runtime Module — streams wear and behavior data into the synheart-runtime
 /// C ABI and periodically ticks to produce HSI JSON frames.
 ///
+/// When [batchIngestOnStop] is true, events are buffered during the session and
+/// a single [ingestBatch] + drain is run on stop, so HSI is only produced after stop.
+///
 /// When [_runtime] is null (native library unavailable) the pipeline is
 /// gracefully inert: subscriptions are skipped and no HSI is produced.
 /// This is the standard pattern for all synheart-runtime consumers.
@@ -26,6 +29,10 @@ class RuntimeModule extends BaseSynheartModule {
   final Stream<WearSample>? _wearSampleStream;
   final Stream<BehaviorEvent>? _behaviorEventStream;
 
+  /// When true, buffer events and run batch ingest only on stop (no live HSI during session).
+  /// Can be changed at runtime; applies to the next session start.
+  bool batchIngestOnStop;
+
   /// Key used to persist the SRM baseline snapshot in SharedPreferences.
   /// Set to null to disable auto-persistence. Defaults to "synheart.srm_snapshot".
   /// For multi-subject apps, include the subject ID in the key.
@@ -34,6 +41,9 @@ class RuntimeModule extends BaseSynheartModule {
   Timer? _tickTimer;
   StreamSubscription? _wearSubscription;
   StreamSubscription? _behaviorSubscription;
+
+  /// Buffered events for batch ingest (only used when [batchIngestOnStop] is true).
+  final List<Map<String, dynamic>> _batchEventBuffer = [];
 
   /// True after we have started the tick timer (after first push, per runtime contract).
   bool _tickTimerStarted = false;
@@ -60,6 +70,7 @@ class RuntimeModule extends BaseSynheartModule {
     RuntimeBridge? runtime,
     Stream<WearSample>? wearSampleStream,
     Stream<BehaviorEvent>? behaviorEventStream,
+    this.batchIngestOnStop = false,
     this.srmSnapshotKey = 'synheart.srm_snapshot',
   })  : _runtime = runtime,
         _wearSampleStream = wearSampleStream,
@@ -132,8 +143,11 @@ class RuntimeModule extends BaseSynheartModule {
 
   @override
   Future<void> onStop() async {
-    if (_runtime != null) {
-      // Flush any completed window before stopping (in case we're between timer fires).
+    if (_runtime != null && batchIngestOnStop && _batchEventBuffer.isNotEmpty) {
+      // Batch-on-stop: run single ingestBatch + drain, then persist SRM
+      _flushBatchOnStop();
+    } else if (_runtime != null && !batchIngestOnStop) {
+      // Streaming: flush any completed window before stopping
       final nowMs = DateTime.now().millisecondsSinceEpoch;
       final hsiJson = _runtime!.tick(nowMs);
       if (hsiJson != null) {
@@ -192,6 +206,61 @@ class RuntimeModule extends BaseSynheartModule {
     SynheartLogger.log('[RuntimeModule] Stopped');
   }
 
+  /// Runs when [batchIngestOnStop] is true: sort buffer, ingestBatch, drain tick(), emit all HSI.
+  void _flushBatchOnStop() {
+    if (_runtime == null || _batchEventBuffer.isEmpty) return;
+
+    _batchEventBuffer.sort((a, b) {
+      final aTs = a['ts_ms'] as int? ?? 0;
+      final bTs = b['ts_ms'] as int? ?? 0;
+      return aTs.compareTo(bTs);
+    });
+
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final batchJson = jsonEncode(_batchEventBuffer);
+    final resultJson = _runtime!.ingestBatch(batchJson, nowMs);
+
+    if (resultJson == null) {
+      SynheartLogger.log(
+        '[RuntimeModule] Batch ingest not available (synheart_runtime_ingest_batch_json missing). '
+        'HSI will not be produced for this session.',
+      );
+      _batchEventBuffer.clear();
+      return;
+    }
+
+    try {
+      final result = jsonDecode(resultJson) as Map<String, dynamic>;
+      if (result['ok'] == true && result['hsi'] != null) {
+        final hsiJson = jsonEncode(result['hsi']);
+        debugPrint('[Runtime] HSI (batch on stop): $hsiJson');
+        SynheartLogger.log('[Runtime] HSI (batch on stop): $hsiJson');
+        _hsiStream.add(hsiJson);
+      }
+
+      // Drain any additional completed windows (cap iterations to avoid infinite loop
+      // if native tick() keeps returning a frame when called repeatedly with same nowMs)
+      const int maxDrainIterations = 256;
+      int drainCount = 0;
+      while (drainCount < maxDrainIterations) {
+        final hsiJson = _runtime!.tick(nowMs);
+        if (hsiJson == null) break;
+        drainCount += 1;
+        debugPrint('[Runtime] HSI (batch drain): $hsiJson');
+        SynheartLogger.log('[Runtime] HSI (batch drain): $hsiJson');
+        _hsiStream.add(hsiJson);
+      }
+      if (drainCount >= maxDrainIterations) {
+        SynheartLogger.log(
+          '[RuntimeModule] Batch drain hit max iterations ($maxDrainIterations); stopping to avoid infinite loop.',
+        );
+      }
+    } catch (e) {
+      SynheartLogger.log('[RuntimeModule] Batch result parse error: $e');
+    }
+    _batchEventBuffer.clear();
+  }
+
   @override
   Future<void> onDispose() async {
     SynheartLogger.log('[RuntimeModule] Disposing...');
@@ -205,6 +274,12 @@ class RuntimeModule extends BaseSynheartModule {
   void _handleWearSample(WearSample sample) {
     _wearSampleCount += 1;
     int tsMs = sample.timestamp.millisecondsSinceEpoch;
+
+    if (batchIngestOnStop) {
+      _appendWearToBatch(sample, tsMs);
+      return;
+    }
+
     final lastTsMs = _lastPushedTsMs;
     if (lastTsMs != null && tsMs <= lastTsMs) {
       tsMs = DateTime.now().millisecondsSinceEpoch;
@@ -254,6 +329,25 @@ class RuntimeModule extends BaseSynheartModule {
       _startTickTimer();
       _tickTimerStarted = true;
       _runtime!.tick(tsMs);
+    }
+  }
+
+  /// Append wear sample to batch buffer (same event shape as ingestBatch expects).
+  void _appendWearToBatch(WearSample sample, int tsMs) {
+    if (sample.rrIntervals != null && sample.rrIntervals!.isNotEmpty) {
+      final rrs = sample.rrIntervals!;
+      final totalRrMs = rrs.fold<double>(0, (sum, rr) => sum + rr);
+      var rrTs = tsMs - totalRrMs.round();
+      for (final rr in rrs) {
+        _batchEventBuffer.add({'type': 'rr', 'ts_ms': rrTs, 'rr_ms': rr});
+        rrTs += rr.round();
+      }
+    } else if (sample.hr != null && sample.hr! > 0) {
+      _batchEventBuffer.add({
+        'type': 'hr',
+        'ts_ms': tsMs,
+        'bpm': sample.hr!,
+      });
     }
   }
 
@@ -309,7 +403,6 @@ class RuntimeModule extends BaseSynheartModule {
       tsMs = DateTime.now().millisecondsSinceEpoch;
       if (tsMs <= lastTsMs) tsMs = lastTsMs + 1;
     }
-    _lastPushedTsMs = tsMs;
 
     // Runtime event_type: 0=ScreenOn, 1=ScreenOff, 2=Touch, 3=AppSwitch,
     // 4=NotificationReceived, 5=Scroll, 6=Swipe, 7=Call
@@ -356,6 +449,18 @@ class RuntimeModule extends BaseSynheartModule {
         value = 1.0;
         break;
     }
+
+    if (batchIngestOnStop) {
+      _batchEventBuffer.add({
+        'type': 'behavior',
+        'ts_ms': tsMs,
+        'event_type': eventType,
+        'value': value,
+      });
+      return;
+    }
+
+    _lastPushedTsMs = tsMs;
     debugPrint('[Runtime in] push_behavior ts_ms=$tsMs event_type=$eventType value=$value');
     _runtime!.pushBehavior(tsMs, eventType, value);
 
