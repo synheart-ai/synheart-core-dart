@@ -254,27 +254,23 @@ class SynheartProvider extends ChangeNotifier {
             phoneConfig: PhoneConfig(),
             behaviorConfig: BehaviorConfig(),
             batchIngestOnStop: _batchIngestOnStop,
-            // ConsentConfig: temporary credentials — change before production
+            // TODO: Load from environment or .env file
             consentConfig: ConsentConfig(
-              appId: 'app_synheart_and_LrmPLw',
-              appApiKey:
-                  'synheart_sk_live_zoVujnU5NOvxqSJrTP7NIoM-rIS4rFKX-YgL3yuFK_8',
+              appId: 'YOUR_APP_ID',
+              appApiKey: 'YOUR_APP_API_KEY',
               platform: 'flutter',
               userId: userId,
               region: 'US',
             ),
-            // Cloud ingest (enable to see "Pending uploads" / "Last ingested" in the app).
-            // Credentials below are from #Guidelines/request.txt — change for production.
+            // TODO: Load from environment or .env file
             cloudConfig: CloudConfig(
               baseUrl: 'https://ingest-service-temp-dev.synheart.io',
-              tenantId: 'ten_synheart_eqf-5a_dev_Myk6rw',
-              hmacSecret:
-                  'synheart_whsec_exueLELQbr_UCASVQLbrQxjtM297D7lJTWx_-lwGlV8',
+              tenantId: 'YOUR_TENANT_ID',
+              hmacSecret: 'YOUR_HMAC_SECRET',
               subjectId: userId,
               instanceId: 'flutter-example-${userId ?? "unknown"}',
-              apiKey:
-                  'synheart_sk_live_zoVujnU5NOvxqSJrTP7NIoM-rIS4rFKX-YgL3yuFK_8',
-              orgId: 'org_synheart_eqf-5a',
+              apiKey: 'YOUR_API_KEY',
+              orgId: 'YOUR_ORG_ID',
             ),
           );
 

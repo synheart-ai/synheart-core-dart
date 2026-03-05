@@ -43,6 +43,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Native shared libraries (loaded at runtime, not committed)
+*.so
+
 # Claude Code
 .claude/
 
@@ -50,7 +53,5 @@ app.*.map.json
 # *.g.dart
 # *.freezed.dart
 .-flutter_guild.dart
-
-
 
 /#Guidelines/
