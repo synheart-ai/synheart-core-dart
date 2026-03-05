@@ -35,6 +35,7 @@ export 'src/modules/base/module_manager.dart';
 
 // Module Interfaces
 export 'src/modules/interfaces/capability_provider.dart';
+export 'src/modules/interfaces/auth_provider.dart';
 export 'src/modules/interfaces/consent_provider.dart';
 export 'src/modules/interfaces/feature_providers.dart';
 
@@ -49,6 +50,7 @@ export 'src/modules/wear/wear_module.dart';
 export 'src/modules/wear/wear_source_handler.dart' show WearSample;
 export 'src/modules/phone/phone_module.dart';
 export 'src/modules/behavior/behavior_module.dart';
+export 'src/modules/behavior/behavior_events.dart';
 export 'src/modules/runtime/runtime_module.dart';
 export 'src/modules/cloud/cloud_connector_module.dart';
 export 'src/modules/cloud/upload_models.dart';

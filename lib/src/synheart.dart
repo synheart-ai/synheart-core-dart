@@ -325,6 +325,7 @@ class Synheart {
       if (autoStart) {
         SynheartLogger.log('[Synheart] Starting all modules...');
         await _moduleManager.startAll();
+        _wireSessionBuffers();
         _isRunning = true;
       } else {
         SynheartLogger.log(
@@ -755,6 +756,24 @@ class Synheart {
     return _phoneModule?.status == ModuleStatus.running;
   }
 
+  /// Clear session buffers and subscribe to consent-gated HSI + raw wear streams.
+  void _wireSessionBuffers() {
+    _sessionHsiSubscription?.cancel();
+    _sessionWearSubscription?.cancel();
+    _sessionHsiBuffer = [];
+    _sessionWearBuffer = [];
+    _sessionHsiSubscription = _runtimeModule!.hsiStream.listen(
+      (hsiJson) {
+        final consent = _consentModule?.current();
+        if (consent == null || !consent.biosignals) return;
+        _sessionHsiBuffer.add(hsiJson);
+      },
+    );
+    _sessionWearSubscription = _wearModule!.rawSampleStream.listen(
+      (sample) => _sessionWearBuffer.add(sample),
+    );
+  }
+
   /// Start all data collection modules
   Future<void> _startDataCollection() async {
     if (!_isConfigured) {
@@ -771,15 +790,7 @@ class Synheart {
     SynheartLogger.log('[Synheart] Starting all data collection modules...');
     await _moduleManager.startAll();
 
-    // Clear session buffers and start accumulating
-    _sessionHsiBuffer = [];
-    _sessionWearBuffer = [];
-    _sessionHsiSubscription = _runtimeModule!.hsiStream.listen(
-      (hsiJson) => _sessionHsiBuffer.add(hsiJson),
-    );
-    _sessionWearSubscription = _wearModule!.rawSampleStream.listen(
-      (sample) => _sessionWearBuffer.add(sample),
-    );
+    _wireSessionBuffers();
 
     _isRunning = true;
     _reevaluateAllFeatures();

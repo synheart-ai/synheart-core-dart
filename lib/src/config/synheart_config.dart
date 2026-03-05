@@ -1,4 +1,5 @@
 import '../modules/capabilities/capability_token.dart';
+import '../modules/interfaces/auth_provider.dart';
 
 /// Configuration for Synheart Core SDK
 class SynheartConfig {
@@ -124,8 +125,12 @@ class CloudConfig {
   /// Tenant ID (from app registration) - kept for backward compatibility
   final String tenantId;
 
-  /// HMAC secret for signing requests
-  final String hmacSecret;
+  /// HMAC secret for signing requests (nullable when authProvider is used)
+  final String? hmacSecret;
+
+  /// Custom auth provider for request signing (e.g., ECDSA device-identity).
+  /// When set, takes precedence over the HMAC path.
+  final AuthProvider? authProvider;
 
   /// Subject ID (pseudonymous user identifier) - becomes user_id in payload
   final String subjectId;
@@ -136,8 +141,8 @@ class CloudConfig {
   /// Instance ID (UUID for this SDK instance)
   final String instanceId;
 
-  /// API Key for X-API-Key header
-  final String apiKey;
+  /// API Key for X-API-Key header (nullable when authProvider is used)
+  final String? apiKey;
 
   /// Organization ID (optional) - for metadata.org_id
   final String? orgId;
@@ -157,12 +162,13 @@ class CloudConfig {
   /// Enable offline backlog
   final bool enableBacklog;
 
-  const CloudConfig({
+  CloudConfig({
     required this.tenantId,
-    required this.hmacSecret,
+    this.hmacSecret,
+    this.authProvider,
     required this.subjectId,
     required this.instanceId,
-    required this.apiKey,
+    this.apiKey,
     this.orgId,
     this.baseUrl = 'https://api.synheart.com',
     this.subjectType = 'pseudonymous_user',
@@ -171,7 +177,10 @@ class CloudConfig {
     this.uploadInterval = const Duration(minutes: 5),
     this.maxRetries = 3,
     this.enableBacklog = true,
-  });
+  }) : assert(
+         hmacSecret != null || authProvider != null,
+         'CloudConfig requires either hmacSecret or authProvider',
+       );
 }
 
 /// Consent service configuration

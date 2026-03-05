@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import '../interfaces/auth_provider.dart';
 import 'hmac_signer.dart';
 import '../consent/consent_token.dart';
 import 'upload_models.dart';
@@ -14,9 +16,10 @@ class UploadClient {
 
   Future<UploadResponse> upload({
     required UploadRequest payload,
-    required HMACSigner signer,
-    required String apiKey,
+    HMACSigner? signer,
+    String? apiKey,
     ConsentToken? consentToken,
+    AuthProvider? authProvider,
   }) async {
     const method = 'POST';
     const path = '/v2/hsi/ingest';
@@ -33,6 +36,7 @@ class UploadClient {
       apiKey: apiKey,
       maxAttempts: 3,
       consentToken: consentToken,
+      authProvider: authProvider,
     );
   }
 
@@ -40,10 +44,11 @@ class UploadClient {
     required String method,
     required String path,
     required String bodyJson,
-    required HMACSigner signer,
-    required String apiKey,
+    HMACSigner? signer,
+    String? apiKey,
     required int maxAttempts,
     ConsentToken? consentToken,
+    AuthProvider? authProvider,
   }) async {
     int attempts = 0;
     int baseDelay = 1000; // 1 second
@@ -52,26 +57,36 @@ class UploadClient {
       attempts++;
 
       try {
-        // Generate nonce and timestamp for each attempt
-        final nonce = signer.generateNonce();
-        final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-        final timestampStr = timestamp.toString();
-
-        // Compute HMAC signature (simple: timestamp + payload)
-        final signature = signer.computeSignature(
-          timestamp: timestampStr,
-          bodyJson: bodyJson,
-        );
-
-        // Build fresh request for each attempt
         final uri = Uri.parse('$baseUrl$path');
-        final headers = <String, String>{
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
-          'X-Synheart-Signature': signature,
-          'X-Synheart-Timestamp': timestampStr,
-          'X-Synheart-Nonce': nonce,
-        };
+        final bodyBytes = Uint8List.fromList(utf8.encode(bodyJson));
+        final headers = <String, String>{};
+
+        if (authProvider != null) {
+          // AuthProvider path — provider controls all auth headers
+          final authHeaders = await authProvider.signRequest(
+            method: method,
+            path: path,
+            bodyBytes: bodyBytes,
+          );
+          headers.addAll(authHeaders);
+          headers['Content-Type'] = 'application/json';
+        } else {
+          // Existing HMAC path (unchanged)
+          final nonce = signer!.generateNonce();
+          final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+          final timestampStr = timestamp.toString();
+
+          final signature = signer.computeSignature(
+            timestamp: timestampStr,
+            bodyJson: bodyJson,
+          );
+
+          headers['Content-Type'] = 'application/json';
+          headers['X-API-Key'] = apiKey!;
+          headers['X-Synheart-Signature'] = signature;
+          headers['X-Synheart-Timestamp'] = timestampStr;
+          headers['X-Synheart-Nonce'] = nonce;
+        }
 
         // Add consent token if provided (direct JWT, not Bearer format)
         if (consentToken != null && consentToken.isValid) {
@@ -92,6 +107,17 @@ class UploadClient {
         // Parse error response
         final errorBody = jsonDecode(response.body);
         final error = UploadErrorResponse.fromJson(errorBody);
+
+        // Handle 401 with AuthProvider retry
+        if (response.statusCode == 401 && authProvider != null) {
+          final handled = await authProvider.onAuthError(
+            statusCode: 401,
+            responseHeaders: response.headers,
+          );
+          if (handled && attempts < maxAttempts) {
+            continue; // Retry with corrected auth
+          }
+        }
 
         // Handle specific errors
         if (response.statusCode == 401) {

@@ -26,6 +26,7 @@ class WearModule extends BaseSynheartModule
 
   final List<StreamSubscription<WearSample>> _subscriptions = [];
   StreamSubscription<ConsentSnapshot>? _consentSubscription;
+  bool _isStartingCollection = false;
 
   // Stream controller for raw samples (broadcast for multiple subscribers)
   StreamController<WearSample>? _rawSampleController;
@@ -176,6 +177,18 @@ class WearModule extends BaseSynheartModule
 
   /// Start data collection from all sources
   Future<void> _startDataCollection() async {
+    // Synchronous flag guards against async race: BehaviorSubject emits
+    // immediately in onStart, so both the asyncMap callback and the
+    // explicit call can enter this method before either awaits.
+    if (_isStartingCollection || _subscriptions.isNotEmpty) {
+      SynheartLogger.log(
+        '[WearModule] Data collection already active/starting, skipping',
+      );
+      return;
+    }
+    _isStartingCollection = true;
+
+    try {
     // Check consent again before starting
     if (!_consent.current().biosignals) {
       SynheartLogger.log(
@@ -247,6 +260,9 @@ class WearModule extends BaseSynheartModule
 
         _subscriptions.add(subscription);
       }
+    }
+    } finally {
+      _isStartingCollection = false;
     }
   }
 
