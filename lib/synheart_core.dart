@@ -21,6 +21,7 @@ export 'src/synheart.dart';
 export 'src/config/api_endpoints.dart';
 export 'src/config/synheart_config.dart';
 export 'src/config/synheart_feature.dart';
+export 'src/config/platform_ingest_config.dart';
 
 // Data Models
 export 'src/models/behavior.dart';
@@ -56,6 +57,11 @@ export 'src/modules/runtime/runtime_module.dart';
 export 'src/modules/cloud/cloud_connector_module.dart';
 export 'src/modules/cloud/upload_models.dart';
 export 'src/modules/cloud/cloud_exceptions.dart';
+export 'src/modules/cloud/hmac_signer.dart';
+
+// Platform Ingest
+export 'src/modules/platform_ingest/platform_ingest_module.dart';
+export 'src/modules/platform_ingest/platform_ingest_client.dart';
 
 // Runtime Bridge (FFI to synheart-runtime, includes SRM baseline access)
 export 'src/modules/runtime/runtime_bridge.dart';

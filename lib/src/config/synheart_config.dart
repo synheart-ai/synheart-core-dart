@@ -1,6 +1,7 @@
 import '../modules/capabilities/capability_token.dart';
 import '../modules/interfaces/auth_provider.dart';
 import 'api_endpoints.dart';
+import 'platform_ingest_config.dart';
 
 /// Configuration for Synheart Core SDK
 class SynheartConfig {
@@ -27,6 +28,9 @@ class SynheartConfig {
   /// Consent service configuration
   final ConsentConfig? consentConfig;
 
+  /// Platform ingestion configuration (custom session/metadata uploads)
+  final PlatformIngestConfig? platformIngestConfig;
+
   /// Server-signed capability token for feature gating
   final CapabilityToken? capabilityToken;
 
@@ -51,6 +55,7 @@ class SynheartConfig {
     this.behaviorConfig,
     this.cloudConfig,
     this.consentConfig,
+    this.platformIngestConfig,
     this.capabilityToken,
     this.capabilitySecret,
     this.allowUnsignedCapabilities = false,

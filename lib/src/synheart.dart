@@ -23,6 +23,8 @@ import 'modules/runtime/runtime_module.dart';
 import 'modules/srm/srm_module.dart';
 import 'modules/srm/srm_snapshot_storage.dart';
 import 'modules/cloud/cloud_connector_module.dart';
+import 'modules/platform_ingest/platform_ingest_module.dart';
+import 'modules/platform_ingest/platform_ingest_client.dart';
 import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
 import 'modules/consent/consent_profile.dart';
@@ -84,6 +86,7 @@ class Synheart {
   RuntimeModule? _runtimeModule;
   SRMModule? _srmModule;
   CloudConnectorModule? _cloudConnector;
+  PlatformIngestModule? _platformIngestModule;
 
   // Watch session module
   WatchSessionModule? _watchSessionModule;
@@ -311,6 +314,18 @@ class Synheart {
         _moduleManager.registerModule(
           _cloudConnector!,
           dependsOn: ['capabilities', 'consent', 'runtime'],
+        );
+      }
+
+      if (_config?.platformIngestConfig != null) {
+        SynheartLogger.log('[Synheart] Initializing Platform Ingest...');
+        _platformIngestModule = PlatformIngestModule(
+          consentModule: _consentModule!,
+          config: _config!.platformIngestConfig!,
+        );
+        _moduleManager.registerModule(
+          _platformIngestModule!,
+          dependsOn: ['consent'],
         );
       }
 
@@ -755,6 +770,45 @@ class Synheart {
   /// Time of the last upload attempt (success or failure); null if no attempt yet.
   static DateTime? get lastUploadAttemptAt =>
       shared._cloudConnector?.lastUploadAttemptAt;
+
+  // ── Platform Ingest API ──────────────────────────────────────────
+
+  /// Ingest a session payload via the platform ingestion service.
+  /// Requires `behavior` consent. Returns a [PlatformIngestResponse].
+  static Future<PlatformIngestResponse> ingestSession(
+    Map<String, dynamic> payload,
+  ) async {
+    final mod = shared._platformIngestModule;
+    if (mod == null) {
+      return const PlatformIngestResponse(
+        success: false,
+        statusCode: 0,
+        errorMessage: 'PlatformIngestModule not configured',
+      );
+    }
+    return mod.ingestSession(payload);
+  }
+
+  /// Ingest a metadata payload via the platform ingestion service.
+  /// Requires `biosignals` consent. Returns a [PlatformIngestResponse].
+  static Future<PlatformIngestResponse> ingestMetadata(
+    Map<String, dynamic> payload,
+  ) async {
+    final mod = shared._platformIngestModule;
+    if (mod == null) {
+      return const PlatformIngestResponse(
+        success: false,
+        statusCode: 0,
+        errorMessage: 'PlatformIngestModule not configured',
+      );
+    }
+    return mod.ingestMetadata(payload);
+  }
+
+  /// The underlying [PlatformIngestClient] for standalone/background usage.
+  /// Returns null if [PlatformIngestConfig] was not provided at init time.
+  static PlatformIngestClient? get platformIngestClient =>
+      shared._platformIngestModule?.client;
 
   Future<void> _flushUploadQueue() async {
     if (!_isConfigured) {

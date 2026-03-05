@@ -9,7 +9,15 @@ abstract final class ApiEndpoints {
   static const String defaultConsentBaseUrl = 'https://consent.synheart.ai';
 
   // ── Cloud Ingest ──────────────────────────────────────────────────
-  static const String ingestPath = '/v2/hsi/ingest';
+  static const String ingestPath = '/v1/ingest/hsi';
+
+  // ── Platform Ingest ──────────────────────────────────────────────
+  static const String defaultPlatformIngestBaseUrl =
+      'https://ingest-service-temp-dev.synheart.io';
+  static const String platformSessionIngestPath =
+      '/v1/platform/session/ingest';
+  static const String platformMetadataIngestPath =
+      '/v1/platform/metadata/ingest';
 
   // ── Consent Service ───────────────────────────────────────────────
   static String consentProfilesPath(String appId) =>
