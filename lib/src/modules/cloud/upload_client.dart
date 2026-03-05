@@ -6,6 +6,7 @@ import 'hmac_signer.dart';
 import '../consent/consent_token.dart';
 import 'upload_models.dart';
 import 'cloud_exceptions.dart';
+import '../../config/api_endpoints.dart';
 
 class UploadClient {
   final String baseUrl;
@@ -22,7 +23,7 @@ class UploadClient {
     AuthProvider? authProvider,
   }) async {
     const method = 'POST';
-    const path = '/v2/hsi/ingest';
+    const path = ApiEndpoints.ingestPath;
 
     // Serialize payload once
     final bodyJson = jsonEncode(payload.toJson());

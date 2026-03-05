@@ -263,8 +263,11 @@ class SynheartProvider extends ChangeNotifier {
               region: 'US',
             ),
             // TODO: Load from environment or .env file
+            // Uses production default from ApiEndpoints.defaultCloudBaseUrl.
+            // Override with env var for dev/staging:
+            // baseUrl: const String.fromEnvironment('SYNHEART_CLOUD_URL',
+            //     defaultValue: ApiEndpoints.defaultCloudBaseUrl),
             cloudConfig: CloudConfig(
-              baseUrl: 'https://ingest-service-temp-dev.synheart.io',
               tenantId: 'YOUR_TENANT_ID',
               hmacSecret: 'YOUR_HMAC_SECRET',
               subjectId: userId,

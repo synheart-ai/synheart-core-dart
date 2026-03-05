@@ -18,6 +18,7 @@ library synheart_core;
 export 'src/synheart.dart';
 
 // Configuration
+export 'src/config/api_endpoints.dart';
 export 'src/config/synheart_config.dart';
 export 'src/config/synheart_feature.dart';
 

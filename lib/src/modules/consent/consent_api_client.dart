@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../config/api_endpoints.dart';
 import '../../core/logger.dart';
 import 'consent_profile.dart';
 import 'consent_token.dart';
@@ -26,7 +27,7 @@ class ConsentAPIClient {
   }) async {
     try {
       final uri = Uri.parse(
-        '$baseUrl/api/v1/apps/$appId/consent-profiles',
+        '$baseUrl${ApiEndpoints.consentProfilesPath(appId)}',
       ).replace(queryParameters: {'active_only': activeOnly.toString()});
 
       SynheartLogger.log('[ConsentAPI] Fetching profiles from: $uri');
@@ -130,7 +131,7 @@ class ConsentAPIClient {
     String? region,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/api/v1/sdk/consent-token');
+      final uri = Uri.parse('$baseUrl${ApiEndpoints.consentTokenPath}');
 
       final body = {
         'app_id': appId,
@@ -233,7 +234,7 @@ class ConsentAPIClient {
     required String profileId,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/api/v1/sdk/consent-revoke');
+      final uri = Uri.parse('$baseUrl${ApiEndpoints.consentRevokePath}');
 
       final body = {
         'app_id': appId,

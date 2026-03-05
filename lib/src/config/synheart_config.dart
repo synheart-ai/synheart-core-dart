@@ -1,5 +1,6 @@
 import '../modules/capabilities/capability_token.dart';
 import '../modules/interfaces/auth_provider.dart';
+import 'api_endpoints.dart';
 
 /// Configuration for Synheart Core SDK
 class SynheartConfig {
@@ -176,7 +177,7 @@ class CloudConfig {
     required this.instanceId,
     this.apiKey,
     this.orgId,
-    this.baseUrl = 'https://api.synheart.com',
+    this.baseUrl = ApiEndpoints.defaultCloudBaseUrl,
     this.subjectType = 'pseudonymous_user',
     this.maxQueueSize = 100,
     this.batchSize = 10,
@@ -191,7 +192,7 @@ class CloudConfig {
 
 /// Consent service configuration
 class ConsentConfig {
-  /// Base URL for consent service (defaults to dev environment)
+  /// Base URL for consent service
   final String consentServiceUrl;
 
   /// App ID for consent service
@@ -213,7 +214,7 @@ class ConsentConfig {
   final String? region;
 
   const ConsentConfig({
-    this.consentServiceUrl = 'https://consent-service-dev.synheart.io',
+    this.consentServiceUrl = ApiEndpoints.defaultConsentBaseUrl,
     this.appId,
     this.appApiKey,
     this.deviceId,
