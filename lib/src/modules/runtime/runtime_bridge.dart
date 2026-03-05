@@ -138,6 +138,32 @@ typedef _RuntimeLoadSrmSnapshotC = Int32 Function(
 typedef _RuntimeLoadSrmSnapshotDart = int Function(
     Pointer<Void> handle, Pointer<Utf8> snapshotJson);
 
+// Lab
+typedef _LabStartC = Pointer<Utf8> Function(
+    Pointer<Void> handle, Pointer<Utf8> protocolJson, Int64 startedAtMs);
+typedef _LabStartDart = Pointer<Utf8> Function(
+    Pointer<Void> handle, Pointer<Utf8> protocolJson, int startedAtMs);
+
+typedef _LabOpenWindowC = Pointer<Utf8> Function(Pointer<Void> handle,
+    Pointer<Utf8> parentId, Pointer<Utf8> windowType, Pointer<Utf8> label, Int64 startedAtMs);
+typedef _LabOpenWindowDart = Pointer<Utf8> Function(Pointer<Void> handle,
+    Pointer<Utf8> parentId, Pointer<Utf8> windowType, Pointer<Utf8> label, int startedAtMs);
+
+typedef _LabCloseWindowC = Void Function(
+    Pointer<Void> handle, Pointer<Utf8> windowId, Int64 endedAtMs);
+typedef _LabCloseWindowDart = void Function(
+    Pointer<Void> handle, Pointer<Utf8> windowId, int endedAtMs);
+
+typedef _LabSetWindowValuesC = Void Function(
+    Pointer<Void> handle, Pointer<Utf8> windowId, Pointer<Utf8> valuesJson);
+typedef _LabSetWindowValuesDart = void Function(
+    Pointer<Void> handle, Pointer<Utf8> windowId, Pointer<Utf8> valuesJson);
+
+typedef _LabFinalizeC = Pointer<Utf8> Function(
+    Pointer<Void> handle, Int64 endedAtMs);
+typedef _LabFinalizeDart = Pointer<Utf8> Function(
+    Pointer<Void> handle, int endedAtMs);
+
 // --- Config ---
 
 /// Configuration passed to `synheart_runtime_new` as JSON.
@@ -206,6 +232,13 @@ class RuntimeBridge {
   _RuntimeExportSrmSnapshotDart? _exportSrmSnapshotFfi;
   _RuntimeLoadSrmSnapshotDart? _loadSrmSnapshotFfi;
 
+  // Lab (optional — requires lab feature in runtime .so)
+  _LabStartDart? _labStartFfi;
+  _LabOpenWindowDart? _labOpenWindowFfi;
+  _LabCloseWindowDart? _labCloseWindowFfi;
+  _LabSetWindowValuesDart? _labSetWindowValuesFfi;
+  _LabFinalizeDart? _labFinalizeFfi;
+
   RuntimeBridge._(this._lib, this._handle) {
     _runtimeFree = _lib
         .lookupFunction<_RuntimeFreeC, _RuntimeFreeDart>(
@@ -258,6 +291,11 @@ class RuntimeBridge {
     _baselineSummaryFfi = _lookupBaselineSummary(_lib);
     _exportSrmSnapshotFfi = _lookupExportSrmSnapshot(_lib);
     _loadSrmSnapshotFfi = _lookupLoadSrmSnapshot(_lib);
+    _labStartFfi = _lookupLabStart(_lib);
+    _labOpenWindowFfi = _lookupLabOpenWindow(_lib);
+    _labCloseWindowFfi = _lookupLabCloseWindow(_lib);
+    _labSetWindowValuesFfi = _lookupLabSetWindowValues(_lib);
+    _labFinalizeFfi = _lookupLabFinalize(_lib);
   }
 
   static _RuntimePushSleepStagesDart? _lookupPushSleepStages(
@@ -382,6 +420,59 @@ class RuntimeBridge {
       return lib.lookupFunction<_RuntimeLoadSrmSnapshotC,
           _RuntimeLoadSrmSnapshotDart>(
         'synheart_runtime_load_srm_snapshot',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Lab lookups
+
+  static _LabStartDart? _lookupLabStart(DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_LabStartC, _LabStartDart>(
+        'synheart_lab_start',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _LabOpenWindowDart? _lookupLabOpenWindow(DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_LabOpenWindowC, _LabOpenWindowDart>(
+        'synheart_lab_open_window',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _LabCloseWindowDart? _lookupLabCloseWindow(DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_LabCloseWindowC, _LabCloseWindowDart>(
+        'synheart_lab_close_window',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _LabSetWindowValuesDart? _lookupLabSetWindowValues(
+      DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_LabSetWindowValuesC, _LabSetWindowValuesDart>(
+        'synheart_lab_set_window_values',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _LabFinalizeDart? _lookupLabFinalize(DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_LabFinalizeC, _LabFinalizeDart>(
+        'synheart_lab_finalize',
       );
     } catch (_) {
       return null;
@@ -659,6 +750,101 @@ class RuntimeBridge {
     } finally {
       malloc.free(native);
     }
+  }
+
+  // -- Lab Session --
+
+  /// Whether the lab C ABI symbols are available in the loaded native library.
+  bool get isLabAvailable => _labStartFfi != null;
+
+  /// Start a lab session.
+  ///
+  /// [protocolJson] should contain: `namespace`, `protocol_version`, `parameters`,
+  /// and optionally `app_id`, `device_id`, `user_id`, `protocol_id`.
+  ///
+  /// Returns `null` on success, or an error string on failure.
+  String? labStart(String protocolJson, int startedAtMs) {
+    final ffi = _labStartFfi;
+    if (ffi == null) return 'lab symbols not available';
+    final native = protocolJson.toNativeUtf8();
+    try {
+      final ptr = ffi(_handle, native, startedAtMs);
+      if (ptr == nullptr) return null; // success
+      final err = ptr.toDartString();
+      _freeString(ptr);
+      return err;
+    } finally {
+      malloc.free(native);
+    }
+  }
+
+  /// Open a window in the active lab session. Returns the window ID, or `null` on failure.
+  String? labOpenWindow({
+    String? parentId,
+    required String windowType,
+    String? label,
+    required int startedAtMs,
+  }) {
+    final ffi = _labOpenWindowFfi;
+    if (ffi == null) return null;
+    final pidNative = (parentId ?? '').toNativeUtf8();
+    final wtNative = windowType.toNativeUtf8();
+    final lblNative = (label ?? '').toNativeUtf8();
+    try {
+      final ptr = ffi(
+        _handle,
+        parentId != null ? pidNative : nullptr,
+        wtNative,
+        label != null ? lblNative : nullptr,
+        startedAtMs,
+      );
+      if (ptr == nullptr) return null;
+      final windowId = ptr.toDartString();
+      _freeString(ptr);
+      return windowId;
+    } finally {
+      malloc.free(pidNative);
+      malloc.free(wtNative);
+      malloc.free(lblNative);
+    }
+  }
+
+  /// Close a window in the active lab session.
+  void labCloseWindow(String windowId, int endedAtMs) {
+    final ffi = _labCloseWindowFfi;
+    if (ffi == null) return;
+    final native = windowId.toNativeUtf8();
+    try {
+      ffi(_handle, native, endedAtMs);
+    } finally {
+      malloc.free(native);
+    }
+  }
+
+  /// Set protocol-specific values on a lab window.
+  void labSetWindowValues(String windowId, String valuesJson) {
+    final ffi = _labSetWindowValuesFfi;
+    if (ffi == null) return;
+    final widNative = windowId.toNativeUtf8();
+    final vjNative = valuesJson.toNativeUtf8();
+    try {
+      ffi(_handle, widNative, vjNative);
+    } finally {
+      malloc.free(widNative);
+      malloc.free(vjNative);
+    }
+  }
+
+  /// Finalize the lab session and return the complete payload JSON.
+  /// Returns `null` if no active session or lab symbols not available.
+  String? labFinalize(int endedAtMs) {
+    final ffi = _labFinalizeFfi;
+    if (ffi == null) return null;
+    final ptr = ffi(_handle, endedAtMs);
+    if (ptr == nullptr) return null;
+    final json = ptr.toDartString();
+    _freeString(ptr);
+    return json;
   }
 
   /// Release the native runtime handle. Must be called when the bridge

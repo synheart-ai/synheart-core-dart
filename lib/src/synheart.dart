@@ -939,6 +939,47 @@ class Synheart {
   /// The native synheart-runtime version, or `null` if unavailable.
   static String? get runtimeVersion => RuntimeBridge.version();
 
+  // ── synheart-lab session API ──
+
+  /// Whether the lab C ABI symbols are available in the loaded native library.
+  static bool get isLabAvailable =>
+      shared._runtimeModule?.bridge?.isLabAvailable ?? false;
+
+  /// Start a lab session. Returns `null` on success, or an error string.
+  static String? labStart(String protocolJson, int startedAtMs) {
+    return shared._runtimeModule?.bridge?.labStart(protocolJson, startedAtMs);
+  }
+
+  /// Open a window in the active lab session. Returns the window ID.
+  static String? labOpenWindow({
+    String? parentId,
+    required String windowType,
+    String? label,
+    required int startedAtMs,
+  }) {
+    return shared._runtimeModule?.bridge?.labOpenWindow(
+      parentId: parentId,
+      windowType: windowType,
+      label: label,
+      startedAtMs: startedAtMs,
+    );
+  }
+
+  /// Close a window in the active lab session.
+  static void labCloseWindow(String windowId, int endedAtMs) {
+    shared._runtimeModule?.bridge?.labCloseWindow(windowId, endedAtMs);
+  }
+
+  /// Set protocol-specific values on a lab window.
+  static void labSetWindowValues(String windowId, String valuesJson) {
+    shared._runtimeModule?.bridge?.labSetWindowValues(windowId, valuesJson);
+  }
+
+  /// Finalize the lab session and return the complete payload JSON.
+  static String? labFinalize(int endedAtMs) {
+    return shared._runtimeModule?.bridge?.labFinalize(endedAtMs);
+  }
+
   // Collection status getters
   bool get _isWearCollecting {
     return _wearModule?.status == ModuleStatus.running;

@@ -72,7 +72,7 @@ class WatchSessionModule {
       '(mode: ${config.mode.value}, duration: ${config.durationSec}s)',
     );
 
-    final stream = _session!.startSession(config, watchOnly: true);
+    final stream = _session!.startSession(config);
 
     _activeSubscription = stream.listen(
       (event) {
