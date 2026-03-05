@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:ui' show FontFeature;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../behavior_metrics/session_results_screen.dart';
 import 'package:provider/provider.dart';
@@ -40,6 +42,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSessionActive = false;
   StreamSubscription<sb.BehaviorEvent>? _eventSubscription;
 
+  /// Throttle setState for behavior events to avoid rebuild on every tap/scroll (causes freeze).
+  bool _pendingEventNotify = false;
+  Timer? _eventNotifyTimer;
+  static const _eventNotifyThrottleMs = 600;
+
+  /// Selected duration in seconds for main session; null = until stopped.
+  int? _mainSessionDurationSec = 300;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _eventNotifyTimer?.cancel();
     _eventSubscription?.cancel();
     super.dispose();
   }
@@ -63,33 +74,33 @@ class _HomeScreenState extends State<HomeScreen> {
       // Listen to events from the behavior SDK
       _eventSubscription?.cancel();
       _eventSubscription = synheartBehavior.onEvent.listen((event) {
-        setState(() {
-          // Store events for current session (if session is active)
-          if (_isSessionActive && _currentSession != null) {
-            if (event.sessionId == _currentSession!.sessionId) {
-              _sessionEvents.add(event);
-              print(
-                '[HomeScreen] 📥 Event collected: ${event.eventType.name}, '
-                'sessionId: ${event.sessionId}, timestamp: ${event.timestamp}, '
-                'total: ${_sessionEvents.length}',
-              );
-            } else {
-              print(
-                '[HomeScreen] ⚠️ Event sessionId mismatch: ${event.sessionId} vs ${_currentSession!.sessionId}',
-              );
-            }
-          } else {
-            print(
-              '[HomeScreen] ⚠️ Event received but no active session. '
-              'isSessionActive: $_isSessionActive, session: ${_currentSession?.sessionId}',
-            );
-          }
-        });
+        // Update state only (no print on every event - reduces log spam and I/O).
+        if (_isSessionActive && _currentSession != null &&
+            event.sessionId == _currentSession!.sessionId) {
+          _sessionEvents.add(event);
+          _throttledEventNotify();
+        } else if (_isSessionActive && _currentSession != null &&
+            kDebugMode && _sessionEvents.length % 20 == 0) {
+          // debugPrint('[HomeScreen] Event sessionId mismatch: ${event.sessionId}');
+        }
       });
 
       // Start session if behavior consent is granted
       _checkAndStartSession();
     }
+  }
+
+  /// Debounce setState for behavior events so we don't rebuild on every tap/scroll.
+  void _throttledEventNotify() {
+    _pendingEventNotify = true;
+    _eventNotifyTimer?.cancel();
+    _eventNotifyTimer = Timer(const Duration(milliseconds: _eventNotifyThrottleMs), () {
+      _eventNotifyTimer = null;
+      if (_pendingEventNotify && mounted) {
+        _pendingEventNotify = false;
+        setState(() {});
+      }
+    });
   }
 
   /// Check if behavior consent is granted and start session
@@ -98,24 +109,24 @@ class _HomeScreenState extends State<HomeScreen> {
     if (consentStatusMap['behavior'] == true && _behavior != null) {
       await _startBehaviorSession();
     } else {
-      print(
-        '[HomeScreen] Behavior consent not granted or behavior is null. '
-        'consent: ${consentStatusMap['behavior']}, behavior: $_behavior',
-      );
+      // print(
+      //   '[HomeScreen] Behavior consent not granted or behavior is null. '
+      //   'consent: ${consentStatusMap['behavior']}, behavior: $_behavior',
+      // );
     }
   }
 
   /// Start a behavior session
   Future<void> _startBehaviorSession() async {
     if (_behavior == null) {
-      print('[HomeScreen] ⚠️ Cannot start session: behavior is null');
+      // print('[HomeScreen] ⚠️ Cannot start session: behavior is null');
       return;
     }
 
     if (_isSessionActive) {
-      print(
-        '[HomeScreen] ⚠️ Session already active: ${_currentSession?.sessionId}',
-      );
+      // print(
+      //   '[HomeScreen] ⚠️ Session already active: ${_currentSession?.sessionId}',
+      // );
       return;
     }
 
@@ -126,16 +137,16 @@ class _HomeScreenState extends State<HomeScreen> {
         _isSessionActive = true;
         _sessionEvents = []; // Clear previous session events
       });
-      print(
-        '[HomeScreen] ✅ Behavior session started: ${session.sessionId}, '
-        'startTime: ${DateTime.fromMillisecondsSinceEpoch(session.startTimestamp)}',
-      );
-      print(
-        '[HomeScreen] Current session ID in SDK: ${_behavior!.currentSessionId}',
-      );
+      // print(
+      //   '[HomeScreen] ✅ Behavior session started: ${session.sessionId}, '
+      //   'startTime: ${DateTime.fromMillisecondsSinceEpoch(session.startTimestamp)}',
+      // );
+      // print(
+      //   '[HomeScreen] Current session ID in SDK: ${_behavior!.currentSessionId}',
+      // );
     } catch (e, stackTrace) {
-      print('[HomeScreen] ❌ Failed to start behavior session: $e');
-      print('[HomeScreen] Stack trace: $stackTrace');
+      // print('[HomeScreen] ❌ Failed to start behavior session: $e');
+      // print('[HomeScreen] Stack trace: $stackTrace');
     }
   }
 
@@ -155,9 +166,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _isSessionActive = false;
         _sessionEvents = [];
       });
-      print('[HomeScreen] ✅ Behavior session stopped');
+      // print('[HomeScreen] ✅ Behavior session stopped');
     } catch (e) {
-      print('[HomeScreen] ❌ Failed to stop behavior session: $e');
+      // print('[HomeScreen] ❌ Failed to stop behavior session: $e');
       // Clear state even if ending failed
       setState(() {
         _currentSession = null;
@@ -208,13 +219,13 @@ class _HomeScreenState extends State<HomeScreen> {
       final sessionStartTime = DateTime.parse(summary.startAt).toUtc();
       final sessionEndTime = DateTime.parse(summary.endAt).toUtc();
 
-      print(
-        '[HomeScreen] Session start time (UTC): $sessionStartTime (${summary.startAt})',
-      );
-      print('[HomeScreen] Session end time (UTC): $sessionEndTime');
-      print(
-        '[HomeScreen] Summary total_events from native SDK: ${summary.activitySummary.totalEvents}',
-      );
+      // print(
+      //   '[HomeScreen] Session start time (UTC): $sessionStartTime (${summary.startAt})',
+      // );
+      // print('[HomeScreen] Session end time (UTC): $sessionEndTime');
+      // print(
+      //   '[HomeScreen] Summary total_events from native SDK: ${summary.activitySummary.totalEvents}',
+      // );
 
       // Filter events by session time range (start to end)
       // Both times are in UTC, so we can compare directly
@@ -232,42 +243,42 @@ class _HomeScreenState extends State<HomeScreen> {
               eventTimeMs >= sessionStartMs && eventTimeMs <= sessionEndMs;
 
           if (!inRange) {
-            print(
-              '[HomeScreen] ⚠️ Event outside session range: ${event.eventType.name}, '
-              'eventTime: $eventTime (${event.timestamp}), '
-              'sessionRange: $sessionStartTime to $sessionEndTime',
-            );
+            // print(
+            //   '[HomeScreen] ⚠️ Event outside session range: ${event.eventType.name}, '
+            //   'eventTime: $eventTime (${event.timestamp}), '
+            //   'sessionRange: $sessionStartTime to $sessionEndTime',
+            // );
           }
           return inRange;
         } catch (e) {
-          print(
-            '[HomeScreen] ⚠️ Invalid event timestamp: ${event.timestamp}, error: $e',
-          );
+          // print(
+          //   '[HomeScreen] ⚠️ Invalid event timestamp: ${event.timestamp}, error: $e',
+          // );
           return false;
         }
       }).toList();
 
-      print(
-        '[HomeScreen] Session ended. '
-        'Total events collected: ${_sessionEvents.length}, '
-        'Events in session range: ${sessionEvents.length}, '
-        'Native SDK events: ${summary.activitySummary.totalEvents}, '
-        'Summary: ${summary.sessionId}',
-      );
+      // print(
+      //   '[HomeScreen] Session ended. '
+      //   'Total events collected: ${_sessionEvents.length}, '
+      //   'Events in session range: ${sessionEvents.length}, '
+      //   'Native SDK events: ${summary.activitySummary.totalEvents}, '
+      //   'Summary: ${summary.sessionId}',
+      // );
 
-      // Debug: Print event breakdown
+      // Debug: Print event breakdown (commented to reduce log noise)
       if (sessionEvents.isNotEmpty) {
         final eventTypes = <String, int>{};
         for (final event in sessionEvents) {
           eventTypes[event.eventType.name] =
               (eventTypes[event.eventType.name] ?? 0) + 1;
         }
-        print('[HomeScreen] Event breakdown: $eventTypes');
+        // print('[HomeScreen] Event breakdown: $eventTypes');
       } else {
-        print(
-          '[HomeScreen] ⚠️ WARNING: No events in session range! '
-          'This might indicate events are not being stored in native SDK.',
-        );
+        // print(
+        //   '[HomeScreen] ⚠️ WARNING: No events in session range! '
+        //   'This might indicate events are not being stored in native SDK.',
+        // );
       }
 
       // Clear session state
@@ -297,8 +308,8 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } catch (e, stackTrace) {
-      print('[HomeScreen] ERROR ending session: $e');
-      print('[HomeScreen] Stack trace: $stackTrace');
+      // print('[HomeScreen] ERROR ending session: $e');
+      // print('[HomeScreen] Stack trace: $stackTrace');
 
       // Close loading dialog if still open
       if (mounted && Navigator.of(context).canPop()) {
@@ -361,6 +372,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 // SDK Status Card
                 _buildSDKStatusCard(context, provider),
                 const SizedBox(height: 16),
+
+                // Data collection session (main page) — only when initialized
+                if (provider.isInitialized) ...[
+                  _buildMainSessionCard(context, provider),
+                  const SizedBox(height: 16),
+                ],
 
                 // Error Message
                 if (provider.hasError) ...[
@@ -505,8 +522,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Colors.amber,
                   () => _endSessionAndShowResults(),
                 ),
-                // Consent navigation - show if cloud config is provided
-                if (provider.sdkConfig?.cloudConfig != null) ...[
+                // Consent: only show when SDK is initialized (consent module is ready)
+                if (provider.isInitialized) ...[
                   const SizedBox(height: 12),
                   _buildNavigationCard(
                     context,
@@ -705,10 +722,301 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
               ],
             ),
+            if (provider.isInitialized) _buildCloudIngestionStatus(context, provider),
           ],
         ],
       ),
     );
+  }
+
+  Widget _buildCloudIngestionStatus(
+    BuildContext context,
+    SynheartProvider provider,
+  ) {
+    final hasCloudConfig = provider.sdkConfig?.cloudConfig != null;
+    final theme = Theme.of(context).textTheme;
+    final muted = theme.bodySmall?.copyWith(
+      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+    );
+    const topPadding = 12.0;
+
+    if (!hasCloudConfig) {
+      return Padding(
+        padding: const EdgeInsets.only(top: topPadding),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.cloud_off, size: 18, color: Colors.grey.shade600),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Cloud ingestion is off. Add CloudConfig when initializing the SDK to enable.',
+                style: muted,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final pending = provider.uploadQueueLength;
+    final lastBatchId = provider.lastUploadBatchId;
+    final lastAt = provider.lastUploadAt;
+    final lastError = provider.lastUploadError;
+    final lastAttemptAt = provider.lastUploadAttemptAt;
+
+    String lastIngestedText;
+    if (lastError != null) {
+      // Last attempt failed: show error (trim if very long)
+      final errShort = lastError.length > 120
+          ? '${lastError.substring(0, 117)}...'
+          : lastError;
+      lastIngestedText = 'Last attempt failed: $errShort';
+    } else if (lastAt != null) {
+      final time =
+          '${lastAt.hour.toString().padLeft(2, '0')}:${lastAt.minute.toString().padLeft(2, '0')}';
+      lastIngestedText = lastBatchId != null
+          ? 'Last ingested: $lastBatchId at $time'
+          : 'Last ingested at $time';
+    } else {
+      lastIngestedText = 'Last ingested: never';
+    }
+
+    final attemptTimeText = lastAttemptAt != null
+        ? 'Last attempt: ${lastAttemptAt.hour.toString().padLeft(2, '0')}:${lastAttemptAt.minute.toString().padLeft(2, '0')}'
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: topPadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Pending uploads: $pending', style: muted),
+          const SizedBox(height: 2),
+          Text(
+            lastIngestedText,
+            style: lastError != null
+                ? muted?.copyWith(color: Colors.red.shade700)
+                : muted,
+          ),
+          if (lastError != null && attemptTimeText != null) ...[
+            const SizedBox(height: 2),
+            Text(attemptTimeText, style: muted?.copyWith(color: Colors.red.shade700)),
+          ] else if (lastAt != null && attemptTimeText != null) ...[
+            const SizedBox(height: 2),
+            Text(attemptTimeText, style: muted),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMainSessionCard(
+    BuildContext context,
+    SynheartProvider provider,
+  ) {
+    final isRunning = provider.isSessionRunning;
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Data collection session',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            _buildRuntimeModeRow(context, provider),
+            const SizedBox(height: 12),
+            if (isRunning) ...[
+              Row(
+                children: [
+                  Icon(Icons.play_circle_filled,
+                      color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Session running',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Colors.green.shade700,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _formatElapsed(provider.sessionElapsedSec),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => provider.stopSession(),
+                  icon: const Icon(Icons.stop),
+                  label: const Text('Stop session'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    side: BorderSide(color: Colors.red.shade300),
+                  ),
+                ),
+              ),
+              _buildLiveAxesSection(context, provider),
+            ] else ...[
+              Text(
+                'Duration',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Theme.of(context)
+                          .colorScheme.onSurface
+                          .withOpacity(0.7),
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _mainSessionDurationChip(30, '30 sec'),
+                  _mainSessionDurationChip(60, '1 min'),
+                  _mainSessionDurationChip(300, '5 min'),
+                  _mainSessionDurationChip(1800, '30 min'),
+                  _mainSessionDurationChip(null, 'Until stopped'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => provider.startSession(
+                    durationSec: _mainSessionDurationSec,
+                  ),
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Start session'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRuntimeModeRow(
+    BuildContext context,
+    SynheartProvider provider,
+  ) {
+    final isBatch = provider.batchIngestOnStop;
+    return Row(
+      children: [
+        Text(
+          'Runtime mode',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withOpacity(0.7),
+              ),
+        ),
+        const SizedBox(width: 12),
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: true, label: Text('Batch'), icon: Icon(Icons.inventory_2_outlined)),
+            ButtonSegment(value: false, label: Text('Realtime'), icon: Icon(Icons.show_chart)),
+          ],
+          selected: {isBatch},
+          onSelectionChanged: (Set<bool> selected) {
+            final value = selected.first;
+            provider.setBatchIngestOnStop(value);
+          },
+          showSelectedIcon: false,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLiveAxesSection(BuildContext context, SynheartProvider provider) {
+    final axes = provider.latestLiveAxes;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Live state',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withOpacity(0.7),
+                ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              _liveAxisChip(context, 'Valence', axes?['valence']),
+              _liveAxisChip(context, 'Arousal', axes?['arousal']),
+              _liveAxisChip(context, 'Focus', axes?['focus']),
+              _liveAxisChip(context, 'Capacity', axes?['capacity']),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _liveAxisChip(BuildContext context, String label, double? value) {
+    final display = value != null ? value.toStringAsFixed(2) : '—';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label: ',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+                ),
+          ),
+          Text(
+            display,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mainSessionDurationChip(int? seconds, String label) {
+    final selected = _mainSessionDurationSec == seconds;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (v) {
+        if (v == true) setState(() => _mainSessionDurationSec = seconds);
+      },
+    );
+  }
+
+  /// Format elapsed seconds as MM:SS.
+  static String _formatElapsed(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   Widget _buildNavigationCard(

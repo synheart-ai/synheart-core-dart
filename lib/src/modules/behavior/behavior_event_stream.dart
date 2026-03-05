@@ -11,6 +11,11 @@ class BehaviorEventStream {
 
   Stream<BehaviorEvent> get events => _controller.stream;
 
+  /// Push any behavior event (used when forwarding from synheart_behavior etc.).
+  void addEvent(BehaviorEvent event) {
+    _controller.add(event);
+  }
+
   /// Record a tap event
   void recordTap(Offset position) {
     _controller.add(BehaviorEvent.tap(position));

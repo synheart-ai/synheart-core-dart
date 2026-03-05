@@ -49,17 +49,37 @@ class UploadRequest {
 
 @JsonSerializable()
 class UploadResponse {
-  final String status;
+  /// Present in 202 response (new API)
+  final bool? success;
+
+  @JsonKey(name: 'batch_id')
+  final String? batchId;
+
+  @JsonKey(name: 'snapshot_ids')
+  final List<String>? snapshotIds;
+
+  @JsonKey(name: 's3_keys')
+  final List<String>? s3Keys;
+
+  final String? message;
+
+  /// Legacy 200 response fields (kept for backward compatibility)
+  final String? status;
 
   @JsonKey(name: 'snapshot_id')
   final String? snapshotId;
 
-  final int timestamp;
+  final int? timestamp;
 
   UploadResponse({
-    required this.status,
+    this.success,
+    this.batchId,
+    this.snapshotIds,
+    this.s3Keys,
+    this.message,
+    this.status,
     this.snapshotId,
-    required this.timestamp,
+    this.timestamp,
   });
 
   factory UploadResponse.fromJson(Map<String, dynamic> json) =>
@@ -69,21 +89,49 @@ class UploadResponse {
 
 @JsonSerializable()
 class UploadErrorResponse {
-  final String status;
-  final String code;
-  final String message;
+  /// Nested error object (API returns { "error": { "code", "message", "details?" } })
+  final UploadErrorDetail? error;
+
+  /// Legacy top-level fields (for older API or when error is at root)
+  final String? status;
+  final String? code;
+  final String? message;
 
   @JsonKey(name: 'retry_after')
   final int? retryAfter; // For 429 responses
 
   UploadErrorResponse({
-    required this.status,
-    required this.code,
-    required this.message,
+    this.error,
+    this.status,
+    this.code,
+    this.message,
     this.retryAfter,
   });
+
+  /// Code from error object or top-level
+  String get errorCode => error?.code ?? code ?? 'unknown';
+
+  /// Message from error object or top-level
+  String get errorMessage => error?.message ?? message ?? 'Unknown error';
 
   factory UploadErrorResponse.fromJson(Map<String, dynamic> json) =>
       _$UploadErrorResponseFromJson(json);
   Map<String, dynamic> toJson() => _$UploadErrorResponseToJson(this);
+}
+
+@JsonSerializable()
+class UploadErrorDetail {
+  final String code;
+  final String message;
+  final String? details;
+
+  UploadErrorDetail({
+    required this.code,
+    required this.message,
+    this.details,
+  });
+
+  factory UploadErrorDetail.fromJson(Map<String, dynamic> json) =>
+      _$UploadErrorDetailFromJson(json);
+  Map<String, dynamic> toJson() => _$UploadErrorDetailToJson(this);
 }

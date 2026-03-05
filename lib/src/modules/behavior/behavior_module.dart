@@ -108,14 +108,14 @@ class BehaviorModule extends BaseSynheartModule
       (event) {
         // Check consent before adding event
         if (_consent.current().behavior) {
-          SynheartLogger.log(
-            '[BehaviorModule] Manual event received: ${event.type}',
-          );
+          // SynheartLogger.log(
+          //   '[BehaviorModule] Manual event received: ${event.type}',
+          // );
           _aggregator.addEvent(event);
         } else {
-          SynheartLogger.log(
-            '[BehaviorModule] Event ignored (behavior consent denied): ${event.type}',
-          );
+          // SynheartLogger.log(
+          //   '[BehaviorModule] Event ignored (behavior consent denied): ${event.type}',
+          // );
         }
       },
       onError: (e, st) => SynheartLogger.log(
@@ -130,24 +130,15 @@ class BehaviorModule extends BaseSynheartModule
       _synheartBehaviorSubscription = _synheartBehavior!.onEvent.listen(
         (event) {
           // Check consent before adding event
-          if (_consent.current().behavior) {
-            // Convert synheart_behavior event to internal BehaviorEvent
-            final behaviorEvent = _convertSynheartEvent(event);
-            if (behaviorEvent != null) {
-              SynheartLogger.log(
-                '[BehaviorModule] Auto event received: ${behaviorEvent.type}',
-              );
-              _aggregator.addEvent(behaviorEvent);
-            } else {
-              SynheartLogger.log(
-                '[BehaviorModule] Event conversion failed for: ${event.eventType}',
-              );
-            }
-          } else {
-            SynheartLogger.log(
-              '[BehaviorModule] Auto event ignored (behavior consent denied): ${event.eventType}',
-            );
+        if (_consent.current().behavior) {
+          // Convert synheart_behavior event to internal BehaviorEvent
+          final behaviorEvent = _convertSynheartEvent(event);
+          if (behaviorEvent != null) {
+            // Push to event stream so RuntimeModule and other listeners receive it
+            _eventStream.addEvent(behaviorEvent);
+            // Aggregator is updated by _eventSubscription (eventStream.events listener)
           }
+        }
         },
         onError: (e, st) => SynheartLogger.log(
           '[BehaviorModule] synheart_behavior event error: $e',

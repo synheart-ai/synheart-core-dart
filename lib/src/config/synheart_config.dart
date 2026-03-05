@@ -35,6 +35,11 @@ class SynheartConfig {
   /// When true, allows SDK to run with default capabilities and no signed token (debug only)
   final bool allowUnsignedCapabilities;
 
+  /// When true, the runtime buffers wear and behavior events during the session
+  /// and runs a single batch ingest (plus drain) when the session stops, instead of
+  /// streaming events and ticking every second. HSI is then only produced after stop.
+  final bool batchIngestOnStop;
+
   const SynheartConfig({
     this.enableCloudSync = false,
     this.enableSyniHooks = false,
@@ -48,6 +53,7 @@ class SynheartConfig {
     this.capabilityToken,
     this.capabilitySecret,
     this.allowUnsignedCapabilities = false,
+    this.batchIngestOnStop = false,
   });
 
   /// Create default configuration

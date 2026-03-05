@@ -23,6 +23,14 @@ class OnDemandScreen extends StatefulWidget {
 
 class _OnDemandScreenState extends State<OnDemandScreen> {
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SynheartProvider>().checkWatchStatus();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('On-Demand Collection'), elevation: 0),
@@ -60,6 +68,14 @@ class _OnDemandScreenState extends State<OnDemandScreen> {
                     ),
                   ],
                 ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Watch Session Section
+              _buildSection(
+                title: 'Watch Session',
+                child: _buildWatchSession(provider),
               ),
 
               const SizedBox(height: 24),
@@ -292,6 +308,352 @@ class _OnDemandScreenState extends State<OnDemandScreen> {
             ),
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _buildWatchSession(SynheartProvider provider) {
+    // Countdown overlay
+    if (provider.isCountingDown) {
+      return _buildCountdownView(provider);
+    }
+
+    // Active session
+    if (provider.isWatchSessionActive) {
+      return _buildActiveSessionView(provider);
+    }
+
+    // Summary card
+    if (provider.lastWatchSummary != null) {
+      return _buildSummaryView(provider);
+    }
+
+    // Configuration / start view
+    return _buildSessionConfigView(provider);
+  }
+
+  Widget _buildSessionConfigView(SynheartProvider provider) {
+    final status = provider.watchStatus;
+    final reachable = status?.reachable ?? false;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Watch status
+        Row(
+          children: [
+            Icon(
+              reachable ? Icons.watch : Icons.watch_off,
+              color: reachable ? Colors.green : Colors.grey,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              reachable ? 'Watch connected' : 'Watch not connected',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: reachable ? Colors.green : Colors.grey,
+              ),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => provider.checkWatchStatus(),
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Refresh'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Mode selector
+        Text('Mode', style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 8),
+        SegmentedButton<SessionMode>(
+          segments: const [
+            ButtonSegment(
+              value: SessionMode.focus,
+              label: Text('Focus'),
+              icon: Icon(Icons.center_focus_strong, size: 16),
+            ),
+            ButtonSegment(
+              value: SessionMode.breathing,
+              label: Text('Breathing'),
+              icon: Icon(Icons.air, size: 16),
+            ),
+          ],
+          selected: {provider.selectedSessionMode},
+          onSelectionChanged: (modes) {
+            provider.setSessionMode(modes.first);
+          },
+        ),
+        const SizedBox(height: 16),
+
+        // Duration selector
+        Text('Duration', style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _durationChip(provider, 30, '30 sec'),
+            _durationChip(provider, 60, '1 min'),
+            _durationChip(provider, 180, '3 min'),
+            _durationChip(provider, 300, '5 min'),
+            _durationChip(provider, 600, '10 min'),
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        // Start button
+        FilledButton.icon(
+          onPressed: () => provider.startWatchSessionWithCountdown(),
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('Start Session'),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _durationChip(SynheartProvider provider, int seconds, String label) {
+    final selected = provider.sessionDurationSec == seconds;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => provider.setSessionDuration(seconds),
+    );
+  }
+
+  Widget _buildCountdownView(SynheartProvider provider) {
+    return Column(
+      children: [
+        const SizedBox(height: 24),
+        Text(
+          '${provider.countdownSeconds}',
+          style: Theme.of(context).textTheme.displayLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Starting session...',
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+        const SizedBox(height: 24),
+        OutlinedButton(
+          onPressed: () => provider.cancelCountdown(),
+          child: const Text('Cancel'),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _buildActiveSessionView(SynheartProvider provider) {
+    final remaining = provider.sessionDurationSec - provider.watchElapsedSec;
+    final remainingMin = (remaining ~/ 60).toString().padLeft(2, '0');
+    final remainingSec = (remaining % 60).toString().padLeft(2, '0');
+    final stopping = provider.isWatchStopRequested;
+
+    return Column(
+      children: [
+        // Live HR display
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                Icons.favorite,
+                color: Theme.of(context).colorScheme.primary,
+                size: 32,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                provider.liveWatchHR != null
+                    ? '${provider.liveWatchHR!.toStringAsFixed(0)} BPM'
+                    : 'Waiting...',
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                stopping
+                    ? 'Stopping... waiting for watch'
+                    : '$remainingMin:$remainingSec remaining',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // HRV metrics row
+        Row(
+          children: [
+            Expanded(
+              child: _metricTile(
+                'RMSSD',
+                provider.liveWatchRMSSD != null
+                    ? '${provider.liveWatchRMSSD!.toStringAsFixed(1)} ms'
+                    : '--',
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _metricTile(
+                'SDNN',
+                provider.liveWatchSDNN != null
+                    ? '${provider.liveWatchSDNN!.toStringAsFixed(1)} ms'
+                    : '--',
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _metricTile(
+                'Frames',
+                '${provider.watchFrameCount}',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Stop button (disabled while stopping)
+        FilledButton.icon(
+          onPressed: stopping ? null : () => provider.stopWatchSession(),
+          icon: stopping ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.stop),
+          label: Text(stopping ? 'Stopping...' : 'Stop Session'),
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+            foregroundColor: Theme.of(context).colorScheme.onError,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            minimumSize: const Size(double.infinity, 0),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _metricTile(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryView(SynheartProvider provider) {
+    final summary = provider.lastWatchSummary!;
+    final metrics = summary.metrics;
+    final durationMin = summary.durationActualSec ~/ 60;
+    final durationSec = summary.durationActualSec % 60;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.tertiaryContainer,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                Icons.check_circle_outline,
+                color: Theme.of(context).colorScheme.tertiary,
+                size: 40,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Session Complete',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onTertiaryContainer,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Duration: ${durationMin}m ${durationSec}s',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onTertiaryContainer,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (metrics.isNotEmpty) ...[
+                ...metrics.entries
+                    .where((e) => e.value is num)
+                    .take(6)
+                    .map((e) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                e.key,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onTertiaryContainer,
+                                    ),
+                              ),
+                              Text(
+                                (e.value as num).toStringAsFixed(1),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onTertiaryContainer,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        )),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton(
+          onPressed: () => provider.clearWatchSummary(),
+          child: const Text('Dismiss'),
+        ),
       ],
     );
   }
