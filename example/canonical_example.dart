@@ -8,10 +8,8 @@ import 'package:synheart_core/synheart_core.dart';
 /// 1. Initialization with full module configuration
 /// 2. Consent management for all data types
 /// 3. HSI streaming (core state representation)
-/// 4. Activating optional features (Focus, Emotion)
-/// 5. Feature activation/deactivation
-/// 6. Error handling
-/// 7. Clean shutdown
+/// 4. Start session and preprocessed diagnostics
+/// 5. Error handling and clean shutdown
 ///
 /// For a minimal example, see example.dart.
 /// For a full Flutter app example, see lib/main.dart.
@@ -49,7 +47,7 @@ Future<void> main() async {
     print('[HSI] JSON: $hsiJson');
   });
 
-  // 5. Start session — data collection begins, activated features become operational
+  // 4. Start session — data collection begins, activated features become operational
   await Synheart.startSession();
   print('[Synheart] Session started');
   print('[Synheart] Active features: ${Synheart.activatedFeatures()}');
@@ -57,10 +55,10 @@ Future<void> main() async {
   // Run for 30 seconds as a demo
   await Future.delayed(Duration(seconds: 30));
 
-  // 6. Consent can be revoked mid-session — affected features stop automatically
+  // 5. Consent can be revoked mid-session — affected features stop automatically
   // await Synheart.revokeConsent('behavior');
 
-  // 7. Pre-processed data access (internal — R&D / training only)
+  // 6. Pre-processed data access (internal — R&D / training only)
   print('[Runtime] Internal diagnostics example:');
   final runtimeModule = Synheart.runtimeModule();
   if (runtimeModule != null) {
@@ -78,12 +76,12 @@ Future<void> main() async {
           'SRM ready count: ${window.srmContext.readyCount}/${window.srmContext.totalCount}',
         );
       } catch (e) {
-        print('  Error parsing pre-processed data: $e');
+        print('  Error parsing pre-processed data: $e'        );
       }
     }
   }
 
-  // 8. Clean shutdown
+  // 7. Clean shutdown
   await Synheart.stopSession();
   await Synheart.dispose();
   print('[Synheart] SDK disposed');

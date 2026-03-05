@@ -27,6 +27,10 @@ class WearModule extends BaseSynheartModule
   final List<StreamSubscription<WearSample>> _subscriptions = [];
   StreamSubscription<ConsentSnapshot>? _consentSubscription;
 
+  // True after onStart() has run at least once; used to avoid double _startDataCollection
+  // when consent stream emits during initial start, and to allow re-start when consent re-granted.
+  bool _dataCollectionStarted = false;
+
   // Stream controller for raw samples (broadcast for multiple subscribers)
   StreamController<WearSample>? _rawSampleController;
 
@@ -103,20 +107,20 @@ class WearModule extends BaseSynheartModule
 
   @override
   Future<void> onInitialize() async {
-    SynheartLogger.log('[WearModule] Initializing wear sources...');
+    // SynheartLogger.log('[WearModule] Initializing wear sources...');
 
     for (final source in _sources) {
       if (source.isAvailable) {
         try {
           await source.initialize();
-          SynheartLogger.log(
-            '[WearModule] Initialized ${source.sourceType.name} source',
-          );
+          // SynheartLogger.log(
+          //   '[WearModule] Initialized ${source.sourceType.name} source',
+          // );
         } catch (e) {
-          SynheartLogger.log(
-            '[WearModule] Failed to initialize ${source.sourceType.name}: $e',
-            error: e,
-          );
+          // SynheartLogger.log(
+          //   '[WearModule] Failed to initialize ${source.sourceType.name}: $e',
+          //   error: e,
+          // );
         }
       }
     }
@@ -124,15 +128,21 @@ class WearModule extends BaseSynheartModule
 
   @override
   Future<void> onStart() async {
-    SynheartLogger.log('[WearModule] Starting wear data collection...');
+    // SynheartLogger.log('[WearModule] Starting wear data collection...');
 
     // Check consent before starting - don't collect data if consent is denied
     if (!_consent.current().biosignals) {
-      SynheartLogger.log(
-        '[WearModule] Not starting data collection: biosignals consent denied',
-      );
+      // SynheartLogger.log(
+      //   '[WearModule] Not starting data collection: biosignals consent denied',
+      // );
       return;
     }
+
+    // Create raw sample stream controller *before* starting collection so that
+    // samples are forwarded to the runtime. Previously the controller was created
+    // lazily when the runtime subscribed (after Wear started), so early samples
+    // were only cached and never reached the runtime → frameCount stayed 0.
+    _rawSampleController ??= StreamController<WearSample>.broadcast();
 
     // Listen to consent changes to dynamically stop/start collection
     // Use asyncMap to properly handle async operations in the stream
@@ -141,15 +151,17 @@ class WearModule extends BaseSynheartModule
         .asyncMap((consent) async {
           if (!consent.biosignals) {
             // Consent revoked - stop data collection immediately
-            SynheartLogger.log(
-              '[WearModule] Biosignals consent revoked - stopping data collection',
-            );
+            // SynheartLogger.log(
+            //   '[WearModule] Biosignals consent revoked - stopping data collection',
+            // );
             await _stopDataCollection();
-          } else if (consent.biosignals && _subscriptions.isEmpty) {
-            // Consent granted - start data collection if not already started
-            SynheartLogger.log(
-              '[WearModule] Biosignals consent granted - starting data collection',
-            );
+          } else if (consent.biosignals &&
+              _subscriptions.isEmpty &&
+              _dataCollectionStarted) {
+            // Consent re-granted after revoke - start again (do not run during initial onStart)
+            // SynheartLogger.log(
+            //   '[WearModule] Biosignals consent granted - starting data collection',
+            // );
             await _startDataCollection();
           }
           return consent;
@@ -159,28 +171,29 @@ class WearModule extends BaseSynheartModule
             // Stream processed
           },
           onError: (error) {
-            SynheartLogger.log(
-              '[WearModule] Error in consent stream: $error',
-              error: error,
-            );
+            // SynheartLogger.log(
+            //   '[WearModule] Error in consent stream: $error',
+            //   error: error,
+            // );
           },
         );
 
     // Start data collection
     await _startDataCollection();
 
-    SynheartLogger.log(
-      '[WearModule] Started ${_subscriptions.length} wear sources',
-    );
+    _dataCollectionStarted = true;
+    // SynheartLogger.log(
+    //   '[WearModule] Started ${_subscriptions.length} wear sources',
+    // );
   }
 
   /// Start data collection from all sources
   Future<void> _startDataCollection() async {
     // Check consent again before starting
     if (!_consent.current().biosignals) {
-      SynheartLogger.log(
-        '[WearModule] Cannot start: biosignals consent denied',
-      );
+      // SynheartLogger.log(
+      //   '[WearModule] Cannot start: biosignals consent denied',
+      // );
       return;
     }
 
@@ -195,15 +208,15 @@ class WearModule extends BaseSynheartModule
           // This ensures we only start streaming when consent is granted
           if (source is SynheartWearSourceHandler) {
             source.startStreaming();
-            SynheartLogger.log(
-              '[WearModule] Started HR streaming for ${source.sourceType.name}',
-            );
+            // SynheartLogger.log(
+            //   '[WearModule] Started HR streaming for ${source.sourceType.name}',
+            // );
           }
         } catch (e) {
-          SynheartLogger.log(
-            '[WearModule] Failed to re-initialize ${source.sourceType.name}: $e',
-            error: e,
-          );
+          // SynheartLogger.log(
+          //   '[WearModule] Failed to re-initialize ${source.sourceType.name}: $e',
+          //   error: e,
+          // );
           // Continue with other sources even if one fails
         }
       }
@@ -216,9 +229,9 @@ class WearModule extends BaseSynheartModule
           (sample) {
             // Check consent before caching or streaming - don't process if consent is denied
             if (!_consent.current().biosignals) {
-              SynheartLogger.log(
-                '[WearModule] Sample ignored: biosignals consent denied',
-              );
+              // SynheartLogger.log(
+              //   '[WearModule] Sample ignored: biosignals consent denied',
+              // );
               return;
             }
             // Add to cache only if consent is granted
@@ -233,15 +246,12 @@ class WearModule extends BaseSynheartModule
             }
           },
           onError: (error) {
-            SynheartLogger.log(
-              '[WearModule] Error from ${source.sourceType.name}: $error',
-              error: error,
-            );
-            // Forward error to raw sample stream
-            if (_rawSampleController != null &&
-                !_rawSampleController!.isClosed) {
-              _rawSampleController!.addError(error);
-            }
+            // SynheartLogger.log(
+            //   '[WearModule] Error from ${source.sourceType.name}: $error',
+            //   error: error,
+            // );
+            // Do not forward to rawSampleStream to avoid unhandled exceptions
+            // (e.g. Health Connect PERMISSION_DENIED). Listeners still get samples.
           },
         );
 
@@ -264,10 +274,10 @@ class WearModule extends BaseSynheartModule
         try {
           await source.stop();
         } catch (e) {
-          SynheartLogger.log(
-            '[WearModule] Error stopping ${source.sourceType.name}: $e',
-            error: e,
-          );
+          // SynheartLogger.log(
+          //   '[WearModule] Error stopping ${source.sourceType.name}: $e',
+          //   error: e,
+          // );
         }
       }
     }
@@ -275,8 +285,9 @@ class WearModule extends BaseSynheartModule
 
   @override
   Future<void> onStop() async {
-    SynheartLogger.log('[WearModule] Stopping wear data collection...');
+    // SynheartLogger.log('[WearModule] Stopping wear data collection...');
 
+    _dataCollectionStarted = false;
     // Cancel consent subscription
     await _consentSubscription?.cancel();
     _consentSubscription = null;
@@ -288,7 +299,7 @@ class WearModule extends BaseSynheartModule
   /// Clear all cached data
   Future<void> clearCache() async {
     _cache.clear();
-    SynheartLogger.log('[WearModule] Cache cleared');
+    // SynheartLogger.log('[WearModule] Cache cleared');
   }
 
   /// Stream of raw wear samples
@@ -310,7 +321,7 @@ class WearModule extends BaseSynheartModule
 
   @override
   Future<void> onDispose() async {
-    SynheartLogger.log('[WearModule] Disposing wear module...');
+    // SynheartLogger.log('[WearModule] Disposing wear module...');
 
     // Close raw sample stream controller
     await _rawSampleController?.close();
@@ -321,10 +332,10 @@ class WearModule extends BaseSynheartModule
       try {
         await source.dispose();
       } catch (e) {
-        SynheartLogger.log(
-          '[WearModule] Error disposing ${source.sourceType.name}: $e',
-          error: e,
-        );
+        // SynheartLogger.log(
+        //   '[WearModule] Error disposing ${source.sourceType.name}: $e',
+        //   error: e,
+        // );
       }
     }
   }

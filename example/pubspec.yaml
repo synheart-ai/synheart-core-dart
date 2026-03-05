@@ -45,6 +45,9 @@ dependencies:
   # State management
   provider: ^6.1.1
 
+  # Persist runtime mode preference (batch vs realtime)
+  shared_preferences: ^2.2.2
+
   # Synheart behavior SDK (for behavior metrics)
   synheart_behavior: ^0.1.3
 

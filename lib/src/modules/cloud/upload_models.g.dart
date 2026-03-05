@@ -42,13 +42,27 @@ Map<String, dynamic> _$UploadRequestToJson(UploadRequest instance) =>
 
 UploadResponse _$UploadResponseFromJson(Map<String, dynamic> json) =>
     UploadResponse(
-      status: json['status'] as String,
+      success: json['success'] as bool?,
+      batchId: json['batch_id'] as String?,
+      snapshotIds: (json['snapshot_ids'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+      s3Keys: (json['s3_keys'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+      message: json['message'] as String?,
+      status: json['status'] as String?,
       snapshotId: json['snapshot_id'] as String?,
-      timestamp: (json['timestamp'] as num).toInt(),
+      timestamp: (json['timestamp'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$UploadResponseToJson(UploadResponse instance) =>
     <String, dynamic>{
+      'success': instance.success,
+      'batch_id': instance.batchId,
+      'snapshot_ids': instance.snapshotIds,
+      's3_keys': instance.s3Keys,
+      'message': instance.message,
       'status': instance.status,
       'snapshot_id': instance.snapshotId,
       'timestamp': instance.timestamp,
@@ -56,17 +70,38 @@ Map<String, dynamic> _$UploadResponseToJson(UploadResponse instance) =>
 
 UploadErrorResponse _$UploadErrorResponseFromJson(Map<String, dynamic> json) =>
     UploadErrorResponse(
-      status: json['status'] as String,
-      code: json['code'] as String,
-      message: json['message'] as String,
+      error: json['error'] == null
+          ? null
+          : UploadErrorDetail.fromJson(
+              json['error'] as Map<String, dynamic>,
+            ),
+      status: json['status'] as String?,
+      code: json['code'] as String?,
+      message: json['message'] as String?,
       retryAfter: (json['retry_after'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$UploadErrorResponseToJson(
   UploadErrorResponse instance,
-) => <String, dynamic>{
-  'status': instance.status,
-  'code': instance.code,
-  'message': instance.message,
-  'retry_after': instance.retryAfter,
-};
+) =>
+    <String, dynamic>{
+      'error': instance.error?.toJson(),
+      'status': instance.status,
+      'code': instance.code,
+      'message': instance.message,
+      'retry_after': instance.retryAfter,
+    };
+
+UploadErrorDetail _$UploadErrorDetailFromJson(Map<String, dynamic> json) =>
+    UploadErrorDetail(
+      code: json['code'] as String,
+      message: json['message'] as String,
+      details: json['details'] as String?,
+    );
+
+Map<String, dynamic> _$UploadErrorDetailToJson(UploadErrorDetail instance) =>
+    <String, dynamic>{
+      'code': instance.code,
+      'message': instance.message,
+      'details': instance.details,
+    };
