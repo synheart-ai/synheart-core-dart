@@ -292,8 +292,16 @@ class Synheart {
         sessionId: 'sess_${DateTime.now().millisecondsSinceEpoch}',
       );
       debugPrint('[Runtime in] config: ${runtimeConfig.toJson()}');
+      final bridge = RuntimeBridge.createIfAvailable(runtimeConfig);
+      if (bridge == null) {
+        SynheartLogger.log(
+          '[Synheart] WARNING: Native runtime (libsynheart_runtime.so) not loaded — '
+          'no HSI will be produced. Ensure .so files exist in example/android/app/src/main/jniLibs/<abi>/ '
+          'and do a clean build (flutter clean && flutter run).',
+        );
+      }
       _runtimeModule = RuntimeModule(
-        runtime: RuntimeBridge.createIfAvailable(runtimeConfig),
+        runtime: bridge,
         wearSampleStream: _wearModule!.rawSampleStream,
         behaviorEventStream: _behaviorModule!.eventStream.events,
         batchIngestOnStop: _config?.batchIngestOnStop ?? false,

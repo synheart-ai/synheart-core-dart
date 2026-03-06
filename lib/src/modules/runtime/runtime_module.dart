@@ -231,29 +231,38 @@ class RuntimeModule extends BaseSynheartModule {
 
     try {
       final result = jsonDecode(resultJson) as Map<String, dynamic>;
-      if (result['ok'] == true && result['hsi'] != null) {
+      final frames = result['frames'] as List<dynamic>?;
+      if (result['ok'] == true && frames != null && frames.isNotEmpty) {
+        for (final frame in frames) {
+          if (frame is Map<String, dynamic> && frame['hsi'] != null) {
+            final hsiJson = jsonEncode(frame['hsi']);
+            debugPrint('[Runtime] HSI (batch on stop, frame): $hsiJson');
+            SynheartLogger.log('[Runtime] HSI (batch on stop, frame): $hsiJson');
+            _hsiStream.add(hsiJson);
+          }
+        }
+      } else if (result['ok'] == true && result['hsi'] != null) {
+        // Legacy: single top-level hsi when frames not present
         final hsiJson = jsonEncode(result['hsi']);
         debugPrint('[Runtime] HSI (batch on stop): $hsiJson');
         SynheartLogger.log('[Runtime] HSI (batch on stop): $hsiJson');
         _hsiStream.add(hsiJson);
-      }
-
-      // Drain any additional completed windows (cap iterations to avoid infinite loop
-      // if native tick() keeps returning a frame when called repeatedly with same nowMs)
-      const int maxDrainIterations = 256;
-      int drainCount = 0;
-      while (drainCount < maxDrainIterations) {
-        final hsiJson = _runtime!.tick(nowMs);
-        if (hsiJson == null) break;
-        drainCount += 1;
-        debugPrint('[Runtime] HSI (batch drain): $hsiJson');
-        SynheartLogger.log('[Runtime] HSI (batch drain): $hsiJson');
-        _hsiStream.add(hsiJson);
-      }
-      if (drainCount >= maxDrainIterations) {
-        SynheartLogger.log(
-          '[RuntimeModule] Batch drain hit max iterations ($maxDrainIterations); stopping to avoid infinite loop.',
-        );
+        const int maxDrainIterations = 256;
+        int drainCount = 0;
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        while (drainCount < maxDrainIterations) {
+          final hsiJson = _runtime!.tick(nowMs);
+          if (hsiJson == null) break;
+          drainCount += 1;
+          debugPrint('[Runtime] HSI (batch drain): $hsiJson');
+          SynheartLogger.log('[Runtime] HSI (batch drain): $hsiJson');
+          _hsiStream.add(hsiJson);
+        }
+        if (drainCount >= maxDrainIterations) {
+          SynheartLogger.log(
+            '[RuntimeModule] Batch drain hit max iterations ($maxDrainIterations); stopping to avoid infinite loop.',
+          );
+        }
       }
     } catch (e) {
       SynheartLogger.log('[RuntimeModule] Batch result parse error: $e');
@@ -349,6 +358,79 @@ class RuntimeModule extends BaseSynheartModule {
         'bpm': sample.hr!,
       });
     }
+  }
+
+  /// Build batch JSON object for a behavior event (guide: event string + optional options).
+  Map<String, dynamic> _behaviorEventToBatchMap(int tsMs, BehaviorEvent event) {
+    String eventName;
+    Map<String, dynamic>? options;
+    switch (event.type) {
+      case BehaviorEventType.screenOn:
+        eventName = 'screen_on';
+        break;
+      case BehaviorEventType.screenOff:
+        eventName = 'screen_off';
+        break;
+      case BehaviorEventType.tap:
+      case BehaviorEventType.keyDown:
+      case BehaviorEventType.keyUp:
+        eventName = 'touch';
+        if (event.metadata != null && event.metadata!.isNotEmpty) {
+          options = {};
+          if (event.metadata!['x'] is num) options!['x'] = (event.metadata!['x'] as num).toDouble();
+          if (event.metadata!['y'] is num) options!['y'] = (event.metadata!['y'] as num).toDouble();
+        }
+        break;
+      case BehaviorEventType.appSwitch:
+        eventName = 'app_switch';
+        if (event.metadata != null && event.metadata!.isNotEmpty) {
+          options = {};
+          if (event.metadata!['from_app_id'] != null) options!['from_app_id'] = event.metadata!['from_app_id'];
+          if (event.metadata!['to_app_id'] != null) options!['to_app_id'] = event.metadata!['to_app_id'];
+        }
+        break;
+      case BehaviorEventType.notificationReceived:
+      case BehaviorEventType.notificationOpened:
+        eventName = 'notification';
+        if (event.metadata != null && event.metadata!.isNotEmpty) {
+          options = {};
+          if (event.metadata!['action'] != null) options!['action'] = event.metadata!['action'];
+          if (event.metadata!['source_app_id'] != null) options!['source_app_id'] = event.metadata!['source_app_id'];
+        }
+        break;
+      case BehaviorEventType.scroll:
+        eventName = 'scroll';
+        if (event.metadata != null && event.metadata!.isNotEmpty) {
+          options = {};
+          if (event.metadata!['delta'] is num) options!['delta'] = (event.metadata!['delta'] as num).toDouble();
+          if (event.metadata!['velocity'] != null) options!['velocity'] = event.metadata!['velocity'];
+          if (event.metadata!['direction'] != null) options!['direction'] = event.metadata!['direction'];
+          if (event.metadata!['direction_reversal'] != null) options!['direction_reversal'] = event.metadata!['direction_reversal'];
+        }
+        break;
+      case BehaviorEventType.swipe:
+        eventName = 'swipe';
+        if (event.metadata != null && event.metadata!.isNotEmpty) {
+          options = {};
+          if (event.metadata!['velocity'] is num) options!['velocity'] = (event.metadata!['velocity'] as num).toDouble();
+          if (event.metadata!['direction'] != null) options!['direction'] = event.metadata!['direction'];
+        }
+        break;
+      case BehaviorEventType.call:
+        eventName = 'call';
+        if (event.metadata != null && event.metadata!['action'] != null) {
+          options = {'action': event.metadata!['action']};
+        }
+        break;
+    }
+    final map = <String, dynamic>{
+      'type': 'behavior',
+      'ts_ms': tsMs,
+      'event': eventName,
+      if (options != null && options.isNotEmpty) 'options': options,
+      'provider': 'behavior_app',
+    };
+    return map;
   }
 
   /// Push aggregate overnight sleep data into the runtime.
@@ -451,12 +533,7 @@ class RuntimeModule extends BaseSynheartModule {
     }
 
     if (batchIngestOnStop) {
-      _batchEventBuffer.add({
-        'type': 'behavior',
-        'ts_ms': tsMs,
-        'event_type': eventType,
-        'value': value,
-      });
+      _batchEventBuffer.add(_behaviorEventToBatchMap(tsMs, event));
       return;
     }
 

@@ -107,8 +107,21 @@ class UploadClient {
           return UploadResponse.fromJson(body);
         }
 
-        // Parse error response (API may return { "error": { "code", "message", "details?" } })
-        final errorBody = jsonDecode(response.body) as Map<String, dynamic>;
+        // Parse error response (API may return JSON or plain text e.g. "404 page not found")
+        Map<String, dynamic>? errorBody;
+        try {
+          errorBody = jsonDecode(response.body) as Map<String, dynamic>?;
+        } catch (_) {
+          throw CloudConnectorException(
+            'Upload failed: ${response.statusCode} ${response.body}',
+          );
+        }
+        if (errorBody == null) {
+          throw CloudConnectorException(
+            'Upload failed: ${response.statusCode} ${response.body}',
+          );
+        }
+
         UploadErrorResponse error;
         try {
           error = UploadErrorResponse.fromJson(errorBody);

@@ -5,11 +5,22 @@
 /// via [CloudConfig] / [ConsentConfig].
 abstract final class ApiEndpoints {
   // ── Base URLs (defaults) ──────────────────────────────────────────
-  static const String defaultCloudBaseUrl = 'https://api.synheart.ai';
+  /// Production cloud ingest (HSI uploads). Per #Guidelines/API_INGESTION_GUIDE.md.
+  static const String defaultCloudBaseUrl = 'https://ingest.synheart.ai';
+
+  /// Dev/staging cloud ingest base URL. Per Guidelines, dev is localhost; override for remote dev.
+  static const String defaultCloudBaseUrlDev = 'http://localhost:8083';
+
+  /// Remote dev ingest (reachable from device when ingest.synheart.ai is not).
+  /// Use in example app so uploads don't fail with "host lookup"; may return 404 if v2 not deployed.
+  static const String defaultCloudBaseUrlRemoteDev =
+      'https://ingest-service-temp-dev.synheart.io';
+
   static const String defaultConsentBaseUrl = 'https://consent.synheart.ai';
 
   // ── Cloud Ingest ──────────────────────────────────────────────────
-  static const String ingestPath = '/v1/ingest/hsi';
+  /// HSI ingest path. Per #Guidelines/API_INGESTION_GUIDE.md (POST /v2/hsi/ingest).
+  static const String ingestPath = '/v2/hsi/ingest';
 
   // ── Platform Ingest ──────────────────────────────────────────────
   static const String defaultPlatformIngestBaseUrl =
