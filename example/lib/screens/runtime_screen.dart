@@ -396,7 +396,7 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
                   ),
                   child: SingleChildScrollView(
                     child: SelectableText(
-                      _labResultJson!,
+                      _formatLabResultJson(_labResultJson!),
                       style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
                     ),
                   ),
@@ -407,6 +407,16 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
         ),
       ),
     );
+  }
+
+  String _formatLabResultJson(String raw) {
+    try {
+      final parsed = jsonDecode(raw);
+      const encoder = JsonEncoder.withIndent('  ');
+      return encoder.convert(parsed);
+    } catch (_) {
+      return raw;
+    }
   }
 
   void _labStart() {
