@@ -54,6 +54,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _initializeBehaviorTracking();
+    // Auto-initialize SDK on app start if we have a saved userId (initialize once across restarts)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider = Provider.of<SynheartProvider>(context, listen: false);
+      provider.restoreAndInitializeIfNeeded();
+    });
   }
 
   @override

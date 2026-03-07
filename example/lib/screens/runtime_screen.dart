@@ -20,6 +20,16 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
   StreamSubscription<String>? _hsiSubscription;
   Timer? _refreshTimer;
 
+  /// Lab session state (per #Guidelines/flutter_guide.md Lab Sessions)
+  bool _labActive = false;
+  final List<String> _openWindowIds = [];
+  String? _labResultJson;
+  String _labOpenWindowType = 'phase';
+  final TextEditingController _labOpenLabelController = TextEditingController(text: 'baseline_rest');
+  final TextEditingController _labSetValuesController = TextEditingController(text: '{"score": 0}');
+  String? _labSelectedWindowId;
+  String? _labSetValuesWindowId;
+
   @override
   void initState() {
     super.initState();
@@ -39,6 +49,8 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
   void dispose() {
     _hsiSubscription?.cancel();
     _refreshTimer?.cancel();
+    _labOpenLabelController.dispose();
+    _labSetValuesController.dispose();
     super.dispose();
   }
 
@@ -74,6 +86,10 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
 
                 // Synthetic Signal Injection
                 _buildInjectionCard(context),
+                const SizedBox(height: 16),
+
+                // Lab Session (protocol / phase / trial windows)
+                _buildLabCard(context),
                 const SizedBox(height: 16),
 
                 // Live HSI JSON
@@ -209,6 +225,312 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildLabCard(BuildContext context) {
+    final isLabAvailable = Synheart.isLabAvailable;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isLabAvailable ? Icons.science : Icons.science_outlined,
+                  color: isLabAvailable ? Colors.purple : Colors.grey,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Lab Session',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_labActive)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text('Active', style: TextStyle(fontSize: 12, color: Colors.purple.shade800)),
+                  ),
+              ],
+            ),
+            if (!isLabAvailable) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Lab C API not available (native runtime may be built without lab feature).',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
+              ),
+            ] else ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (!_labActive)
+                    FilledButton(
+                      onPressed: _labStart,
+                      child: const Text('Start lab'),
+                    )
+                  else ...[
+                    FilledButton.tonal(
+                      onPressed: _labFinalize,
+                      child: const Text('Finalize lab'),
+                    ),
+                  ],
+                ],
+              ),
+              if (_labActive) ...[
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                Text('Open window', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 100,
+                      child: DropdownButtonFormField<String>(
+                        value: _labOpenWindowType,
+                        decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                        items: const [
+                          DropdownMenuItem(value: 'protocol', child: Text('protocol')),
+                          DropdownMenuItem(value: 'phase', child: Text('phase')),
+                          DropdownMenuItem(value: 'level', child: Text('level')),
+                          DropdownMenuItem(value: 'trial', child: Text('trial')),
+                        ],
+                        onChanged: (v) => setState(() => _labOpenWindowType = v ?? 'phase'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _labOpenLabelController,
+                        decoration: const InputDecoration(labelText: 'Label', isDense: true),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.tonal(
+                      onPressed: _labOpenWindow,
+                      child: const Text('Open'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text('Open windows: ${_openWindowIds.length}', style: Theme.of(context).textTheme.bodySmall),
+                if (_openWindowIds.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 180,
+                        child: DropdownButtonFormField<String>(
+                          value: _labSelectedWindowId ?? _openWindowIds.first,
+                          decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                          items: _openWindowIds.map((id) => DropdownMenuItem(value: id, child: Text(id.length > 20 ? '${id.substring(0, 20)}…' : id))).toList(),
+                          onChanged: (v) => setState(() => _labSelectedWindowId = v),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.tonal(
+                        onPressed: _labCloseWindow,
+                        child: const Text('Close window'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 180,
+                        child: DropdownButtonFormField<String>(
+                          value: _labSetValuesWindowId ?? _openWindowIds.first,
+                          decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                          items: _openWindowIds.map((id) => DropdownMenuItem(value: id, child: Text(id.length > 20 ? '${id.substring(0, 20)}…' : id))).toList(),
+                          onChanged: (v) => setState(() => _labSetValuesWindowId = v),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _labSetValuesController,
+                          decoration: const InputDecoration(labelText: 'Values JSON', isDense: true),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.tonal(
+                        onPressed: _labSetWindowValues,
+                        child: const Text('Set values'),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+              if (_labResultJson != null) ...[
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Last finalize result', style: Theme.of(context).textTheme.labelLarge),
+                    TextButton(
+                      onPressed: () => setState(() => _labResultJson = null),
+                      child: const Text('Clear'),
+                    ),
+                  ],
+                ),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 200),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      _formatLabResultJson(_labResultJson!),
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatLabResultJson(String raw) {
+    try {
+      final parsed = jsonDecode(raw);
+      const encoder = JsonEncoder.withIndent('  ');
+      return encoder.convert(parsed);
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  void _labStart() {
+    if (!Synheart.isLabAvailable) {
+      _showSnackBar('Lab not available');
+      return;
+    }
+    final provider = context.read<SynheartProvider>();
+    final userId = provider.userId ?? 'user_${DateTime.now().millisecondsSinceEpoch}';
+    final protocolJson = jsonEncode({
+      'namespace': 'synheart.pulse_focus',
+      'protocol_version': '1.0',
+      'protocol_id': 'pf_trial_01',
+      'parameters': {'difficulty': 'medium'},
+      'app_id': 'com.synheart.example',
+      'device_id': 'device_${userId}',
+      'user_id': userId,
+    });
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final err = Synheart.labStart(protocolJson, nowMs);
+    if (err != null) {
+      _showSnackBar('Lab start failed: $err');
+      return;
+    }
+    setState(() {
+      _labActive = true;
+      _openWindowIds.clear();
+      _labResultJson = null;
+      _labSelectedWindowId = null;
+      _labSetValuesWindowId = null;
+    });
+    _showSnackBar('Lab session started');
+  }
+
+  void _labOpenWindow() {
+    if (!_labActive || !Synheart.isLabAvailable) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final label = _labOpenLabelController.text.trim().isEmpty ? null : _labOpenLabelController.text.trim();
+    final windowId = Synheart.labOpenWindow(
+      windowType: _labOpenWindowType,
+      label: label,
+      startedAtMs: nowMs,
+    );
+    if (windowId == null) {
+      _showSnackBar('Failed to open window');
+      return;
+    }
+    setState(() {
+      _openWindowIds.add(windowId);
+      _labSelectedWindowId = windowId;
+      _labSetValuesWindowId = windowId;
+    });
+    _showSnackBar('Opened window: ${label ?? _labOpenWindowType}');
+  }
+
+  void _labCloseWindow() {
+    final id = _labSelectedWindowId ?? (_openWindowIds.isNotEmpty ? _openWindowIds.first : null);
+    if (id == null) {
+      _showSnackBar('No window selected');
+      return;
+    }
+    final endMs = DateTime.now().millisecondsSinceEpoch;
+    Synheart.labCloseWindow(id, endMs);
+    setState(() {
+      _openWindowIds.remove(id);
+      _labSelectedWindowId = _openWindowIds.isNotEmpty ? _openWindowIds.first : null;
+      _labSetValuesWindowId = _openWindowIds.isNotEmpty ? _openWindowIds.first : null;
+    });
+    _showSnackBar('Closed window');
+  }
+
+  void _labSetWindowValues() {
+    final id = _labSetValuesWindowId ?? (_openWindowIds.isNotEmpty ? _openWindowIds.first : null);
+    if (id == null) {
+      _showSnackBar('No window selected');
+      return;
+    }
+    final valuesStr = _labSetValuesController.text.trim();
+    if (valuesStr.isEmpty) {
+      _showSnackBar('Enter JSON values');
+      return;
+    }
+    try {
+      jsonDecode(valuesStr);
+    } catch (_) {
+      _showSnackBar('Invalid JSON');
+      return;
+    }
+    Synheart.labSetWindowValues(id, valuesStr);
+    _showSnackBar('Set window values');
+  }
+
+  void _labFinalize() {
+    if (!_labActive || !Synheart.isLabAvailable) return;
+    final endMs = DateTime.now().millisecondsSinceEpoch;
+    final payload = Synheart.labFinalize(endMs);
+    setState(() {
+      _labActive = false;
+      _openWindowIds.clear();
+      _labSelectedWindowId = null;
+      _labSetValuesWindowId = null;
+      _labResultJson = payload;
+    });
+    if (payload != null) {
+      try {
+        final parsed = jsonDecode(payload);
+        final windows = parsed['windows'] as List?;
+        _showSnackBar('Lab finalized: ${windows?.length ?? 0} windows');
+      } catch (_) {
+        _showSnackBar('Lab finalized');
+      }
+    } else {
+      _showSnackBar('Lab finalize returned null');
+    }
   }
 
   Widget _buildHsiLogCard(BuildContext context) {

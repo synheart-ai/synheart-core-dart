@@ -55,3 +55,5 @@ app.*.map.json
 .-flutter_guild.dart
 
 /#Guidelines/
+
+/example/android/app/src/main/jniLibs

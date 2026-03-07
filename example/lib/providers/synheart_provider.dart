@@ -39,6 +39,22 @@ class SynheartProvider extends ChangeNotifier {
   bool _batchIngestOnStop = false;
   static const _keyBatchIngestOnStop = 'synheart.batch_ingest_on_stop';
 
+  /// Persisted user id so we can auto-initialize on next app launch (initialize once).
+  static const _keyUserId = 'synheart.user_id';
+
+  /// Persisted consent API credentials (used when building ConsentConfig).
+  static const _keyConsentServiceUrl = 'synheart.consent_service_url';
+  static const _keyConsentAppId = 'synheart.consent_app_id';
+  static const _keyConsentAppApiKey = 'synheart.consent_app_api_key';
+  String? _savedConsentServiceUrl;
+  String? _savedConsentAppId;
+  String? _savedConsentAppApiKey;
+  static const _defaultConsentServiceUrl =
+      'https://consent-service-dev.synheart.io';
+  static const _defaultConsentAppId = 'app_synheart_and_LrmPLw';
+  static const _defaultConsentAppApiKey =
+      'synheart_sk_live_zoVujnU5NOvxqSJrTP7NIoM-rIS4rFKX-YgL3yuFK_8';
+
   // On-demand collection state
   List<WearSample> _recentWearSamples = [];
   List<BehaviorEvent> _recentBehaviorEvents = [];
@@ -109,6 +125,15 @@ class SynheartProvider extends ChangeNotifier {
 
   /// Whether runtime uses batch ingest on stop (true) or realtime (false). Persisted.
   bool get batchIngestOnStop => _batchIngestOnStop;
+
+  /// Saved consent service URL (from local storage). Empty if not set.
+  String get savedConsentServiceUrl => _savedConsentServiceUrl ?? '';
+
+  /// Saved consent app ID (from local storage). Empty if not set.
+  String get savedConsentAppId => _savedConsentAppId ?? '';
+
+  /// Saved consent app API key (from local storage). Empty if not set.
+  String get savedConsentAppApiKey => _savedConsentAppApiKey ?? '';
 
   /// Whether the main data-collection session is running (Session SDK + modules).
   bool get isSessionRunning =>
@@ -243,6 +268,22 @@ class SynheartProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _batchIngestOnStop = prefs.getBool(_keyBatchIngestOnStop) ?? false;
 
+      // Load persisted consent credentials (for display and for building config)
+      _savedConsentServiceUrl = prefs.getString(_keyConsentServiceUrl);
+      _savedConsentAppId = prefs.getString(_keyConsentAppId);
+      _savedConsentAppApiKey = prefs.getString(_keyConsentAppApiKey);
+
+      final consentServiceUrl =
+          _savedConsentServiceUrl?.trim().isNotEmpty == true
+              ? _savedConsentServiceUrl!.trim()
+              : _defaultConsentServiceUrl;
+      final consentAppId = _savedConsentAppId?.trim().isNotEmpty == true
+          ? _savedConsentAppId!.trim()
+          : _defaultConsentAppId;
+      final consentAppApiKey = _savedConsentAppApiKey?.trim().isNotEmpty == true
+          ? _savedConsentAppApiKey!.trim()
+          : _defaultConsentAppApiKey;
+
       // Create config with ConsentConfig and CloudConfig if not provided
       // NOTE: To use consent service features, you must provide your own appId and appApiKey.
       // See EXAMPLE_APP_SETUP.md for instructions on how to obtain these credentials.
@@ -254,24 +295,22 @@ class SynheartProvider extends ChangeNotifier {
             phoneConfig: PhoneConfig(),
             behaviorConfig: BehaviorConfig(),
             batchIngestOnStop: _batchIngestOnStop,
-            // TODO: Load from environment or .env file
             consentConfig: ConsentConfig(
-              appId: 'YOUR_APP_ID',
-              appApiKey: 'YOUR_APP_API_KEY',
+              consentServiceUrl: consentServiceUrl,
+              appId: consentAppId,
+              appApiKey: consentAppApiKey,
               platform: 'flutter',
               userId: userId,
               region: 'US',
             ),
-            // TODO: Load from environment or .env file
-            // Uses production default from ApiEndpoints.defaultCloudBaseUrl.
-            // Override with env var for dev/staging:
-            // baseUrl: const String.fromEnvironment('SYNHEART_CLOUD_URL',
-            //     defaultValue: ApiEndpoints.defaultCloudBaseUrl),
+            // Use remote-dev ingest so uploads reach a host that resolves from device.
+            // Switch to ApiEndpoints.defaultCloudBaseUrl when ingest.synheart.ai is reachable.
             cloudConfig: CloudConfig(
+              baseUrl: ApiEndpoints.defaultCloudBaseUrlRemoteDev,
               tenantId: 'YOUR_TENANT_ID',
               hmacSecret: 'YOUR_HMAC_SECRET',
               subjectId: userId,
-              instanceId: 'flutter-example-${userId ?? "unknown"}',
+              instanceId: 'flutter-example-$userId',
               apiKey: 'YOUR_API_KEY',
               orgId: 'YOUR_ORG_ID',
             ),
@@ -290,6 +329,9 @@ class SynheartProvider extends ChangeNotifier {
       _isInitialized = true;
       _isInitializing = false;
       _errorMessage = null;
+
+      // Persist userId so we can auto-initialize on next app launch (initialize once)
+      await prefs.setString(_keyUserId, userId);
 
       // Start listening to HSI updates
       _startHSIListening();
@@ -312,7 +354,18 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
-  /// Start listening to HSI updates
+  /// If a userId was previously saved, initializes the SDK automatically so the app
+  /// is ready without the user tapping "Initialize" again (initialize once across restarts).
+  /// Call once on app start (e.g. from HomeScreen.initState).
+  Future<void> restoreAndInitializeIfNeeded() async {
+    if (_isInitialized || _isInitializing) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final savedUserId = prefs.getString(_keyUserId);
+    if (savedUserId == null || savedUserId.trim().isEmpty) return;
+
+    await initialize(userId: savedUserId.trim());
+  }
   void _startHSIListening() {
     _hsiSubscription?.cancel();
     _hsiSubscription = Synheart.onHSIUpdate.listen((hsiJson) {
@@ -491,6 +544,40 @@ class SynheartProvider extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Load persisted consent credentials from local storage into memory.
+  /// Call from Settings screen so displayed values stay in sync.
+  Future<void> loadConsentCredentialsFromStorage() async {
+    final prefs = await SharedPreferences.getInstance();
+    _savedConsentServiceUrl = prefs.getString(_keyConsentServiceUrl);
+    _savedConsentAppId = prefs.getString(_keyConsentAppId);
+    _savedConsentAppApiKey = prefs.getString(_keyConsentAppApiKey);
+    notifyListeners();
+  }
+
+  /// Save consent API credentials to local storage.
+  /// Used on next SDK initialize. Empty strings clear the saved value (defaults will be used).
+  Future<void> saveConsentCredentials({
+    required String consentServiceUrl,
+    required String appId,
+    required String appApiKey,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _keyConsentServiceUrl,
+      consentServiceUrl.trim(),
+    );
+    await prefs.setString(_keyConsentAppId, appId.trim());
+    await prefs.setString(_keyConsentAppApiKey, appApiKey.trim());
+    _savedConsentServiceUrl = consentServiceUrl.trim().isEmpty
+        ? null
+        : consentServiceUrl.trim();
+    _savedConsentAppId =
+        appId.trim().isEmpty ? null : appId.trim();
+    _savedConsentAppApiKey =
+        appApiKey.trim().isEmpty ? null : appApiKey.trim();
+    notifyListeners();
   }
 
   /// Request consent with selected profile
