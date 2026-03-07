@@ -521,7 +521,10 @@ class Synheart {
     );
   }
 
-  @Deprecated('Use configure() instead')
+  /// Initialize the SDK with a user ID and optional configuration.
+  ///
+  /// This is the original entry point. For stricter validation
+  /// (e.g. requiring appId/subjectId), use [configure] instead.
   static Future<void> initialize({
     required String userId,
     SynheartConfig? config,

@@ -725,6 +725,85 @@ Synheart.onHSIUpdate.listen((hsiJson) {
 });
 ```
 
+## Local Development with `synheart local`
+
+For offline SDK development and testing, use the **Synheart CLI** local platform server. It replicates the cloud consent and ingest APIs locally, so you can develop without a network connection or production credentials.
+
+### Setup
+
+1. Install the [Synheart CLI](https://github.com/synheart-ai/synheart-cli):
+
+```bash
+git clone https://github.com/synheart-ai/synheart-cli
+cd synheart-cli
+make build && make install
+```
+
+2. Start the local platform:
+
+```bash
+synheart local
+```
+
+This starts an HTTP server on `localhost:8083` with mock consent profiles, token issuance, and ingest endpoints.
+
+### Connecting your app
+
+Point your Flutter app at the local server using `--dart-define`:
+
+```bash
+flutter run --dart-define=SYNHEART_ENV=local
+```
+
+Or specify a custom URL:
+
+```bash
+flutter run \
+  --dart-define=SYNHEART_ENV=local \
+  --dart-define=SYNHEART_LOCAL_URL=http://192.168.1.100:8083
+```
+
+### Available endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/apps/{id}/consent-profiles` | Fetch consent profiles |
+| `POST` | `/api/v1/sdk/consent-token` | Issue consent token |
+| `POST` | `/api/v1/sdk/consent-revoke` | Revoke consent |
+| `POST` | `/v1/ingest/hsi` | Ingest HSI snapshots |
+| `POST` | `/v1/platform/session/ingest` | Ingest session data |
+| `POST` | `/v1/platform/metadata/ingest` | Ingest metadata |
+| `GET` | `/status` | Server status and stats |
+
+### Default credentials
+
+- **API Key:** `mock-dev-api-key-2026`
+- **HMAC Secret:** `mock-dev-hmac-secret-2026`
+
+These match the defaults in `synheart local` so no extra configuration is needed during development.
+
+### Testing consent flow
+
+```dart
+// In local mode, consent profiles are served from data/profiles.json
+// 3 presets are included: Personal Wellness, Research (Full), Biosignals + Cloud
+
+final profiles = await Synheart.getAvailableConsentProfiles();
+// Returns the 3 preset profiles from the local server
+
+await Synheart.grantConsent(
+  biosignals: true,
+  behavior: true,
+  motion: true,
+  cloudUpload: true,
+  profileId: profiles.first.id,
+);
+```
+
+### Testing platform ingest
+
+Ingested payloads are persisted as JSON files in the local server's data directory (`{data-dir}/ingested/`), making it easy to inspect what your app is sending.
+
 ## 📚 Documentation
 
 For complete documentation, see the [main Synheart Core repository](https://github.com/synheart-ai/synheart-core):
