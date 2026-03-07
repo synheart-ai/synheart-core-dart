@@ -1,0 +1,73 @@
+import 'artifact_header.dart';
+
+class TombstoneData {
+  final String targetArtifactId;
+  final String reason;
+  final int deletedAtMs;
+
+  const TombstoneData({
+    required this.targetArtifactId,
+    required this.reason,
+    required this.deletedAtMs,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'target_artifact_id': targetArtifactId,
+        'reason': reason,
+        'deleted_at_ms': deletedAtMs,
+      };
+
+  factory TombstoneData.fromJson(Map<String, dynamic> json) => TombstoneData(
+        targetArtifactId: json['target_artifact_id'] as String,
+        reason: json['reason'] as String,
+        deletedAtMs: json['deleted_at_ms'] as int,
+      );
+}
+
+/// Propagates deletion across devices/apps.
+///
+/// See RFC-CORE-0006 Section 6.4.
+class TombstoneArtifact {
+  final ArtifactHeader header;
+  final TombstoneData tombstone;
+
+  TombstoneArtifact({
+    required this.header,
+    required this.tombstone,
+  });
+
+  factory TombstoneArtifact.create({
+    required String subjectId,
+    required String targetArtifactId,
+    required String reason,
+  }) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final header = ArtifactHeader(
+      type: 'tombstone',
+      subjectId: subjectId,
+      sessionId: null,
+      timeRange: TimeRange(startMs: now, endMs: now),
+      schema: const SchemaRef(name: 'tombstone', version: '1'),
+    );
+    return TombstoneArtifact(
+      header: header,
+      tombstone: TombstoneData(
+        targetArtifactId: targetArtifactId,
+        reason: reason,
+        deletedAtMs: now,
+      ),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        ...header.toJson(),
+        'tombstone': tombstone.toJson(),
+      };
+
+  factory TombstoneArtifact.fromJson(Map<String, dynamic> json) =>
+      TombstoneArtifact(
+        header: ArtifactHeader.fromJson(json),
+        tombstone:
+            TombstoneData.fromJson(json['tombstone'] as Map<String, dynamic>),
+      );
+}

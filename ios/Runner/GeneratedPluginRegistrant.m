@@ -48,6 +48,12 @@
 @import shared_preferences_foundation;
 #endif
 
+#if __has_include(<sqflite_darwin/SqflitePlugin.h>)
+#import <sqflite_darwin/SqflitePlugin.h>
+#else
+@import sqflite_darwin;
+#endif
+
 #if __has_include(<synheart_behavior/SynheartBehaviorPlugin.h>)
 #import <synheart_behavior/SynheartBehaviorPlugin.h>
 #else
@@ -82,6 +88,7 @@
   [HealthPlugin registerWithRegistrar:[registry registrarForPlugin:@"HealthPlugin"]];
   [PathProviderPlugin registerWithRegistrar:[registry registrarForPlugin:@"PathProviderPlugin"]];
   [SharedPreferencesPlugin registerWithRegistrar:[registry registrarForPlugin:@"SharedPreferencesPlugin"]];
+  [SqflitePlugin registerWithRegistrar:[registry registrarForPlugin:@"SqflitePlugin"]];
   [SynheartBehaviorPlugin registerWithRegistrar:[registry registrarForPlugin:@"SynheartBehaviorPlugin"]];
   [SynheartSessionPlugin registerWithRegistrar:[registry registrarForPlugin:@"SynheartSessionPlugin"]];
   [SynheartWearPlugin registerWithRegistrar:[registry registrarForPlugin:@"SynheartWearPlugin"]];

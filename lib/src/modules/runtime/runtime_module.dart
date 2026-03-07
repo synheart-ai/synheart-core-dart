@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:rxdart/rxdart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -151,31 +150,10 @@ class RuntimeModule extends BaseSynheartModule {
       final nowMs = DateTime.now().millisecondsSinceEpoch;
       final hsiJson = _runtime!.tick(nowMs);
       if (hsiJson != null) {
-        final fc = _runtime!.frameCount();
-        final q = _runtime!.lastQuality();
-        debugPrint('[Runtime] HSI frame #$fc (on stop)${q != null ? ' quality=$q' : ''}');
-        debugPrint('[Runtime] HSI JSON: $hsiJson');
         SynheartLogger.log('[Runtime] HSI (tick result, on stop): $hsiJson');
         _hsiStream.add(hsiJson);
       }
 
-      final fc = _runtime!.frameCount();
-      final q = _runtime!.lastQuality();
-      final errCode = _runtime!.lastErrorCode();
-      final diagJson = _runtime!.diagnosticsJson();
-      debugPrint(
-        '[Runtime] Stopping: frameCount=$fc lastQuality=$q lastErrorCode=$errCode'
-        '${fc == 0 ? " (no HSI produced, wearSamplesReceived=$_wearSampleCount)" : ""}',
-      );
-      if (diagJson != null) {
-        debugPrint('[Runtime] Diagnostics: $diagJson');
-      }
-      if (fc == 0) {
-        final preprocessed = _runtime!.lastPreprocessed();
-        if (preprocessed != null && preprocessed.isNotEmpty) {
-          debugPrint('[Runtime] Last preprocessed (input to Flux): $preprocessed');
-        }
-      }
     }
     SynheartLogger.log('[RuntimeModule] Stopping...');
 
@@ -236,7 +214,6 @@ class RuntimeModule extends BaseSynheartModule {
         for (final frame in frames) {
           if (frame is Map<String, dynamic> && frame['hsi'] != null) {
             final hsiJson = jsonEncode(frame['hsi']);
-            debugPrint('[Runtime] HSI (batch on stop, frame): $hsiJson');
             SynheartLogger.log('[Runtime] HSI (batch on stop, frame): $hsiJson');
             _hsiStream.add(hsiJson);
           }
@@ -244,7 +221,6 @@ class RuntimeModule extends BaseSynheartModule {
       } else if (result['ok'] == true && result['hsi'] != null) {
         // Legacy: single top-level hsi when frames not present
         final hsiJson = jsonEncode(result['hsi']);
-        debugPrint('[Runtime] HSI (batch on stop): $hsiJson');
         SynheartLogger.log('[Runtime] HSI (batch on stop): $hsiJson');
         _hsiStream.add(hsiJson);
         const int maxDrainIterations = 256;
@@ -254,7 +230,6 @@ class RuntimeModule extends BaseSynheartModule {
           final hsiJson = _runtime!.tick(nowMs);
           if (hsiJson == null) break;
           drainCount += 1;
-          debugPrint('[Runtime] HSI (batch drain): $hsiJson');
           SynheartLogger.log('[Runtime] HSI (batch drain): $hsiJson');
           _hsiStream.add(hsiJson);
         }
@@ -310,7 +285,6 @@ class RuntimeModule extends BaseSynheartModule {
       }
 
       for (final rr in rrs) {
-        debugPrint('[Runtime in] push_rr ts_ms=$rrTs rr_ms=$rr');
         _runtime!.pushRr(rrTs, rr);
         _lastPushedTsMs = rrTs;
         rrTs += rr.round();
@@ -327,7 +301,6 @@ class RuntimeModule extends BaseSynheartModule {
         if (_lastPushedTsMs != null && tsMs <= _lastPushedTsMs!) {
           tsMs = _lastPushedTsMs! + 1;
         }
-        debugPrint('[Runtime in] push_rr ts_ms=$tsMs rr_ms=$rrMs (from hr=${sample.hr})');
         _runtime!.pushRr(tsMs, rrMs);
       }
     }
@@ -363,7 +336,8 @@ class RuntimeModule extends BaseSynheartModule {
   /// Build batch JSON object for a behavior event (guide: event string + optional options).
   Map<String, dynamic> _behaviorEventToBatchMap(int tsMs, BehaviorEvent event) {
     String eventName;
-    Map<String, dynamic>? options;
+    final options = <String, dynamic>{};
+    final meta = event.metadata;
     switch (event.type) {
       case BehaviorEventType.screenOn:
         eventName = 'screen_on';
@@ -375,62 +349,56 @@ class RuntimeModule extends BaseSynheartModule {
       case BehaviorEventType.keyDown:
       case BehaviorEventType.keyUp:
         eventName = 'touch';
-        if (event.metadata != null && event.metadata!.isNotEmpty) {
-          options = {};
-          if (event.metadata!['x'] is num) options!['x'] = (event.metadata!['x'] as num).toDouble();
-          if (event.metadata!['y'] is num) options!['y'] = (event.metadata!['y'] as num).toDouble();
+        if (meta != null) {
+          if (meta['x'] is num) options['x'] = (meta['x'] as num).toDouble();
+          if (meta['y'] is num) options['y'] = (meta['y'] as num).toDouble();
         }
         break;
       case BehaviorEventType.appSwitch:
         eventName = 'app_switch';
-        if (event.metadata != null && event.metadata!.isNotEmpty) {
-          options = {};
-          if (event.metadata!['from_app_id'] != null) options!['from_app_id'] = event.metadata!['from_app_id'];
-          if (event.metadata!['to_app_id'] != null) options!['to_app_id'] = event.metadata!['to_app_id'];
+        if (meta != null) {
+          if (meta['from_app_id'] != null) options['from_app_id'] = meta['from_app_id'];
+          if (meta['to_app_id'] != null) options['to_app_id'] = meta['to_app_id'];
         }
         break;
       case BehaviorEventType.notificationReceived:
       case BehaviorEventType.notificationOpened:
         eventName = 'notification';
-        if (event.metadata != null && event.metadata!.isNotEmpty) {
-          options = {};
-          if (event.metadata!['action'] != null) options!['action'] = event.metadata!['action'];
-          if (event.metadata!['source_app_id'] != null) options!['source_app_id'] = event.metadata!['source_app_id'];
+        if (meta != null) {
+          if (meta['action'] != null) options['action'] = meta['action'];
+          if (meta['source_app_id'] != null) options['source_app_id'] = meta['source_app_id'];
         }
         break;
       case BehaviorEventType.scroll:
         eventName = 'scroll';
-        if (event.metadata != null && event.metadata!.isNotEmpty) {
-          options = {};
-          if (event.metadata!['delta'] is num) options!['delta'] = (event.metadata!['delta'] as num).toDouble();
-          if (event.metadata!['velocity'] != null) options!['velocity'] = event.metadata!['velocity'];
-          if (event.metadata!['direction'] != null) options!['direction'] = event.metadata!['direction'];
-          if (event.metadata!['direction_reversal'] != null) options!['direction_reversal'] = event.metadata!['direction_reversal'];
+        if (meta != null) {
+          if (meta['delta'] is num) options['delta'] = (meta['delta'] as num).toDouble();
+          if (meta['velocity'] != null) options['velocity'] = meta['velocity'];
+          if (meta['direction'] != null) options['direction'] = meta['direction'];
+          if (meta['direction_reversal'] != null) options['direction_reversal'] = meta['direction_reversal'];
         }
         break;
       case BehaviorEventType.swipe:
         eventName = 'swipe';
-        if (event.metadata != null && event.metadata!.isNotEmpty) {
-          options = {};
-          if (event.metadata!['velocity'] is num) options!['velocity'] = (event.metadata!['velocity'] as num).toDouble();
-          if (event.metadata!['direction'] != null) options!['direction'] = event.metadata!['direction'];
+        if (meta != null) {
+          if (meta['velocity'] is num) options['velocity'] = (meta['velocity'] as num).toDouble();
+          if (meta['direction'] != null) options['direction'] = meta['direction'];
         }
         break;
       case BehaviorEventType.call:
         eventName = 'call';
-        if (event.metadata != null && event.metadata!['action'] != null) {
-          options = {'action': event.metadata!['action']};
+        if (meta != null && meta['action'] != null) {
+          options['action'] = meta['action'];
         }
         break;
     }
-    final map = <String, dynamic>{
+    return <String, dynamic>{
       'type': 'behavior',
       'ts_ms': tsMs,
       'event': eventName,
-      if (options != null && options.isNotEmpty) 'options': options,
+      if (options.isNotEmpty) 'options': options,
       'provider': 'behavior_app',
     };
-    return map;
   }
 
   /// Push aggregate overnight sleep data into the runtime.
@@ -473,7 +441,6 @@ class RuntimeModule extends BaseSynheartModule {
       if (vendorRecoveryScore != null) 'vendor_recovery_score': vendorRecoveryScore,
       if (vendorStrainScore != null) 'vendor_strain_score': vendorStrainScore,
     };
-    debugPrint('[Runtime in] push_sleep_stages $payload');
     _runtime!.pushSleepStages(jsonEncode(payload));
   }
 
@@ -538,7 +505,6 @@ class RuntimeModule extends BaseSynheartModule {
     }
 
     _lastPushedTsMs = tsMs;
-    debugPrint('[Runtime in] push_behavior ts_ms=$tsMs event_type=$eventType value=$value');
     _runtime!.pushBehavior(tsMs, eventType, value);
 
     // Anchor window on first push of any type (matches Rust batch_ingest: t0 = min(ts_ms)).
@@ -557,25 +523,8 @@ class RuntimeModule extends BaseSynheartModule {
     _tickTimer = Timer.periodic(const Duration(seconds: intervalSec), (_) {
       final hsiJson = _runtime?.tick(DateTime.now().millisecondsSinceEpoch);
       if (hsiJson != null) {
-        final fc = _runtime.frameCount();
-        final q = _runtime.lastQuality();
-        debugPrint(
-          '[Runtime] HSI frame #$fc${q != null ? ' quality=$q' : ''}',
-        );
-        debugPrint('[Runtime] HSI JSON: $hsiJson');
         SynheartLogger.log('[Runtime] HSI (tick result): $hsiJson');
         _hsiStream.add(hsiJson);
-      } else {
-        final fc = _runtime!.frameCount();
-        if (fc == 0) {
-          debugPrint(
-            '[Runtime] tick: no HSI yet (window not completed, frameCount=0, wearSamplesReceived=$_wearSampleCount)',
-          );
-          final preprocessed = _runtime!.lastPreprocessed();
-          if (preprocessed != null && preprocessed.isNotEmpty) {
-            debugPrint('[Runtime] Last preprocessed (input to Flux): $preprocessed');
-          }
-        }
       }
     });
     SynheartLogger.log('[RuntimeModule] Tick timer started (after first push)');

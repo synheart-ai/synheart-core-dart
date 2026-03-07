@@ -21,7 +21,43 @@ export 'src/synheart.dart';
 export 'src/config/api_endpoints.dart';
 export 'src/config/synheart_config.dart';
 export 'src/config/synheart_feature.dart';
+export 'src/config/synheart_mode.dart';
+export 'src/config/synheart_errors.dart';
 export 'src/config/platform_ingest_config.dart';
+
+// Artifacts (RFC-CORE-0006 Tier A)
+export 'src/artifacts/artifact_id.dart';
+export 'src/artifacts/artifact_header.dart';
+export 'src/artifacts/hsi_window.dart';
+export 'src/artifacts/baseline_snapshot.dart';
+export 'src/artifacts/session_summary.dart';
+export 'src/artifacts/tombstone.dart';
+export 'src/artifacts/artifact_pipeline.dart';
+
+// Storage (RFC-CORE-0004)
+export 'src/storage/storage_manager.dart';
+export 'src/storage/storage_policy.dart';
+
+// Crypto (RFC-CORE-0004 Section 9, RFC-CORE-0005)
+export 'src/crypto/smk.dart';
+export 'src/crypto/artifact_crypto.dart';
+export 'src/crypto/urk.dart';
+
+// Auth (RFC-CORE-0008)
+export 'src/auth/auth_module.dart';
+export 'src/auth/token_storage.dart';
+
+// Sync (RFC-CORE-0005)
+export 'src/sync/artifact_envelope.dart';
+export 'src/sync/sync_module.dart';
+export 'src/sync/sync_engine.dart';
+
+// Session model
+export 'src/models/session_handle.dart';
+
+// Phase 2: Typed state and metrics
+export 'src/models/hsi_state.dart';
+export 'src/models/metric_event.dart';
 
 // Data Models
 export 'src/models/behavior.dart';
@@ -62,6 +98,7 @@ export 'src/modules/cloud/hmac_signer.dart';
 // Platform Ingest
 export 'src/modules/platform_ingest/platform_ingest_module.dart';
 export 'src/modules/platform_ingest/platform_ingest_client.dart';
+export 'src/modules/platform_ingest/platform_payload_builder.dart';
 
 // Runtime Bridge (FFI to synheart-runtime, includes SRM baseline access)
 export 'src/modules/runtime/runtime_bridge.dart';

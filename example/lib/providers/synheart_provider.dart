@@ -51,9 +51,12 @@ class SynheartProvider extends ChangeNotifier {
   String? _savedConsentAppApiKey;
   static const _defaultConsentServiceUrl =
       'https://consent-service-dev.synheart.io';
-  static const _defaultConsentAppId = 'app_synheart_and_LrmPLw';
-  static const _defaultConsentAppApiKey =
-      'synheart_sk_live_zoVujnU5NOvxqSJrTP7NIoM-rIS4rFKX-YgL3yuFK_8';
+  static const _defaultConsentAppId = const String.fromEnvironment(
+      'SYNHEART_CONSENT_APP_ID',
+      defaultValue: '');
+  static const _defaultConsentAppApiKey = const String.fromEnvironment(
+      'SYNHEART_CONSENT_APP_API_KEY',
+      defaultValue: '');
 
   // On-demand collection state
   List<WearSample> _recentWearSamples = [];
@@ -366,6 +369,7 @@ class SynheartProvider extends ChangeNotifier {
 
     await initialize(userId: savedUserId.trim());
   }
+
   void _startHSIListening() {
     _hsiSubscription?.cancel();
     _hsiSubscription = Synheart.onHSIUpdate.listen((hsiJson) {

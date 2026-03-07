@@ -359,5 +359,106 @@ void main() {
       expect(window.srmContext.totalCount, equals(14));
       expect(window.embeddings.signalEmbedding.dimension, equals(3));
     });
+
+    // -- Batch Ingest --
+
+    test('ingestBatch with RR events produces HSI frames', () {
+      if (bridge == null) {
+        markTestSkipped('Native runtime library not available');
+        return;
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final batch = <Map<String, dynamic>>[];
+
+      // Build batch of RR events spanning multiple windows
+      for (var i = 0; i < 30; i++) {
+        batch.add({'type': 'rr', 'ts_ms': now + i * 800, 'rr_ms': 800.0});
+      }
+      // Add HR events
+      for (var i = 0; i < 25; i++) {
+        batch.add({'type': 'hr', 'ts_ms': now + i * 1000, 'bpm': 72.0});
+      }
+
+      final batchJson = jsonEncode(batch);
+      final result = bridge!.ingestBatch(batchJson, now + 30000);
+
+      if (result == null) {
+        // ingestBatch FFI symbol may not be available in this build
+        markTestSkipped('ingestBatch not available in linked runtime');
+        return;
+      }
+
+      final parsed = jsonDecode(result) as Map<String, dynamic>;
+      expect(parsed['ok'], isTrue, reason: 'Batch ingest should succeed');
+
+      // Should have frames array or legacy hsi
+      final hasFrames = parsed.containsKey('frames') && (parsed['frames'] as List).isNotEmpty;
+      final hasHsi = parsed.containsKey('hsi');
+      expect(hasFrames || hasHsi, isTrue,
+          reason: 'Result should contain frames array or hsi object');
+    });
+
+    test('ingestBatch with behavior events produces HSI frames', () {
+      if (bridge == null) {
+        markTestSkipped('Native runtime library not available');
+        return;
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final batch = <Map<String, dynamic>>[];
+
+      // RR baseline
+      for (var i = 0; i < 30; i++) {
+        batch.add({'type': 'rr', 'ts_ms': now + i * 800, 'rr_ms': 800.0});
+      }
+      for (var i = 0; i < 25; i++) {
+        batch.add({'type': 'hr', 'ts_ms': now + i * 1000, 'bpm': 72.0});
+      }
+      // Behavior events
+      for (var i = 0; i < 10; i++) {
+        batch.add({
+          'type': 'behavior',
+          'ts_ms': now + i * 500,
+          'event': 'touch',
+          'provider': 'behavior_app',
+        });
+      }
+      batch.add({
+        'type': 'behavior',
+        'ts_ms': now + 5000,
+        'event': 'app_switch',
+        'provider': 'behavior_app',
+      });
+
+      final batchJson = jsonEncode(batch);
+      final result = bridge!.ingestBatch(batchJson, now + 30000);
+
+      if (result == null) {
+        markTestSkipped('ingestBatch not available in linked runtime');
+        return;
+      }
+
+      final parsed = jsonDecode(result) as Map<String, dynamic>;
+      expect(parsed['ok'], isTrue, reason: 'Batch ingest with behavior should succeed');
+    });
+
+    test('ingestBatch with empty array returns ok', () {
+      if (bridge == null) {
+        markTestSkipped('Native runtime library not available');
+        return;
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final result = bridge!.ingestBatch('[]', now);
+
+      if (result == null) {
+        markTestSkipped('ingestBatch not available in linked runtime');
+        return;
+      }
+
+      final parsed = jsonDecode(result) as Map<String, dynamic>;
+      expect(parsed['ok'], isTrue, reason: 'Empty batch should succeed');
+    });
   });
 }

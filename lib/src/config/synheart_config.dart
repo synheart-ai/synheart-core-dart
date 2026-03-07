@@ -2,9 +2,85 @@ import '../modules/capabilities/capability_token.dart';
 import '../modules/interfaces/auth_provider.dart';
 import 'api_endpoints.dart';
 import 'platform_ingest_config.dart';
+import 'synheart_mode.dart';
+import 'synheart_errors.dart';
+
+/// Storage sub-configuration (RFC-CORE-0004).
+class StorageConfig {
+  final bool enabled;
+  final int? retentionDays;
+
+  const StorageConfig({
+    this.enabled = true,
+    this.retentionDays,
+  });
+}
+
+/// Sync sub-configuration (RFC-CORE-0005, Phase 3).
+class SyncConfig {
+  final bool enabled;
+  final String baseUrl;
+
+  const SyncConfig({
+    this.enabled = false,
+    this.baseUrl = 'https://api.synheart.com',
+  });
+}
+
+/// Privacy sub-configuration (RFC-CORE-0003).
+class PrivacyConfig {
+  final bool allowResearch;
+
+  const PrivacyConfig({
+    this.allowResearch = false,
+  });
+}
 
 /// Configuration for Synheart Core SDK
 class SynheartConfig {
+  // ── RFC-CORE-0007 fields ───────────────────────────────────────────────
+
+  /// Developer-provided app identifier.
+  final String appId;
+
+  /// Stable user identity. Server-provisioned in Phase 3; developer-provided for now.
+  final String subjectId;
+
+  /// Operational mode (default: personal).
+  final SynheartMode mode;
+
+  /// App version string (used in session records).
+  final String appVersion;
+
+  /// Human-readable app name (used in platform metadata).
+  final String appName;
+
+  /// App category (e.g. "Game", "Health", "Productivity").
+  final String category;
+
+  /// Developer name or organization.
+  final String developer;
+
+  /// Additional app-level metadata for platform ingestion.
+  final Map<String, dynamic> additionalAppMetadata;
+
+  /// Device identifier (auto-generated if not provided).
+  final String deviceId;
+
+  /// Platform string (ios | android | desktop).
+  final String platform;
+
+  /// Storage configuration.
+  final StorageConfig storage;
+
+  /// Sync configuration (Phase 3).
+  final SyncConfig sync;
+
+  /// Privacy configuration.
+  final PrivacyConfig privacy;
+
+  // ── Legacy fields (backward-compatible) ────────────────────────────────
+
   /// Enable cloud sync (HSI snapshots only, no raw data)
   final bool enableCloudSync;
 
@@ -45,7 +121,20 @@ class SynheartConfig {
   /// streaming events and ticking every second. HSI is then only produced after stop.
   final bool batchIngestOnStop;
 
-  const SynheartConfig({
+  SynheartConfig({
+    this.appId = '',
+    this.subjectId = '',
+    this.mode = SynheartMode.personal,
+    this.appVersion = '0.0.0',
+    this.appName = '',
+    this.category = '',
+    this.developer = '',
+    this.additionalAppMetadata = const {},
+    this.deviceId = '',
+    this.platform = 'flutter',
+    this.storage = const StorageConfig(),
+    this.sync = const SyncConfig(),
+    this.privacy = const PrivacyConfig(),
     this.enableCloudSync = false,
     this.enableSyniHooks = false,
     this.updateInterval = const Duration(seconds: 30),
@@ -64,7 +153,26 @@ class SynheartConfig {
 
   /// Create default configuration
   factory SynheartConfig.defaults() {
-    return const SynheartConfig();
+    return SynheartConfig();
+  }
+
+  /// Validate config and throw [SynheartError] on violations.
+  void validate() {
+    if (mode == SynheartMode.research && !privacy.allowResearch) {
+      throw SynheartError.researchNotAllowed;
+    }
+    if (appId.isEmpty) {
+      throw const SynheartError(
+          'ERR_NOT_CONFIGURED', 'appId must not be empty');
+    }
+    if (subjectId.isEmpty) {
+      throw const SynheartError(
+          'ERR_NOT_CONFIGURED', 'subjectId must not be empty');
+    }
+    if (subjectId.contains('|')) {
+      throw const SynheartError(
+          'ERR_INVALID_MODE', 'subjectId must not contain pipe character');
+    }
   }
 }
 

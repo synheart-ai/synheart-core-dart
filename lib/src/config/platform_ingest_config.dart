@@ -20,11 +20,16 @@ class PlatformIngestConfig {
   /// Maximum retry attempts for failed requests.
   final int maxRetries;
 
+  /// When true, automatically build and ingest a session payload after
+  /// [Synheart.stopSession]. Defaults to false (manual ingestion).
+  final bool autoIngest;
+
   const PlatformIngestConfig({
     this.baseUrl = ApiEndpoints.defaultPlatformIngestBaseUrl,
     required this.apiKey,
     required this.hmacSecret,
     this.timeout = const Duration(seconds: 30),
     this.maxRetries = 3,
+    this.autoIngest = false,
   });
 }

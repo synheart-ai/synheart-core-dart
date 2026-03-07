@@ -5,31 +5,31 @@ import 'package:synheart_core/synheart_core.dart';
 /// Canonical example demonstrating the full Synheart Core SDK surface.
 ///
 /// This example covers:
-/// 1. Initialization with full module configuration
+/// 1. Configuration with SynheartConfig
 /// 2. Consent management for all data types
-/// 3. HSI streaming (core state representation)
+/// 3. Typed state streaming via onStateUpdate
 /// 4. Start session and preprocessed diagnostics
-/// 5. Error handling and clean shutdown
+/// 5. Sync API
+/// 6. Error handling and clean shutdown
 ///
-/// For a minimal example, see example.dart.
 /// For a full Flutter app example, see lib/main.dart.
 Future<void> main() async {
-  // 1. Initialize SDK with all modules enabled
+  // 1. Configure SDK with all modules enabled
   //    In production, replace allowUnsignedCapabilities with
   //    capabilityToken + capabilitySecret from your server.
   try {
-    await Synheart.initialize(
-      userId: 'example_user_123',
+    await Synheart.configure(
       config: SynheartConfig(
+        subjectId: 'example_user_123',
         allowUnsignedCapabilities: true,
         wearConfig: WearConfig(),
         phoneConfig: PhoneConfig(),
         behaviorConfig: BehaviorConfig(),
       ),
     );
-    print('[Synheart] SDK initialized');
+    print('[Synheart] SDK configured');
   } on StateError catch (e) {
-    print('[Synheart] Initialization failed: ${e.message}');
+    print('[Synheart] Configuration failed: ${e.message}');
     return;
   }
 
@@ -42,9 +42,9 @@ Future<void> main() async {
   );
   print('[Synheart] Consent granted for biosignals, behavior, phoneContext');
 
-  // 3. Subscribe to HSI updates (core state representation, raw HSI JSON)
-  Synheart.onHSIUpdate.listen((hsiJson) {
-    print('[HSI] JSON: $hsiJson');
+  // 3. Subscribe to typed state updates
+  Synheart.onStateUpdate.listen((state) {
+    print('[State] $state');
   });
 
   // 4. Start session — data collection begins, activated features become operational
@@ -55,10 +55,14 @@ Future<void> main() async {
   // Run for 30 seconds as a demo
   await Future.delayed(Duration(seconds: 30));
 
-  // 5. Consent can be revoked mid-session — affected features stop automatically
+  // 5. Sync data to cloud
+  final syncResult = await Synheart.syncNow();
+  print('[Synheart] Sync: pushed=${syncResult.pushed}, pulled=${syncResult.pulled}');
+
+  // 6. Consent can be revoked mid-session — affected features stop automatically
   // await Synheart.revokeConsent('behavior');
 
-  // 6. Pre-processed data access (internal — R&D / training only)
+  // 7. Pre-processed data access (internal — R&D / training only)
   print('[Runtime] Internal diagnostics example:');
   final runtimeModule = Synheart.runtimeModule();
   if (runtimeModule != null) {
@@ -81,7 +85,7 @@ Future<void> main() async {
     }
   }
 
-  // 7. Clean shutdown
+  // 8. Clean shutdown
   await Synheart.stopSession();
   await Synheart.dispose();
   print('[Synheart] SDK disposed');

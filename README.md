@@ -356,6 +356,83 @@ The SDK uses a hybrid architecture:
 
 See the [hsi_export_example.dart](example/hsi_export_example.dart) for a complete example.
 
+## Batch Ingest Mode
+
+By default, the runtime module streams wear and behavior data to the native engine in real-time, producing HSI frames as windows complete. **Batch ingest mode** buffers all events during a session and runs a single `ingestBatch` call on stop, producing all HSI frames at once.
+
+This is useful for:
+- Offline-first apps that collect data without connectivity
+- Background recording where real-time HSI isn't needed
+- Reducing CPU usage during active sessions
+
+### Configuration
+
+```dart
+final synheart = await Synheart.initialize(
+  config: SynheartConfig(
+    appId: 'your_app_id',
+    apiKey: 'your_api_key',
+    subjectId: 'sub_user_123',
+    batchIngestOnStop: true, // Enable batch mode
+  ),
+);
+```
+
+### Runtime Toggle
+
+Batch mode can be toggled between sessions:
+
+```dart
+synheart.setBatchIngestOnStop(true);  // Next session uses batch
+synheart.setBatchIngestOnStop(false); // Back to streaming
+```
+
+## Platform Ingestion
+
+The SDK can send structured session and metadata payloads to the Synheart platform API, independent of the HSI cloud connector.
+
+### Auto-Ingest
+
+Enable automatic ingestion when sessions end:
+
+```dart
+final synheart = await Synheart.initialize(
+  config: SynheartConfig(
+    appId: 'your_app_id',
+    apiKey: 'your_api_key',
+    subjectId: 'sub_user_123',
+    platformIngestConfig: PlatformIngestConfig(
+      apiKey: 'your_platform_api_key',
+      autoIngest: true,
+    ),
+  ),
+);
+```
+
+### Manual Ingestion
+
+```dart
+// Ingest current session data
+await synheart.ingestSession();
+
+// Ingest app/user metadata
+await synheart.ingestMetadata();
+```
+
+### Standalone Client
+
+For custom integrations, use `PlatformPayloadBuilder` and `PlatformIngestClient` directly:
+
+```dart
+final payload = PlatformPayloadBuilder.buildSession(
+  sessionId: 'sess_123',
+  // ... other params
+);
+
+final client = synheart.platformIngestClient;
+final response = await client?.ingestSession(payload);
+```
+
 ### Consent Management
 
 The SDK requires explicit user consent for data collection. **All data collection respects consent** - no data is collected or streamed without explicit user consent.
