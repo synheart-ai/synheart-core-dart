@@ -301,7 +301,6 @@ Closes #issue-number
 
 All modules should:
 - Extend `SynheartModule` base class
-- Implement required interfaces (`WearFeatureProvider`, etc.)
 - Handle consent checks
 - Respect capability levels
 - Provide proper error handling
@@ -310,7 +309,7 @@ All modules should:
 ### Module Structure
 
 ```dart
-class MyModule extends BaseSynheartModule implements MyFeatureProvider {
+class MyModule extends BaseSynheartModule {
   @override
   String get moduleId => 'my_module';
 
@@ -429,5 +428,5 @@ Your contributions make Synheart Core SDK better for everyone. Thank you for tak
 ---
 
 **Author:** Israel Goytom  
-**Last Updated:** 2026-02-21
+**Last Updated:** 2026-03-07
 

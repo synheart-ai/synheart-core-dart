@@ -1,6 +1,6 @@
 # Synheart Core SDK - Dart/Flutter
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
+[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
 [![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.32.0-blue.svg)](https://flutter.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
@@ -267,35 +267,6 @@ print('Tap Rate: ${results.tapRate}');
 print('Keystroke Rate: ${results.keystrokeRate}');
 print('Focus Hint: ${results.focusHint}');
 print('Interaction Intensity: ${results.interactionIntensity}');
-```
-
-#### On-Demand Feature Queries
-
-Query aggregated features for specific time windows without subscribing to streams:
-
-```dart
-// Get wear features for last 30 seconds
-final wearFeatures = await Synheart.getWearFeatures(WindowType.window30s);
-if (wearFeatures != null) {
-  print('Average HR: ${wearFeatures.hrAverage} BPM');
-  print('HRV RMSSD: ${wearFeatures.hrvRmssd} ms');
-  print('Motion Index: ${wearFeatures.motionIndex}');
-}
-
-// Get behavior features for last 5 minutes
-final behaviorFeatures = await Synheart.getBehaviorFeatures(WindowType.window5m);
-if (behaviorFeatures != null) {
-  print('Tap Rate: ${behaviorFeatures.tapRateNorm}');
-  print('Focus Hint: ${behaviorFeatures.focusHint}');
-  print('Distraction Score: ${behaviorFeatures.distractionScore}');
-}
-
-// Get phone features for last hour
-final phoneFeatures = await Synheart.getPhoneFeatures(WindowType.window1h);
-if (phoneFeatures != null) {
-  print('Motion Level: ${phoneFeatures.motionLevel}');
-  print('Screen On Ratio: ${phoneFeatures.screenOnRatio}');
-}
 ```
 
 #### Use Cases
@@ -567,9 +538,6 @@ try {
 | `activate(feature)` / `deactivate(feature)` | Enable/disable features (focus, emotion, cloud, etc.) |
 | `grantConsent(...)` | Grant consent for data types |
 | `revokeConsent()` / `revokeConsentType(type)` | Revoke consent |
-| `getWearFeatures(window)` | Query wear features on demand |
-| `getBehaviorFeatures(window)` | Query behavior features on demand |
-| `getPhoneFeatures(window)` | Query phone features on demand |
 | `dispose()` | Release all resources |
 
 ### Streams

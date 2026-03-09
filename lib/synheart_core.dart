@@ -35,7 +35,8 @@ export 'src/artifacts/tombstone.dart';
 export 'src/artifacts/artifact_pipeline.dart';
 
 // Storage (RFC-CORE-0004)
-export 'src/storage/storage_manager.dart';
+// SessionRecord is internal to StorageManager — not part of the public API.
+export 'src/storage/storage_manager.dart' hide SessionRecord;
 export 'src/storage/storage_policy.dart';
 
 // Crypto (RFC-CORE-0004 Section 9, RFC-CORE-0005)

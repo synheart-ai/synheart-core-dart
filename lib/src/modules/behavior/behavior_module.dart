@@ -16,7 +16,7 @@ import 'window_aggregator.dart';
 /// Captures user-device interaction patterns using synheart_behavior package.
 /// RFC-CORE-0007 compliant: no feature computation in Core.
 class BehaviorModule extends BaseSynheartModule
-    implements BehaviorFeatureProvider, RawBehaviorDataProvider {
+    implements RawBehaviorDataProvider {
   @override
   String get moduleId => 'behavior';
 
@@ -52,12 +52,6 @@ class BehaviorModule extends BaseSynheartModule
   /// ```
   sb.SynheartBehavior? get synheartBehavior => _synheartBehavior;
 
-  @override
-  BehaviorWindowFeatures? features(WindowType window) {
-    // Feature computation removed per RFC-CORE-0007.
-    // Features will be computed by synheart-runtime when wired.
-    return null;
-  }
 
   // MARK: - RawBehaviorDataProvider
 

@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:synheart_core/src/crypto/urk.dart';
 
 /// Golden vector tests for cross-platform key derivation consistency.

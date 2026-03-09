@@ -1,44 +1,37 @@
-import 'package:json_annotation/json_annotation.dart';
-
-part 'context.g.dart';
-
 /// Context information from adapters
-@JsonSerializable()
 class ContextState {
-  /// Conversation timing metrics
   final ConversationContext? conversation;
-
-  /// Device state information
   final DeviceStateContext? device;
-
-  /// User pattern information
   final UserPatternsContext? userPatterns;
 
-  ContextState({
-    this.conversation,
-    this.device,
-    this.userPatterns,
-  });
+  ContextState({this.conversation, this.device, this.userPatterns});
 
-  factory ContextState.fromJson(Map<String, dynamic> json) =>
-      _$ContextStateFromJson(json);
+  factory ContextState.fromJson(Map<String, dynamic> json) => ContextState(
+        conversation: json['conversation'] is Map
+            ? ConversationContext.fromJson(
+                json['conversation'] as Map<String, dynamic>)
+            : null,
+        device: json['device'] is Map
+            ? DeviceStateContext.fromJson(
+                json['device'] as Map<String, dynamic>)
+            : null,
+        userPatterns: json['userPatterns'] is Map
+            ? UserPatternsContext.fromJson(
+                json['userPatterns'] as Map<String, dynamic>)
+            : null,
+      );
 
-  Map<String, dynamic> toJson() => _$ContextStateToJson(this);
+  Map<String, dynamic> toJson() => {
+        if (conversation != null) 'conversation': conversation!.toJson(),
+        if (device != null) 'device': device!.toJson(),
+        if (userPatterns != null) 'userPatterns': userPatterns!.toJson(),
+      };
 }
 
-/// Conversation timing context
-@JsonSerializable()
 class ConversationContext {
-  /// Whether a conversation is currently active
   final bool isActive;
-
-  /// Average reply delay in seconds
   final double? avgReplyDelaySec;
-
-  /// Number of messages in conversation
   final int? messageCount;
-
-  /// Burstiness of conversation (0.0 - 1.0)
   final double? burstiness;
 
   ConversationContext({
@@ -49,27 +42,27 @@ class ConversationContext {
   });
 
   factory ConversationContext.fromJson(Map<String, dynamic> json) =>
-      _$ConversationContextFromJson(json);
+      ConversationContext(
+        isActive: json['isActive'] as bool? ?? false,
+        avgReplyDelaySec:
+            (json['avgReplyDelaySec'] as num?)?.toDouble(),
+        messageCount: json['messageCount'] as int?,
+        burstiness: (json['burstiness'] as num?)?.toDouble(),
+      );
 
-  Map<String, dynamic> toJson() => _$ConversationContextToJson(this);
+  Map<String, dynamic> toJson() => {
+        'isActive': isActive,
+        if (avgReplyDelaySec != null) 'avgReplyDelaySec': avgReplyDelaySec,
+        if (messageCount != null) 'messageCount': messageCount,
+        if (burstiness != null) 'burstiness': burstiness,
+      };
 }
 
-/// Device state context
-@JsonSerializable()
 class DeviceStateContext {
-  /// Whether screen is on
   final bool screenOn;
-
-  /// Whether device is charging
   final bool isCharging;
-
-  /// Battery level (0.0 - 1.0)
   final double? batteryLevel;
-
-  /// Network type (e.g., 'wifi', 'cellular')
   final String? networkType;
-
-  /// Focus mode (e.g., 'work', 'personal', 'none')
   final String? focusMode;
 
   DeviceStateContext({
@@ -81,24 +74,27 @@ class DeviceStateContext {
   });
 
   factory DeviceStateContext.fromJson(Map<String, dynamic> json) =>
-      _$DeviceStateContextFromJson(json);
+      DeviceStateContext(
+        screenOn: json['screenOn'] as bool? ?? true,
+        isCharging: json['isCharging'] as bool? ?? false,
+        batteryLevel: (json['batteryLevel'] as num?)?.toDouble(),
+        networkType: json['networkType'] as String?,
+        focusMode: json['focusMode'] as String?,
+      );
 
-  Map<String, dynamic> toJson() => _$DeviceStateContextToJson(this);
+  Map<String, dynamic> toJson() => {
+        'screenOn': screenOn,
+        'isCharging': isCharging,
+        if (batteryLevel != null) 'batteryLevel': batteryLevel,
+        if (networkType != null) 'networkType': networkType,
+        if (focusMode != null) 'focusMode': focusMode,
+      };
 }
 
-/// User patterns context
-@JsonSerializable()
 class UserPatternsContext {
-  /// Time of day in seconds since midnight
   final double timeOfDay;
-
-  /// Day of week (0-6, 0=Sunday)
   final int dayOfWeek;
-
-  /// Average session length in minutes
   final double? avgSessionMinutes;
-
-  /// Activity pattern (e.g., 'work', 'exercise', 'rest')
   final String? activityPattern;
 
   UserPatternsContext({
@@ -109,7 +105,18 @@ class UserPatternsContext {
   });
 
   factory UserPatternsContext.fromJson(Map<String, dynamic> json) =>
-      _$UserPatternsContextFromJson(json);
+      UserPatternsContext(
+        timeOfDay: (json['timeOfDay'] as num?)?.toDouble() ?? 0.0,
+        dayOfWeek: json['dayOfWeek'] as int? ?? 0,
+        avgSessionMinutes:
+            (json['avgSessionMinutes'] as num?)?.toDouble(),
+        activityPattern: json['activityPattern'] as String?,
+      );
 
-  Map<String, dynamic> toJson() => _$UserPatternsContextToJson(this);
+  Map<String, dynamic> toJson() => {
+        'timeOfDay': timeOfDay,
+        'dayOfWeek': dayOfWeek,
+        if (avgSessionMinutes != null) 'avgSessionMinutes': avgSessionMinutes,
+        if (activityPattern != null) 'activityPattern': activityPattern,
+      };
 }

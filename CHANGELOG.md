@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-03-07
+
+### Removed
+
+- **`configure()` method** — Merged into `initialize()`. Single entry point: `static Future<void> initialize({SynheartConfig? config, String? userId, bool autoStart = false})`.
+- **Feature provider interfaces** — Removed `WearFeatureProvider`, `PhoneFeatureProvider`, `BehaviorFeatureProvider`. Modules no longer implement these interfaces.
+- **On-demand feature query methods** — Removed `getWearFeatures()`, `getBehaviorFeatures()`, `getPhoneFeatures()` static methods. Feature computation lives in synheart-runtime.
+- **Legacy config fields** — Removed `enableCloudSync`, `enableSyniHooks`, `updateInterval`, `logLevel`, and `LogLevel` enum from `SynheartConfig`.
+- **Code generation dependencies** — Removed `json_annotation`, `json_serializable`, and `build_runner`. All models use manual `fromJson()`/`toJson()` now.
+- **Empty directories** — Removed unused `heads/` and `integrations/` directories.
+
+### Changed
+
+- **Documentation** — Updated README.md, ARCHITECTURE.md, CONTRIBUTING.md to reflect all removals. Removed stale code examples and references.
+
 ## [1.2.0] - 2026-02-23
 
 ### Removed
@@ -280,6 +295,9 @@ First stable release supporting HSI 1.x.
 
 
 
+[1.2.1]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v1.2.1
+[1.2.0]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v1.2.0
+[1.1.0]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v1.1.0
 [1.0.0]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v1.0.0
 [0.0.2]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v0.0.2
 [0.0.1]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v0.0.1

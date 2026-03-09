@@ -255,7 +255,6 @@ class SynheartProvider extends ChangeNotifier {
   /// Initialize SDK
   Future<void> initialize({
     required String userId,
-    String? appKey,
     SynheartConfig? config,
   }) async {
     if (_isInitialized || _isInitializing) {
@@ -323,7 +322,6 @@ class SynheartProvider extends ChangeNotifier {
 
       await Synheart.initialize(
         userId: userId,
-        appKey: appKey ?? 'mock_app_key',
         config: finalConfig,
         autoStart: false, // Don't start automatically for demo
       );
@@ -865,77 +863,18 @@ class SynheartProvider extends ChangeNotifier {
   }
 
   Future<void> queryWearFeatures() async {
-    final window = _selectedWindow ?? WindowType.window30s;
-    try {
-      final features = await Synheart.getWearFeatures(window);
-      if (features != null) {
-        _queriedFeatures = {
-          'hrAverage': features.hrAverage,
-          'hrMin': features.hrMin,
-          'hrMax': features.hrMax,
-          'hrvRmssd': features.hrvRmssd,
-          'hrvSdnn': features.hrvSdnn,
-          'pnn50': features.pnn50,
-          'meanRrMs': features.meanRrMs,
-          'motionIndex': features.motionIndex,
-          'respRate': features.respRate,
-        };
-      } else {
-        _queriedFeatures = {'error': 'No features available'};
-      }
+      _queriedFeatures = {'info': 'Feature queries removed — use RuntimeBridge'};
       notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to query wear features: $e';
-      notifyListeners();
-    }
   }
 
   Future<void> queryBehaviorFeatures() async {
-    final window = _selectedWindow ?? WindowType.window30s;
-    try {
-      final features = await Synheart.getBehaviorFeatures(window);
-      if (features != null) {
-        _queriedFeatures = {
-          'tapRateNorm': features.tapRateNorm,
-          'keystrokeRateNorm': features.keystrokeRateNorm,
-          'scrollVelocityNorm': features.scrollVelocityNorm,
-          'idleRatio': features.idleRatio,
-          'switchRateNorm': features.switchRateNorm,
-          'burstiness': features.burstiness,
-          'sessionFragmentation': features.sessionFragmentation,
-          'notificationLoad': features.notificationLoad,
-          'distractionScore': features.distractionScore,
-          'focusHint': features.focusHint,
-        };
-      } else {
-        _queriedFeatures = {'error': 'No features available'};
-      }
+      _queriedFeatures = {'info': 'Feature queries removed — use RuntimeBridge'};
       notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to query behavior features: $e';
-      notifyListeners();
-    }
   }
 
   Future<void> queryPhoneFeatures() async {
-    final window = _selectedWindow ?? WindowType.window30s;
-    try {
-      final features = await Synheart.getPhoneFeatures(window);
-      if (features != null) {
-        _queriedFeatures = {
-          'motionLevel': features.motionLevel,
-          'appSwitchRate': features.appSwitchRate,
-          'screenOnRatio': features.screenOnRatio,
-          'notificationRate': features.notificationRate,
-        };
-      } else {
-        _queriedFeatures = {'error': 'No features available'};
-      }
+      _queriedFeatures = {'info': 'Feature queries removed — use RuntimeBridge'};
       notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to query phone features: $e';
-      notifyListeners();
-    }
   }
 
   void clearWearSamples() {

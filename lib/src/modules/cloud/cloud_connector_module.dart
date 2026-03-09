@@ -236,7 +236,7 @@ class CloudConnectorModule extends BaseSynheartModule {
       _lastUploadAttemptAt = DateTime.now();
 
       SynheartLogger.log(
-        '[CloudConnector] Upload successful: ${response.batchId ?? response.message ?? response.status ?? "ok"}',
+        '[CloudConnector] Upload successful: ${response.batchId ?? response.message ?? "ok"}',
       );
     } catch (e) {
       // Handle token expiration - try to refresh

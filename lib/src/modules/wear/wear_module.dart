@@ -15,7 +15,7 @@ import 'synheart_wear_source_handler.dart';
 /// Collects and buffers raw biosignals from wearables.
 /// RFC-CORE-0007 compliant: no feature computation in Core.
 class WearModule extends BaseSynheartModule
-    implements WearFeatureProvider, RawWearDataProvider {
+    implements RawWearDataProvider {
   @override
   String get moduleId => 'wear';
 
@@ -89,13 +89,6 @@ class WearModule extends BaseSynheartModule
         await source.updateCollectionInterval(interval);
       }
     }
-  }
-
-  @override
-  WearWindowFeatures? features(WindowType window) {
-    // Feature computation removed per RFC-CORE-0007.
-    // Features will be computed by synheart-runtime when wired.
-    return null;
   }
 
   // MARK: - RawWearDataProvider

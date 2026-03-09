@@ -156,7 +156,7 @@ void main() {
           );
         }
         return http.Response(
-          jsonEncode({'status': 'success', 'timestamp': 1704067200}),
+          jsonEncode({'success': true}),
           200,
           headers: {'content-type': 'application/json'},
         );
@@ -176,7 +176,7 @@ void main() {
 
       expect(authProvider.onAuthErrorCalled, isTrue);
       expect(requestCount, equals(2));
-      expect(response.status, equals('success'));
+      expect(response.success, isTrue);
     });
 
     test('401 throws if onAuthError returns false', () async {

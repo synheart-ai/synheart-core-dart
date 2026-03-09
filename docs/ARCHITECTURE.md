@@ -1,7 +1,7 @@
 # Synheart Core SDK - Architecture Guide
 
 **Last Updated**: February 2026
-**Version**: 1.2.0
+**Version**: 1.2.1
 
 ---
 
@@ -475,14 +475,13 @@ Example: WEAR feature
 ### Initialize SDK
 
 ```dart
-final synheart = Synheart();
-
-await synheart.initialize(
+await Synheart.initialize(
   userId: 'user_123',
   config: SynheartConfig(
-    enableWear: true,
-    enablePhone: true,
-    enableBehavior: true,
+    allowUnsignedCapabilities: true,  // Use capabilityToken + capabilitySecret in production
+    wearConfig: WearConfig(),
+    phoneConfig: PhoneConfig(),
+    behaviorConfig: BehaviorConfig(),
     cloudConfig: CloudConfig(
       tenantId: 'your_tenant',
       hmacSecret: 'your_secret',
@@ -495,10 +494,10 @@ await synheart.initialize(
 ### Start Session
 
 ```dart
-await synheart.startSession();
+await Synheart.startSession();
 
 // Listen for HSI updates (primary output)
-synheart.onHSIUpdate.listen((hsiJson) {
+Synheart.onHSIUpdate.listen((hsiJson) {
   print('New HSI: $hsiJson');
 });
 ```
@@ -507,18 +506,18 @@ synheart.onHSIUpdate.listen((hsiJson) {
 
 ```dart
 // Get last quality metrics
-final quality = synheart.lastQuality();
+final quality = Synheart.lastQuality();
 print('Overall confidence: ${quality.overallConfidence}');
 
 // Get raw HSV (internal diagnostics only)
-final hsvJson = synheart.lastHsv();
+final hsvJson = Synheart.lastHsv();
 // Parse and use for internal diagnostics
 ```
 
 ### Stop Session
 
 ```dart
-await synheart.stopSession();
+await Synheart.stopSession();
 // SRM baselines persisted automatically
 ```
 

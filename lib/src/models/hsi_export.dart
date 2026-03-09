@@ -1,50 +1,19 @@
-import 'package:json_annotation/json_annotation.dart';
-
-part 'hsi_export.g.dart';
-
 /// HSI 1.1 Canonical Payload
 ///
 /// HSI (Human State Interface) 1.1 is the canonical JSON format for external
 /// interoperability across systems and platforms.
 ///
-/// This is distinct from HSV (Human State Vector), which is the internal
-/// Dart representation optimized for on-device processing.
-///
 /// See: https://github.com/synheart-ai/hsi/schema/hsi-1.1.schema.json
-@JsonSerializable(explicitToJson: true)
 class HSI11Payload {
-  /// HSI version (always "1.1")
-  @JsonKey(name: 'hsi_version')
   final String hsiVersion;
-
-  /// Event-time: when the human state was observed
-  @JsonKey(name: 'observed_at_utc')
   final String observedAtUtc;
-
-  /// Processing-time: when this payload was produced
-  @JsonKey(name: 'computed_at_utc')
   final String computedAtUtc;
-
-  /// Producer identity
   final HSI11Producer producer;
-
-  /// Window identifiers
-  @JsonKey(name: 'window_ids')
   final List<String> windowIds;
-
-  /// Window definitions
   final Map<String, HSI11Window> windows;
-
-  /// Axis readings (optional)
   final HSI11Axes? axes;
-
-  /// Embeddings (optional)
   final List<HSI11Embedding>? embeddings;
-
-  /// Privacy assertions
   final HSI11Privacy privacy;
-
-  /// Additional metadata (optional)
   final Map<String, dynamic>? meta;
 
   HSI11Payload({
@@ -60,19 +29,48 @@ class HSI11Payload {
     this.meta,
   });
 
-  factory HSI11Payload.fromJson(Map<String, dynamic> json) =>
-      _$HSI11PayloadFromJson(json);
+  factory HSI11Payload.fromJson(Map<String, dynamic> json) => HSI11Payload(
+        hsiVersion: json['hsi_version'] as String,
+        observedAtUtc: json['observed_at_utc'] as String,
+        computedAtUtc: json['computed_at_utc'] as String,
+        producer:
+            HSI11Producer.fromJson(json['producer'] as Map<String, dynamic>),
+        windowIds:
+            (json['window_ids'] as List<dynamic>).cast<String>(),
+        windows: (json['windows'] as Map<String, dynamic>).map(
+          (k, v) =>
+              MapEntry(k, HSI11Window.fromJson(v as Map<String, dynamic>)),
+        ),
+        axes: json['axes'] is Map
+            ? HSI11Axes.fromJson(json['axes'] as Map<String, dynamic>)
+            : null,
+        embeddings: (json['embeddings'] as List<dynamic>?)
+            ?.map(
+                (e) => HSI11Embedding.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        privacy:
+            HSI11Privacy.fromJson(json['privacy'] as Map<String, dynamic>),
+        meta: json['meta'] as Map<String, dynamic>?,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI11PayloadToJson(this);
+  Map<String, dynamic> toJson() => {
+        'hsi_version': hsiVersion,
+        'observed_at_utc': observedAtUtc,
+        'computed_at_utc': computedAtUtc,
+        'producer': producer.toJson(),
+        'window_ids': windowIds,
+        'windows': windows.map((k, v) => MapEntry(k, v.toJson())),
+        if (axes != null) 'axes': axes!.toJson(),
+        if (embeddings != null)
+          'embeddings': embeddings!.map((e) => e.toJson()).toList(),
+        'privacy': privacy.toJson(),
+        if (meta != null) 'meta': meta,
+      };
 }
 
-/// Producer metadata
-@JsonSerializable()
 class HSI11Producer {
   final String name;
   final String version;
-
-  @JsonKey(name: 'instance_id')
   final String instanceId;
 
   HSI11Producer({
@@ -81,14 +79,19 @@ class HSI11Producer {
     required this.instanceId,
   });
 
-  factory HSI11Producer.fromJson(Map<String, dynamic> json) =>
-      _$HSI11ProducerFromJson(json);
+  factory HSI11Producer.fromJson(Map<String, dynamic> json) => HSI11Producer(
+        name: json['name'] as String,
+        version: json['version'] as String,
+        instanceId: json['instance_id'] as String,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI11ProducerToJson(this);
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'version': version,
+        'instance_id': instanceId,
+      };
 }
 
-/// Time window definition
-@JsonSerializable()
 class HSI11Window {
   final String start;
   final String end;
@@ -96,14 +99,19 @@ class HSI11Window {
 
   HSI11Window({required this.start, required this.end, this.label});
 
-  factory HSI11Window.fromJson(Map<String, dynamic> json) =>
-      _$HSI11WindowFromJson(json);
+  factory HSI11Window.fromJson(Map<String, dynamic> json) => HSI11Window(
+        start: json['start'] as String,
+        end: json['end'] as String,
+        label: json['label'] as String?,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI11WindowToJson(this);
+  Map<String, dynamic> toJson() => {
+        'start': start,
+        'end': end,
+        if (label != null) 'label': label,
+      };
 }
 
-/// Axes container
-@JsonSerializable(explicitToJson: true)
 class HSI11Axes {
   final HSI11Domain? physiological;
   final HSI11Domain? engagement;
@@ -112,35 +120,52 @@ class HSI11Axes {
 
   HSI11Axes({this.physiological, this.engagement, this.behavior, this.context});
 
-  factory HSI11Axes.fromJson(Map<String, dynamic> json) =>
-      _$HSI11AxesFromJson(json);
+  factory HSI11Axes.fromJson(Map<String, dynamic> json) => HSI11Axes(
+        physiological: json['physiological'] is Map
+            ? HSI11Domain.fromJson(
+                json['physiological'] as Map<String, dynamic>)
+            : null,
+        engagement: json['engagement'] is Map
+            ? HSI11Domain.fromJson(
+                json['engagement'] as Map<String, dynamic>)
+            : null,
+        behavior: json['behavior'] is Map
+            ? HSI11Domain.fromJson(json['behavior'] as Map<String, dynamic>)
+            : null,
+        context: json['context'] is Map
+            ? HSI11Domain.fromJson(json['context'] as Map<String, dynamic>)
+            : null,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI11AxesToJson(this);
+  Map<String, dynamic> toJson() => {
+        if (physiological != null) 'physiological': physiological!.toJson(),
+        if (engagement != null) 'engagement': engagement!.toJson(),
+        if (behavior != null) 'behavior': behavior!.toJson(),
+        if (context != null) 'context': context!.toJson(),
+      };
 }
 
-/// Domain containing axis readings
-@JsonSerializable(explicitToJson: true)
 class HSI11Domain {
   final List<HSI11Reading> readings;
 
   HSI11Domain({required this.readings});
 
-  factory HSI11Domain.fromJson(Map<String, dynamic> json) =>
-      _$HSI11DomainFromJson(json);
+  factory HSI11Domain.fromJson(Map<String, dynamic> json) => HSI11Domain(
+        readings: (json['readings'] as List<dynamic>)
+            .map((e) => HSI11Reading.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
 
-  Map<String, dynamic> toJson() => _$HSI11DomainToJson(this);
+  Map<String, dynamic> toJson() => {
+        'readings': readings.map((e) => e.toJson()).toList(),
+      };
 }
 
-/// Individual axis reading
-@JsonSerializable()
 class HSI11Reading {
   final String axis;
   final double score;
   final double confidence;
-
-  @JsonKey(name: 'window_id')
   final String windowId;
-
   final String? direction;
   final String? notes;
 
@@ -153,26 +178,32 @@ class HSI11Reading {
     this.notes,
   });
 
-  factory HSI11Reading.fromJson(Map<String, dynamic> json) =>
-      _$HSI11ReadingFromJson(json);
+  factory HSI11Reading.fromJson(Map<String, dynamic> json) => HSI11Reading(
+        axis: json['axis'] as String,
+        score: (json['score'] as num).toDouble(),
+        confidence: (json['confidence'] as num).toDouble(),
+        windowId: json['window_id'] as String,
+        direction: json['direction'] as String?,
+        notes: json['notes'] as String?,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI11ReadingToJson(this);
+  Map<String, dynamic> toJson() => {
+        'axis': axis,
+        'score': score,
+        'confidence': confidence,
+        'window_id': windowId,
+        if (direction != null) 'direction': direction,
+        if (notes != null) 'notes': notes,
+      };
 }
 
-/// Embedding vector
-@JsonSerializable()
 class HSI11Embedding {
   final List<double> vector;
   final int dimension;
   final String encoding;
   final double confidence;
-
-  @JsonKey(name: 'window_id')
   final String windowId;
-
-  @JsonKey(name: 'vector_hash')
   final String? vectorHash;
-
   final String? model;
   final String? notes;
 
@@ -188,28 +219,37 @@ class HSI11Embedding {
   });
 
   factory HSI11Embedding.fromJson(Map<String, dynamic> json) =>
-      _$HSI11EmbeddingFromJson(json);
+      HSI11Embedding(
+        vector: (json['vector'] as List<dynamic>)
+            .map((e) => (e as num).toDouble())
+            .toList(),
+        dimension: json['dimension'] as int,
+        encoding: json['encoding'] as String,
+        confidence: (json['confidence'] as num).toDouble(),
+        windowId: json['window_id'] as String,
+        vectorHash: json['vector_hash'] as String?,
+        model: json['model'] as String?,
+        notes: json['notes'] as String?,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI11EmbeddingToJson(this);
+  Map<String, dynamic> toJson() => {
+        'vector': vector,
+        'dimension': dimension,
+        'encoding': encoding,
+        'confidence': confidence,
+        'window_id': windowId,
+        if (vectorHash != null) 'vector_hash': vectorHash,
+        if (model != null) 'model': model,
+        if (notes != null) 'notes': notes,
+      };
 }
 
-/// Privacy assertions
-@JsonSerializable()
 class HSI11Privacy {
-  @JsonKey(name: 'contains_pii')
   final bool containsPii;
-
-  @JsonKey(name: 'raw_biosignals_allowed')
   final bool rawBiosignalsAllowed;
-
-  @JsonKey(name: 'derived_metrics_allowed')
   final bool derivedMetricsAllowed;
-
-  @JsonKey(name: 'embedding_allowed')
   final bool embeddingAllowed;
-
   final String consent;
-
   final String? notes;
 
   HSI11Privacy({
@@ -221,10 +261,21 @@ class HSI11Privacy {
     this.notes,
   });
 
-  factory HSI11Privacy.fromJson(Map<String, dynamic> json) =>
-      _$HSI11PrivacyFromJson(json);
+  factory HSI11Privacy.fromJson(Map<String, dynamic> json) => HSI11Privacy(
+        containsPii: json['contains_pii'] as bool,
+        rawBiosignalsAllowed: json['raw_biosignals_allowed'] as bool,
+        derivedMetricsAllowed: json['derived_metrics_allowed'] as bool,
+        embeddingAllowed: json['embedding_allowed'] as bool? ?? false,
+        consent: json['consent'] as String? ?? 'explicit',
+        notes: json['notes'] as String?,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI11PrivacyToJson(this);
+  Map<String, dynamic> toJson() => {
+        'contains_pii': containsPii,
+        'raw_biosignals_allowed': rawBiosignalsAllowed,
+        'derived_metrics_allowed': derivedMetricsAllowed,
+        'embedding_allowed': embeddingAllowed,
+        'consent': consent,
+        if (notes != null) 'notes': notes,
+      };
 }
-
-// HSI generation goes through synheart-runtime exclusively.

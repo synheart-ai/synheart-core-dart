@@ -35,17 +35,15 @@ class ActivationManager {
 
   /// Bulk-activate features based on [SynheartConfig] flags.
   ///
-  /// Maps config presence/flags to the corresponding feature activations:
+  /// Maps config presence to the corresponding feature activations:
   /// - `wearConfig != null` -> `SynheartFeature.wear`
   /// - `phoneConfig != null` -> `SynheartFeature.phoneContext`
   /// - `behaviorConfig != null` -> `SynheartFeature.behavior`
   /// - `cloudConfig != null` -> `SynheartFeature.cloud`
-  /// - `enableSyniHooks` -> `SynheartFeature.syni`
   void activateFromConfig(SynheartConfig config) {
     if (config.wearConfig != null) _activated.add(SynheartFeature.wear);
     if (config.phoneConfig != null) _activated.add(SynheartFeature.phoneContext);
     if (config.behaviorConfig != null) _activated.add(SynheartFeature.behavior);
     if (config.cloudConfig != null) _activated.add(SynheartFeature.cloud);
-    if (config.enableSyniHooks) _activated.add(SynheartFeature.syni);
   }
 }

@@ -506,35 +506,24 @@ class Synheart {
   /// The currently active session, if any.
   static SessionHandle? get currentSession => shared._currentSessionHandle;
 
-  /// Configure the SDK using RFC-CORE-0007 config shape.
+  /// Initialize the SDK.
   ///
-  /// This is the preferred entry point for Phase 1+. Sets up operational mode,
-  /// storage, and artifact pipeline. Call [startSession] after configure.
-  static Future<void> configure({required SynheartConfig config}) async {
-    config.validate();
-    // Delegate to the existing initialize path, mapping new fields
-    return shared._configure(
-      appKey: 'configured',
-      userId: config.subjectId,
-      config: config,
-      autoStart: false,
-    );
-  }
-
-  /// Initialize the SDK with a user ID and optional configuration.
+  /// Pass a [SynheartConfig] with `appId` and `subjectId` for full validation.
+  /// Alternatively pass [userId] directly for simpler setup.
   ///
-  /// This is the original entry point. For stricter validation
-  /// (e.g. requiring appId/subjectId), use [configure] instead.
+  /// Safe to call multiple times — subsequent calls are no-ops if already
+  /// initialized, or await the in-progress initialization if one is running.
   static Future<void> initialize({
-    required String userId,
     SynheartConfig? config,
-    String? appKey,
-    bool autoStart =
-        false, // Changed: RFC §3.3 — no collection before startSession()
+    String? userId,
+    bool autoStart = false,
   }) async {
+    if (config != null) {
+      config.validate();
+    }
     return shared._configure(
-      appKey: appKey ?? 'mock_app_key',
-      userId: userId,
+      appKey: config?.appId ?? 'default',
+      userId: userId ?? config?.subjectId ?? '',
       config: config,
       autoStart: autoStart,
     );
@@ -1065,59 +1054,6 @@ class Synheart {
     return shared._stopBehaviorSession(sessionId);
   }
 
-  /// Get wear features for a specific time window
-  ///
-  /// Queries aggregated wear features (HR, HRV, etc.) for the specified window.
-  ///
-  /// Example:
-  /// ```dart
-  /// final features = await Synheart.getWearFeatures(WindowType.window30s);
-  /// if (features != null) {
-  ///   print('Average HR: ${features.hrAverage} BPM');
-  ///   print('HRV RMSSD: ${features.hrvRmssd} ms');
-  /// }
-  /// ```
-  static Future<WearWindowFeatures?> getWearFeatures(WindowType window) async {
-    return shared._getWearFeatures(window);
-  }
-
-  /// Get behavior features for a specific time window
-  ///
-  /// Queries aggregated behavior features (tap rate, keystroke rate, etc.) for the specified window.
-  ///
-  /// Example:
-  /// ```dart
-  /// final features = await Synheart.getBehaviorFeatures(WindowType.window30s);
-  /// if (features != null) {
-  ///   print('Tap Rate: ${features.tapRateNorm}');
-  ///   print('Focus Hint: ${features.focusHint}');
-  /// }
-  /// ```
-  static Future<BehaviorWindowFeatures?> getBehaviorFeatures(
-    WindowType window,
-  ) async {
-    return shared._getBehaviorFeatures(window);
-  }
-
-  /// Get phone features for a specific time window
-  ///
-  /// Queries aggregated phone context features (motion, screen state, etc.) for the specified window.
-  ///
-  /// Example:
-  /// ```dart
-  /// final features = await Synheart.getPhoneFeatures(WindowType.window30s);
-  /// if (features != null) {
-  ///   print('Motion Level: ${features.motionLevel}');
-  ///   print('Screen On Ratio: ${features.screenOnRatio}');
-  /// }
-  /// ```
-  static Future<PhoneWindowFeatures?> getPhoneFeatures(
-    WindowType window,
-  ) async {
-    return shared._getPhoneFeatures(window);
-  }
-
-
   /// Number of HSI snapshots pending upload (0 if cloud connector not enabled).
   static int get uploadQueueLength =>
       shared._cloudConnector?.uploadQueueLength ?? 0;
@@ -1423,7 +1359,7 @@ class Synheart {
       throw StateError(
         'At least one feature must be enabled to start a session. '
         'Configure SynheartConfig with at least one of: wearConfig, phoneConfig, '
-        'behaviorConfig, cloudConfig, or enableSyniHooks; or call Synheart.activate() for a feature.',
+        'behaviorConfig, cloudConfig; or call Synheart.activate() for a feature.',
       );
     }
 
@@ -1792,52 +1728,6 @@ class Synheart {
   }
 
   /// Get wear features for a specific time window
-  Future<WearWindowFeatures?> _getWearFeatures(WindowType window) async {
-    if (!_isConfigured) {
-      throw StateError(
-        'Synheart must be initialized before querying wear features',
-      );
-    }
-
-    if (_wearModule == null) {
-      throw StateError('Wear module not initialized');
-    }
-
-    return _wearModule!.features(window);
-  }
-
-  /// Get behavior features for a specific time window
-  Future<BehaviorWindowFeatures?> _getBehaviorFeatures(
-    WindowType window,
-  ) async {
-    if (!_isConfigured) {
-      throw StateError(
-        'Synheart must be initialized before querying behavior features',
-      );
-    }
-
-    if (_behaviorModule == null) {
-      throw StateError('Behavior module not initialized');
-    }
-
-    return _behaviorModule!.features(window);
-  }
-
-  /// Get phone features for a specific time window
-  Future<PhoneWindowFeatures?> _getPhoneFeatures(WindowType window) async {
-    if (!_isConfigured) {
-      throw StateError(
-        'Synheart must be initialized before querying phone features',
-      );
-    }
-
-    if (_phoneModule == null) {
-      throw StateError('Phone module not initialized');
-    }
-
-    return _phoneModule!.features(window);
-  }
-
   /// Wrap a widget with behavior gesture detector if behavior consent is granted
   ///
   /// This method automatically checks if:

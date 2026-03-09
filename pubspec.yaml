@@ -57,9 +57,6 @@ dependencies:
   http: ^1.1.0
   connectivity_plus: ^6.0.5
 
-  # Optional: for JSON serialization
-  json_annotation: ^4.9.0
-
   # State management for example app
   provider: ^6.1.1
 
@@ -80,8 +77,6 @@ dev_dependencies:
     sdk: flutter
   sqflite_common_ffi: ^2.3.3
   flutter_lints: ^3.0.0
-  build_runner: ^2.4.7
-  json_serializable: ^6.7.1
 
 flutter:
   uses-material-design: true

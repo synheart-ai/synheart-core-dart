@@ -18,7 +18,7 @@ Future<void> main() async {
   //    In production, replace allowUnsignedCapabilities with
   //    capabilityToken + capabilitySecret from your server.
   try {
-    await Synheart.configure(
+    await Synheart.initialize(
       config: SynheartConfig(
         subjectId: 'example_user_123',
         allowUnsignedCapabilities: true,
@@ -64,7 +64,7 @@ Future<void> main() async {
 
   // 7. Pre-processed data access (internal — R&D / training only)
   print('[Runtime] Internal diagnostics example:');
-  final runtimeModule = Synheart.runtimeModule();
+  final runtimeModule = Synheart.shared.runtimeModule;
   if (runtimeModule != null) {
     final json = runtimeModule.bridge?.lastPreprocessed();
     if (json != null) {

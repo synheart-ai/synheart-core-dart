@@ -16,7 +16,7 @@ class StorageConfig {
   });
 }
 
-/// Sync sub-configuration (RFC-CORE-0005, Phase 3).
+/// Sync sub-configuration (RFC-CORE-0005).
 class SyncConfig {
   final bool enabled;
   final String baseUrl;
@@ -79,20 +79,6 @@ class SynheartConfig {
   /// Privacy configuration.
   final PrivacyConfig privacy;
 
-  // ── Legacy fields (backward-compatible) ────────────────────────────────
-
-  /// Enable cloud sync (HSI snapshots only, no raw data)
-  final bool enableCloudSync;
-
-  /// Enable Syni hooks for LLM conditioning
-  final bool enableSyniHooks;
-
-  /// HSI update interval (default: 30 seconds)
-  final Duration updateInterval;
-
-  /// Log level for SDK logs
-  final LogLevel logLevel;
-
   /// Module-specific configurations
   final WearConfig? wearConfig;
   final PhoneConfig? phoneConfig;
@@ -135,10 +121,6 @@ class SynheartConfig {
     this.storage = const StorageConfig(),
     this.sync = const SyncConfig(),
     this.privacy = const PrivacyConfig(),
-    this.enableCloudSync = false,
-    this.enableSyniHooks = false,
-    this.updateInterval = const Duration(seconds: 30),
-    this.logLevel = LogLevel.info,
     this.wearConfig,
     this.phoneConfig,
     this.behaviorConfig,
@@ -175,9 +157,6 @@ class SynheartConfig {
     }
   }
 }
-
-/// Log level for SDK logging
-enum LogLevel { debug, info, warn, error }
 
 /// Wear module configuration
 class WearConfig {
@@ -242,7 +221,7 @@ class CloudConfig {
   /// Base URL for Synheart Platform
   final String baseUrl;
 
-  /// Tenant ID (from app registration) - kept for backward compatibility
+  /// Tenant ID (from app registration)
   final String tenantId;
 
   /// HMAC secret for signing requests (nullable when authProvider is used)

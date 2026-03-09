@@ -42,8 +42,7 @@ class HSIAxes {
 
 /// Typed HSI state emitted by `Synheart.onStateUpdate` (RFC-CORE-0007 §3).
 ///
-/// Preserves the raw JSON for backward compatibility while providing
-/// typed axis accessors.
+/// Provides typed axis accessors and retains `rawJson` for diagnostic use.
 class HSIState {
   final String subjectId;
   final int timestampMs;
