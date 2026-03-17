@@ -72,37 +72,14 @@ class SynheartWearSourceHandler implements WearSourceHandler {
             }),
       );
 
-      // Step 1: Request permissions explicitly (recommended pattern from README)
-      // This allows providing a custom reason for better UX
+      // Initialize the wear SDK — this handles permissions, adapter setup,
+      // and data validation internally. No need to call requestPermissions()
+      // separately; doing so would trigger a duplicate HealthKit dialog.
       try {
-        final permissionResult = await _synheartWear!.requestPermissions(
-          permissions: {
-            wear.PermissionType.heartRate,
-            wear.PermissionType.heartRateVariability,
-            wear.PermissionType.steps,
-            wear.PermissionType.calories,
-          },
-          reason:
-              'Synheart Core needs access to your health data to provide personalized insights.',
-        );
-
-        // Step 2: Check if permissions were granted before initializing
-        if (permissionResult.values.any(
-          (s) => s == wear.ConsentStatus.granted,
-        )) {
-          // Step 3: Initialize SDK (validates permissions and data availability)
-          await _synheartWear!.initialize();
-        } else {
-          // Permissions were denied - throw error
-          throw Exception(
-            'Health data permissions were not granted. Please grant permissions to use wearable features.',
-          );
-        }
+        await _synheartWear!.initialize();
       } on wear.SynheartWearError {
-        // Re-throw synheart_wear errors as-is
         rethrow;
       } catch (e) {
-        // Wrap other errors
         throw Exception('Failed to initialize synheart_wear: $e');
       }
     }
