@@ -129,6 +129,8 @@ class ConsentAPIClient {
     required String platform,
     String? userId,
     String? region,
+    String? ipAddress,
+    String? userAgent,
   }) async {
     try {
       final uri = Uri.parse('$baseUrl${ApiEndpoints.consentTokenPath}');
@@ -140,6 +142,8 @@ class ConsentAPIClient {
         'consent_profile_id': consentProfileId,
         if (userId != null) 'user_id': userId,
         if (region != null) 'region': region,
+        if (ipAddress != null) 'ip_address': ipAddress,
+        if (userAgent != null) 'user_agent': userAgent,
       };
 
       final response = await _httpClient.post(

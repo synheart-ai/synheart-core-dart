@@ -50,6 +50,9 @@ class RuntimeModule extends BaseSynheartModule {
   /// Number of wear samples received this session (diagnostic for "no HSI" debugging).
   int _wearSampleCount = 0;
 
+  /// Temporary debug toggle: set true only when you want full per-tick HSI JSON logs.
+  static const bool _logTickHsiJson = false;
+
   /// Last timestamp (ms) sent to the runtime for ANY push (RR, HR, behavior, accel).
   /// Pipeline requires events monotonically non-decreasing by ts_ms across all types.
   int? _lastPushedTsMs;
@@ -64,6 +67,57 @@ class RuntimeModule extends BaseSynheartModule {
 
   /// Number of wear samples received this session (diagnostic).
   int get wearSampleCount => _wearSampleCount;
+
+  /// Push a behavior event and ensure the tick timer is started so the pipeline advances and HSI is produced.
+  /// Use this when pushing from a callback (e.g. notification from BehaviorModule) so behavioral data is not stuck at 0.
+  void pushBehaviorAndEnsureTick(int tsMs, int eventType, double value) {
+    if (_runtime == null) return;
+    _lastPushedTsMs = tsMs;
+    _runtime!.pushBehavior(tsMs, eventType, value);
+    if (!_tickTimerStarted) {
+      _startTickTimer();
+      _tickTimerStarted = true;
+      _runtime!.tick(tsMs);
+    }
+  }
+
+  /// Push a wear HR sample directly into runtime and ensure ticking is active.
+  /// Optionally synthesizes one RR interval from BPM so RR-dependent wear metrics are populated.
+  void pushWearHrAndEnsureTick(
+    int tsMs,
+    double bpm, {
+    bool synthesizeRr = true,
+  }) {
+    if (_runtime == null || bpm <= 0) return;
+    _wearSampleCount += 1;
+
+    if (batchIngestOnStop) {
+      _batchEventBuffer.add({'type': 'hr', 'ts_ms': tsMs, 'bpm': bpm});
+      if (synthesizeRr) {
+        final rrMs = (SynheartDefaults.msPerMinute / bpm)
+            .clamp(SynheartDefaults.rrMinMs, SynheartDefaults.rrMaxMs);
+        _batchEventBuffer.add({'type': 'rr', 'ts_ms': tsMs, 'rr_ms': rrMs});
+      }
+      return;
+    }
+
+    var safeTsMs = tsMs;
+    if (_lastPushedTsMs != null && safeTsMs <= _lastPushedTsMs!) {
+      safeTsMs = _lastPushedTsMs! + 1;
+    }
+    _runtime!.pushHr(safeTsMs, bpm);
+    if (synthesizeRr) {
+      final rrMs = (SynheartDefaults.msPerMinute / bpm)
+          .clamp(SynheartDefaults.rrMinMs, SynheartDefaults.rrMaxMs);
+      _runtime!.pushRr(safeTsMs, rrMs);
+    }
+    _lastPushedTsMs = safeTsMs;
+    if (!_tickTimerStarted) {
+      _startTickTimer();
+      _tickTimerStarted = true;
+      _runtime!.tick(safeTsMs);
+    }
+  }
 
   RuntimeModule({
     RuntimeBridge? runtime,
@@ -82,47 +136,46 @@ class RuntimeModule extends BaseSynheartModule {
 
   @override
   Future<void> onStart() async {
-    SynheartLogger.log('[RuntimeModule] Starting...');
+    SynheartLogger.log('[RuntimeModule] Starting... (bridge ${_runtime != null ? "available" : "NULL"})');
 
-    if (_runtime == null) {
-      SynheartLogger.log(
-        '[RuntimeModule] No native bridge — pipeline inert until synheart_runtime is linked',
-      );
-      return;
-    }
-
-    // Restore SRM baselines from previous session
-    if (srmSnapshotKey != null) {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final saved = prefs.getString(srmSnapshotKey!);
-        if (saved != null) {
-          final rc = _runtime!.loadSrmSnapshot(saved);
-          if (rc == 0) {
-            SynheartLogger.log('[RuntimeModule] Restored SRM baselines from snapshot');
-          } else {
-            SynheartLogger.log('[RuntimeModule] SRM snapshot load failed (code $rc), starting fresh');
+    if (_runtime != null) {
+      // Restore SRM baselines from previous session
+      if (srmSnapshotKey != null) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final saved = prefs.getString(srmSnapshotKey!);
+          if (saved != null) {
+            final rc = _runtime!.loadSrmSnapshot(saved);
+            if (rc == 0) {
+              SynheartLogger.log('[RuntimeModule] Restored SRM baselines from snapshot');
+            } else {
+              SynheartLogger.log('[RuntimeModule] SRM snapshot load failed (code $rc), starting fresh');
+            }
           }
+        } catch (e) {
+          SynheartLogger.log('[RuntimeModule] SRM snapshot restore error: $e');
         }
-      } catch (e) {
-        SynheartLogger.log('[RuntimeModule] SRM snapshot restore error: $e');
       }
-    }
 
-    // Subscribe to wear samples
-    if (_wearSampleStream != null) {
-      _wearSampleCount = 0;
-      _wearSubscription = _wearSampleStream!.listen(
-        _handleWearSample,
-        onError: (e, st) => SynheartLogger.log(
-          '[RuntimeModule] Wear stream error: $e',
-          error: e,
-          stackTrace: st,
-        ),
+      // Subscribe to wear samples (only when bridge available)
+      if (_wearSampleStream != null) {
+        _wearSampleCount = 0;
+        _wearSubscription = _wearSampleStream!.listen(
+          _handleWearSample,
+          onError: (e, st) => SynheartLogger.log(
+            '[RuntimeModule] Wear stream error: $e',
+            error: e,
+            stackTrace: st,
+          ),
+        );
+      }
+    } else {
+      SynheartLogger.log(
+        '[RuntimeModule] No native bridge — behavior/wear events will be dropped until synheart_runtime is linked',
       );
     }
 
-    // Subscribe to behavior events
+    // Always subscribe to behavior events so we can log when bridge is null (diagnostics)
     if (_behaviorEventStream != null) {
       _behaviorSubscription = _behaviorEventStream!.listen(
         _handleBehaviorEvent,
@@ -131,6 +184,9 @@ class RuntimeModule extends BaseSynheartModule {
           error: e,
           stackTrace: st,
         ),
+      );
+      print(
+        'BEHAVIOR_PIPELINE: [RuntimeModule] subscribed to behavior stream (bridge ${_runtime != null ? "available" : "NULL"})',
       );
     }
 
@@ -182,6 +238,14 @@ class RuntimeModule extends BaseSynheartModule {
     _behaviorSubscription = null;
 
     SynheartLogger.log('[RuntimeModule] Stopped');
+  }
+
+  /// Flush buffered events to the native runtime via ingestBatch (batch mode only).
+  /// Call before labFinalize() so the lab payload includes behavior/wear data.
+  void flushBatch() {
+    if (batchIngestOnStop && _runtime != null && _batchEventBuffer.isNotEmpty) {
+      _flushBatchOnStop();
+    }
   }
 
   /// Runs when [batchIngestOnStop] is true: sort buffer, ingestBatch, drain tick(), emit all HSI.
@@ -445,6 +509,16 @@ class RuntimeModule extends BaseSynheartModule {
   }
 
   void _handleBehaviorEvent(BehaviorEvent event) {
+    print(
+      'BEHAVIOR_PIPELINE: [RuntimeModule] received behavior event type=${event.type.name} (bridge ${_runtime != null ? "ok" : "NULL"})',
+    );
+    if (_runtime == null) {
+      SynheartLogger.log(
+        '[RuntimeModule] Dropping behavior event — native bridge not loaded. Copy libsynheart_runtime.so into android/app/src/main/jniLibs/<abi>/ and do a clean build.',
+      );
+      return;
+    }
+
     int tsMs = event.timestamp.millisecondsSinceEpoch;
     final lastTsMs = _lastPushedTsMs;
     // Pipeline requires monotonically non-decreasing ts_ms across ALL pushes.
@@ -501,10 +575,17 @@ class RuntimeModule extends BaseSynheartModule {
 
     if (batchIngestOnStop) {
       _batchEventBuffer.add(_behaviorEventToBatchMap(tsMs, event));
+      print(
+        'BEHAVIOR_PIPELINE: [RuntimeModule] buffered for batch type=${event.type.name} (buffer size=${_batchEventBuffer.length})',
+      );
       return;
     }
 
     _lastPushedTsMs = tsMs;
+    print('BEHAVIOR_PIPELINE: [RuntimeModule] pushBehavior tsMs=$tsMs eventType=$eventType (${event.type.name}) value=$value');
+    SynheartLogger.log(
+      '[RuntimeModule] pushBehavior tsMs=$tsMs eventType=$eventType (${event.type.name}) value=$value',
+    );
     _runtime!.pushBehavior(tsMs, eventType, value);
 
     // Anchor window on first push of any type (matches Rust batch_ingest: t0 = min(ts_ms)).
@@ -523,7 +604,9 @@ class RuntimeModule extends BaseSynheartModule {
     _tickTimer = Timer.periodic(const Duration(seconds: intervalSec), (_) {
       final hsiJson = _runtime?.tick(DateTime.now().millisecondsSinceEpoch);
       if (hsiJson != null) {
-        SynheartLogger.log('[Runtime] HSI (tick result): $hsiJson');
+        if (_logTickHsiJson) {
+          SynheartLogger.log('[Runtime] HSI (tick result): $hsiJson');
+        }
         _hsiStream.add(hsiJson);
       }
     });

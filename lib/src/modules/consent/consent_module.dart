@@ -314,6 +314,38 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
     }
   }
 
+  /// Request consent token directly by profile id (without fetching profiles first).
+  /// Useful when integrator already knows the consent_profile_id.
+  Future<ConsentToken> requestConsentByProfileId(String profileId) async {
+    if (_apiClient == null || _consentConfig == null) {
+      throw StateError(
+        'Consent service not configured. Provide ConsentConfig with appId and appApiKey.',
+      );
+    }
+
+    final deviceId = _consentConfig!.deviceId ?? await _getOrGenerateDeviceId();
+    final platform = _consentConfig!.platform;
+
+    final token = await _apiClient!.issueToken(
+      deviceId: deviceId,
+      consentProfileId: profileId,
+      platform: platform,
+      userId: _consentConfig!.userId,
+      region: _consentConfig!.region,
+      // Temporary integration defaults from backend sample payload.
+      ipAddress: '192.168.0.0',
+      userAgent: 'Mozilla/firefox',
+    );
+
+    await _tokenStorage?.saveToken(token);
+    _currentToken = token;
+    _startTokenRefreshTimer();
+    SynheartLogger.log(
+      '[ConsentModule] Consent token issued directly for profile: $profileId',
+    );
+    return token;
+  }
+
   /// Check current consent status
   ConsentStatus checkConsentStatus() {
     // Check if user explicitly denied consent

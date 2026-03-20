@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../cloud/hmac_signer.dart';
 import '../../config/api_endpoints.dart';
+import '../../core/logger.dart';
 
 /// Response from platform ingestion API calls.
 class PlatformIngestResponse {
@@ -81,6 +82,7 @@ class PlatformIngestClient {
     String? consentToken,
   }) async {
     final bodyJson = jsonEncode(payload);
+    final bodyBytes = utf8.encode(bodyJson).length;
     int attempts = 0;
 
     while (attempts < maxRetries) {
@@ -108,9 +110,29 @@ class PlatformIngestClient {
           headers['X-Consent-Token'] = consentToken;
         }
 
+        final safeHeaders = headers.map(
+          (k, v) => MapEntry(k, _maskHeaderValue(k, v)),
+        );
+        SynheartLogger.log(
+          '[PlatformIngest] request attempt=$attempts method=POST url=$uri body_bytes=$bodyBytes',
+        );
+        SynheartLogger.log(
+          '[PlatformIngest] request headers=${jsonEncode(safeHeaders)}',
+        );
+        SynheartLogger.log(
+          '[PlatformIngest] request body=${_truncate(bodyJson)}',
+        );
+
         final response = await _httpClient
             .post(uri, headers: headers, body: bodyJson)
             .timeout(timeout);
+
+        SynheartLogger.log(
+          '[PlatformIngest] response attempt=$attempts status=${response.statusCode}',
+        );
+        SynheartLogger.log(
+          '[PlatformIngest] response body=${_truncate(response.body)}',
+        );
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
           Map<String, dynamic>? responseBody;
@@ -138,6 +160,9 @@ class PlatformIngestClient {
 
         // 5xx — retry with exponential backoff
         if (attempts < maxRetries) {
+          SynheartLogger.log(
+            '[PlatformIngest] server error status=${response.statusCode}; retrying (attempt ${attempts + 1}/$maxRetries)',
+          );
           await Future.delayed(Duration(seconds: 1 << attempts));
           continue;
         }
@@ -149,6 +174,10 @@ class PlatformIngestClient {
           body: _tryParseJson(response.body),
         );
       } catch (e) {
+        SynheartLogger.log(
+          '[PlatformIngest] request exception on attempt=$attempts: $e',
+          error: e,
+        );
         if (attempts >= maxRetries) {
           return PlatformIngestResponse(
             success: false,
@@ -177,5 +206,16 @@ class PlatformIngestClient {
 
   void dispose() {
     _httpClient.close();
+  }
+
+  String _maskHeaderValue(String key, String value) {
+    // TEMP DEBUG: no masking so full header values appear in logs.
+    // Re-enable masking after debugging to avoid leaking secrets in logs.
+    return value;
+  }
+
+  String _truncate(String value, {int maxChars = 3000}) {
+    if (value.length <= maxChars) return value;
+    return '${value.substring(0, maxChars)}... [truncated ${value.length - maxChars} chars]';
   }
 }

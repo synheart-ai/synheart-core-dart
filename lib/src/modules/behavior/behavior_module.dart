@@ -25,17 +25,29 @@ class BehaviorModule extends BaseSynheartModule
 
   final CapabilityProvider _capabilities;
   final ConsentProvider _consent;
+  final bool _enableMotionLite;
 
   StreamSubscription<BehaviorEvent>? _eventSubscription;
   StreamSubscription? _synheartBehaviorSubscription;
   Timer? _cleanupTimer;
   sb.SynheartBehavior? _synheartBehavior;
 
+  /// When set, all behavior events are pushed to the runtime via this callback
+  /// (so the runtime receives events even if stream delivery is delayed). Signature: (tsMs, eventType, value).
+  void Function(int tsMs, int eventType, double value)? _pushBehaviorToRuntime;
+  set pushBehaviorToRuntime(
+    void Function(int tsMs, int eventType, double value)? f,
+  ) {
+    _pushBehaviorToRuntime = f;
+  }
+
   BehaviorModule({
     required CapabilityProvider capabilities,
     required ConsentProvider consent,
+    bool enableMotionLite = false,
   }) : _capabilities = capabilities,
-       _consent = consent;
+       _consent = consent,
+       _enableMotionLite = enableMotionLite;
 
   /// Get the event stream for recording events (for manual instrumentation)
   BehaviorEventStream get eventStream => _eventStream;
@@ -52,7 +64,6 @@ class BehaviorModule extends BaseSynheartModule
   /// ```
   sb.SynheartBehavior? get synheartBehavior => _synheartBehavior;
 
-
   // MARK: - RawBehaviorDataProvider
 
   @override
@@ -68,12 +79,12 @@ class BehaviorModule extends BaseSynheartModule
     // Initialize synheart_behavior package for automatic event capture
     try {
       _synheartBehavior = await sb.SynheartBehavior.initialize(
-        config: const sb.BehaviorConfig(
+        config: sb.BehaviorConfig(
           enableInputSignals: true,
           enableAttentionSignals: true,
-          enableMotionLite:
-              false, // Disabled: 50Hz sensor + ONNX inference is too heavy during debug
+          enableMotionLite: _enableMotionLite,
         ),
+        onEventCallback: _onSynheartBehaviorEvent,
       );
       SynheartLogger.log(
         '[BehaviorModule] synheart_behavior initialized successfully',
@@ -84,6 +95,87 @@ class BehaviorModule extends BaseSynheartModule
         error: e,
       );
       // Continue without automatic capture - fallback to manual instrumentation
+    }
+
+    // Subscribe to synheart_behavior as soon as SDK is ready so we never miss
+    // events that arrive before onStart() (e.g. app_switch right after app open).
+    if (_synheartBehavior != null) {
+      print(
+        'BEHAVIOR_PIPELINE: [BehaviorModule] subscribed to synheart_behavior at init (diagnostics on)',
+      );
+      _synheartBehaviorSubscription = _synheartBehavior!.onEvent.listen(
+        _onSynheartBehaviorEvent,
+        onError: (e, st) => SynheartLogger.log(
+          '[BehaviorModule] synheart_behavior event error: $e',
+          error: e,
+          stackTrace: st,
+        ),
+      );
+      SynheartLogger.log(
+        '[BehaviorModule] Subscribed to synheart_behavior events (at init)',
+      );
+    }
+  }
+
+  void _onSynheartBehaviorEvent(sb.BehaviorEvent event) {
+    print(
+      'BEHAVIOR_PIPELINE: [BehaviorModule] event: type=${event.eventType} ts=${event.timestamp}',
+    );
+    SynheartLogger.log(
+      '[BehaviorModule] synheart_behavior event: type=${event.eventType} ts=${event.timestamp}',
+    );
+    if (!_consent.current().behavior) {
+      print(
+        'BEHAVIOR_PIPELINE: [BehaviorModule] event dropped (behavior consent false)',
+      );
+      return;
+    }
+    final behaviorEvent = _convertSynheartEvent(event);
+    if (behaviorEvent != null) {
+      print(
+        'BEHAVIOR_PIPELINE: [BehaviorModule] forwarding to runtime: ${behaviorEvent.type}',
+      );
+      SynheartLogger.log(
+        '[BehaviorModule] forwarding to runtime: ${behaviorEvent.type}',
+      );
+      _eventStream.addEvent(behaviorEvent);
+      // Push every behavior event directly to runtime (so app_switch, notification, etc. are never missed)
+      final mapped = _behaviorEventToRuntimeCode(behaviorEvent);
+      if (mapped != null) {
+        final tsMs = behaviorEvent.timestamp.millisecondsSinceEpoch;
+        _pushBehaviorToRuntime?.call(tsMs, mapped.$1, mapped.$2);
+      }
+    }
+  }
+
+  /// Maps internal BehaviorEvent to runtime (eventType, value). Returns null for types we skip (e.g. clipboard).
+  (int, double)? _behaviorEventToRuntimeCode(BehaviorEvent event) {
+    switch (event.type) {
+      case BehaviorEventType.screenOn:
+        return (0, 1.0);
+      case BehaviorEventType.screenOff:
+        return (1, 1.0);
+      case BehaviorEventType.tap:
+      case BehaviorEventType.keyDown:
+      case BehaviorEventType.keyUp:
+        return (2, 1.0);
+      case BehaviorEventType.appSwitch:
+        return (3, 1.0);
+      case BehaviorEventType.notificationReceived:
+      case BehaviorEventType.notificationOpened:
+        return (4, 1.0);
+      case BehaviorEventType.scroll:
+        final delta = event.metadata?['delta'] is num
+            ? (event.metadata!['delta'] as num).toDouble()
+            : 1.0;
+        return (5, delta);
+      case BehaviorEventType.swipe:
+        final vel = event.metadata?['velocity'] is num
+            ? (event.metadata!['velocity'] as num).toDouble()
+            : 1.0;
+        return (6, vel);
+      case BehaviorEventType.call:
+        return (7, 1.0);
     }
   }
 
@@ -102,14 +194,7 @@ class BehaviorModule extends BaseSynheartModule
       (event) {
         // Check consent before adding event
         if (_consent.current().behavior) {
-          // SynheartLogger.log(
-          //   '[BehaviorModule] Manual event received: ${event.type}',
-          // );
           _aggregator.addEvent(event);
-        } else {
-          // SynheartLogger.log(
-          //   '[BehaviorModule] Event ignored (behavior consent denied): ${event.type}',
-          // );
         }
       },
       onError: (e, st) => SynheartLogger.log(
@@ -119,36 +204,18 @@ class BehaviorModule extends BaseSynheartModule
       ),
     );
 
-    // Subscribe to synheart_behavior automatic events
-    if (_synheartBehavior != null) {
+    // synheart_behavior already subscribed in onInitialize() so we never miss events
+    if (_synheartBehavior != null && _synheartBehaviorSubscription == null) {
+      print(
+        'BEHAVIOR_PIPELINE: [BehaviorModule] subscribing to synheart_behavior (late start)',
+      );
       _synheartBehaviorSubscription = _synheartBehavior!.onEvent.listen(
-        (event) {
-          // Check consent before adding event
-        if (_consent.current().behavior) {
-          // Convert synheart_behavior event to internal BehaviorEvent
-          final behaviorEvent = _convertSynheartEvent(event);
-          if (behaviorEvent != null) {
-            // Push to event stream so RuntimeModule and other listeners receive it
-            _eventStream.addEvent(behaviorEvent);
-            // Aggregator is updated by _eventSubscription (eventStream.events listener)
-          }
-        }
-        },
+        _onSynheartBehaviorEvent,
         onError: (e, st) => SynheartLogger.log(
           '[BehaviorModule] synheart_behavior event error: $e',
           error: e,
           stackTrace: st,
         ),
-      );
-      SynheartLogger.log(
-        '[BehaviorModule] Subscribed to synheart_behavior events',
-      );
-    } else {
-      SynheartLogger.log(
-        '[BehaviorModule] Warning: synheart_behavior not initialized - automatic events will not be captured',
-      );
-      SynheartLogger.log(
-        '[BehaviorModule] Tip: Wrap your app with synheartBehavior.wrapWithGestureDetector() to enable automatic event capture',
       );
     }
 
@@ -185,11 +252,17 @@ class BehaviorModule extends BaseSynheartModule
           return BehaviorEvent.notificationReceived();
         }
       case sb.BehaviorEventType.call:
-        // Map call events to notification received for now
-        return BehaviorEvent.notificationReceived();
+        return BehaviorEvent.call();
       case sb.BehaviorEventType.swipe:
-        // Map swipe to tap for now (could be enhanced later)
-        return BehaviorEvent.tap(Offset.zero);
+        final velocity = event.metrics['velocity'] is num
+            ? (event.metrics['velocity'] as num).toDouble()
+            : 1.0;
+        final direction = event.metrics['direction'] is String
+            ? event.metrics['direction'] as String
+            : null;
+        return BehaviorEvent.swipe(velocity: velocity, direction: direction);
+      case sb.BehaviorEventType.app_switch:
+        return BehaviorEvent.appSwitch();
       case sb.BehaviorEventType.clipboard:
         // Clipboard events don't map to an internal behavior event
         return null;
