@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:synheart_wear/synheart_wear.dart' as wear;
 import '../../core/logger.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
@@ -7,6 +8,7 @@ import '../interfaces/feature_providers.dart';
 import '../interfaces/raw_data_provider.dart';
 import 'wear_source_handler.dart';
 import 'wear_cache.dart';
+import 'wear_module_status.dart';
 import 'mock_wear_source.dart';
 import 'synheart_wear_source_handler.dart';
 
@@ -34,6 +36,10 @@ class WearModule extends BaseSynheartModule
 
   // Stream controller for raw samples (broadcast for multiple subscribers)
   StreamController<WearSample>? _rawSampleController;
+
+  // Stream controller for module status events
+  final StreamController<WearModuleStatus> _statusController =
+      StreamController<WearModuleStatus>.broadcast();
 
   WearModule({
     required CapabilityProvider capabilities,
@@ -101,36 +107,17 @@ class WearModule extends BaseSynheartModule
 
   @override
   Future<void> onInitialize() async {
-    // SynheartLogger.log('[WearModule] Initializing wear sources...');
-
-    for (final source in _sources) {
-      if (source.isAvailable) {
-        try {
-          await source.initialize();
-          // SynheartLogger.log(
-          //   '[WearModule] Initialized ${source.sourceType.name} source',
-          // );
-        } catch (e) {
-          // SynheartLogger.log(
-          //   '[WearModule] Failed to initialize ${source.sourceType.name}: $e',
-          //   error: e,
-          // );
-        }
-      }
-    }
+    // Intentionally do not initialize sources here.
+    //
+    // `synheart_wear.initialize()` may trigger OS permission dialogs (HealthKit /
+    // Health Connect). We must not prompt until the user has granted Synheart
+    // biosignals consent. Sources are initialized on-demand inside
+    // `_startDataCollection()` when consent is granted.
   }
 
   @override
   Future<void> onStart() async {
     // SynheartLogger.log('[WearModule] Starting wear data collection...');
-
-    // Check consent before starting - don't collect data if consent is denied
-    if (!_consent.current().biosignals) {
-      // SynheartLogger.log(
-      //   '[WearModule] Not starting data collection: biosignals consent denied',
-      // );
-      return;
-    }
 
     // Create raw sample stream controller *before* starting collection so that
     // samples are forwarded to the runtime. Previously the controller was created
@@ -149,13 +136,8 @@ class WearModule extends BaseSynheartModule
             //   '[WearModule] Biosignals consent revoked - stopping data collection',
             // );
             await _stopDataCollection();
-          } else if (consent.biosignals &&
-              _subscriptions.isEmpty &&
-              _dataCollectionStarted) {
-            // Consent re-granted after revoke - start again (do not run during initial onStart)
-            // SynheartLogger.log(
-            //   '[WearModule] Biosignals consent granted - starting data collection',
-            // );
+          } else if (consent.biosignals && _subscriptions.isEmpty) {
+            // Consent granted (either initially or after revoke) — start data collection.
             await _startDataCollection();
           }
           return consent;
@@ -165,15 +147,20 @@ class WearModule extends BaseSynheartModule
             // Stream processed
           },
           onError: (error) {
-            // SynheartLogger.log(
-            //   '[WearModule] Error in consent stream: $error',
-            //   error: error,
-            // );
+            _emitStatus(WearModuleStatus(
+              type: WearModuleStatusType.consentStreamError,
+              error: error,
+              message: 'Consent observation stream error',
+            ));
           },
         );
 
-    // Start data collection
-    await _startDataCollection();
+    // Start data collection only when consent is granted.
+    // This prevents OS health permission dialogs from appearing before the user
+    // grants Synheart biosignals consent.
+    if (_consent.current().biosignals) {
+      await _startDataCollection();
+    }
 
     _dataCollectionStarted = true;
     // SynheartLogger.log(
@@ -219,10 +206,19 @@ class WearModule extends BaseSynheartModule
             // );
           }
         } catch (e) {
-          // SynheartLogger.log(
-          //   '[WearModule] Failed to re-initialize ${source.sourceType.name}: $e',
-          //   error: e,
-          // );
+          final isPermission = e is wear.PermissionDeniedError ||
+              (e is wear.SynheartWearError && e.code == 'PERMISSION_DENIED');
+
+          _emitStatus(WearModuleStatus(
+            type: isPermission
+                ? WearModuleStatusType.permissionDenied
+                : WearModuleStatusType.sourceInitFailed,
+            source: source.sourceType.name,
+            error: e,
+            message: isPermission
+                ? 'Health data permissions not granted'
+                : 'Failed to re-initialize ${source.sourceType.name}',
+          ));
           // Continue with other sources even if one fails
         }
       }
@@ -252,10 +248,12 @@ class WearModule extends BaseSynheartModule
             }
           },
           onError: (error) {
-            // SynheartLogger.log(
-            //   '[WearModule] Error from ${source.sourceType.name}: $error',
-            //   error: error,
-            // );
+            _emitStatus(WearModuleStatus(
+              type: WearModuleStatusType.streamingError,
+              source: source.sourceType.name,
+              error: error,
+              message: 'Streaming error from ${source.sourceType.name}',
+            ));
             // Do not forward to rawSampleStream to avoid unhandled exceptions
             // (e.g. Health Connect PERMISSION_DENIED). Listeners still get samples.
           },
@@ -264,6 +262,9 @@ class WearModule extends BaseSynheartModule
         _subscriptions.add(subscription);
       }
     }
+    _emitStatus(const WearModuleStatus(
+      type: WearModuleStatusType.dataCollectionStarted,
+    ));
     } finally {
       _isStartingCollection = false;
     }
@@ -283,19 +284,23 @@ class WearModule extends BaseSynheartModule
         try {
           await source.stop();
         } catch (e) {
-          // SynheartLogger.log(
-          //   '[WearModule] Error stopping ${source.sourceType.name}: $e',
-          //   error: e,
-          // );
+          _emitStatus(WearModuleStatus(
+            type: WearModuleStatusType.streamingError,
+            source: source.sourceType.name,
+            error: e,
+            message: 'Error stopping ${source.sourceType.name}',
+          ));
         }
       }
     }
+
+    _emitStatus(const WearModuleStatus(
+      type: WearModuleStatusType.dataCollectionStopped,
+    ));
   }
 
   @override
   Future<void> onStop() async {
-    // SynheartLogger.log('[WearModule] Stopping wear data collection...');
-
     _dataCollectionStarted = false;
     // Cancel consent subscription
     await _consentSubscription?.cancel();
@@ -328,10 +333,30 @@ class WearModule extends BaseSynheartModule
     return _rawSampleController!.stream;
   }
 
+  /// Stream of module status events.
+  ///
+  /// Subscribe to this stream to observe initialization outcomes, permission
+  /// failures, and streaming errors. Callers that don't subscribe are
+  /// unaffected — existing behavior is preserved.
+  ///
+  /// Example:
+  /// ```dart
+  /// wearModule.statusStream.listen((status) {
+  ///   if (status.type == WearModuleStatusType.permissionDenied) {
+  ///     // Prompt user to grant health permissions
+  ///   }
+  /// });
+  /// ```
+  Stream<WearModuleStatus> get statusStream => _statusController.stream;
+
+  void _emitStatus(WearModuleStatus status) {
+    if (!_statusController.isClosed) {
+      _statusController.add(status);
+    }
+  }
+
   @override
   Future<void> onDispose() async {
-    // SynheartLogger.log('[WearModule] Disposing wear module...');
-
     // Close raw sample stream controller
     await _rawSampleController?.close();
     _rawSampleController = null;
@@ -341,11 +366,16 @@ class WearModule extends BaseSynheartModule
       try {
         await source.dispose();
       } catch (e) {
-        // SynheartLogger.log(
-        //   '[WearModule] Error disposing ${source.sourceType.name}: $e',
-        //   error: e,
-        // );
+        _emitStatus(WearModuleStatus(
+          type: WearModuleStatusType.streamingError,
+          source: source.sourceType.name,
+          error: e,
+          message: 'Error disposing ${source.sourceType.name}',
+        ));
       }
     }
+
+    // Close status stream last so all status events are delivered
+    await _statusController.close();
   }
 }

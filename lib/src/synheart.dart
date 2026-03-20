@@ -106,6 +106,7 @@ class Synheart {
   StreamSubscription<SessionEvent>? _mainSessionSubscription;
 
   StreamSubscription? _hsvSubscription;
+  StreamSubscription? _hsiToSessionSubscription;
 
   // Session data buffers — accumulate during session, persist after stop
   List<String> _sessionHsiBuffer = [];
@@ -677,6 +678,19 @@ class Synheart {
           error: e,
           stackTrace: st,
         ),
+      );
+
+      // Bridge HSI metrics from runtime → session engine (HRV is authoritative
+      // from session-runtime; the session SDK no longer computes it locally).
+      _hsiToSessionSubscription = _runtimeModule!.hsiStream.listen(
+        (hsiJson) {
+          final sid = _activeMainSessionId;
+          if (sid == null || _mainSession == null) return;
+          try {
+            final parsed = jsonDecode(hsiJson) as Map<String, dynamic>;
+            _mainSession!.ingestHsiMetrics(sid, parsed);
+          } catch (_) {}
+        },
       );
 
       _activationManager = ActivationManager();
@@ -2484,8 +2498,10 @@ class Synheart {
     try {
       SynheartLogger.log('[Synheart] Stopping...');
 
-      // Stop HSI subscription
+      // Stop HSI subscriptions
       await _hsvSubscription?.cancel();
+      await _hsiToSessionSubscription?.cancel();
+      _hsiToSessionSubscription = null;
 
       // Remove consent listener (best-effort)
       _consentModule?.removeListener(_onConsentChanged);
