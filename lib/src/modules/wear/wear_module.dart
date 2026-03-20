@@ -107,44 +107,17 @@ class WearModule extends BaseSynheartModule
 
   @override
   Future<void> onInitialize() async {
-    for (final source in _sources) {
-      if (source.isAvailable) {
-        try {
-          await source.initialize();
-          _emitStatus(WearModuleStatus(
-            type: WearModuleStatusType.sourceInitialized,
-            source: source.sourceType.name,
-          ));
-        } catch (e) {
-          final isPermission = e is wear.PermissionDeniedError ||
-              (e is wear.SynheartWearError && e.code == 'PERMISSION_DENIED');
-
-          _emitStatus(WearModuleStatus(
-            type: isPermission
-                ? WearModuleStatusType.permissionDenied
-                : WearModuleStatusType.sourceInitFailed,
-            source: source.sourceType.name,
-            error: e,
-            message: isPermission
-                ? 'Health data permissions not granted'
-                : 'Failed to initialize ${source.sourceType.name}',
-          ));
-        }
-      }
-    }
+    // Intentionally do not initialize sources here.
+    //
+    // `synheart_wear.initialize()` may trigger OS permission dialogs (HealthKit /
+    // Health Connect). We must not prompt until the user has granted Synheart
+    // biosignals consent. Sources are initialized on-demand inside
+    // `_startDataCollection()` when consent is granted.
   }
 
   @override
   Future<void> onStart() async {
     // SynheartLogger.log('[WearModule] Starting wear data collection...');
-
-    // Check consent before starting - don't collect data if consent is denied
-    if (!_consent.current().biosignals) {
-      // SynheartLogger.log(
-      //   '[WearModule] Not starting data collection: biosignals consent denied',
-      // );
-      return;
-    }
 
     // Create raw sample stream controller *before* starting collection so that
     // samples are forwarded to the runtime. Previously the controller was created
@@ -163,13 +136,8 @@ class WearModule extends BaseSynheartModule
             //   '[WearModule] Biosignals consent revoked - stopping data collection',
             // );
             await _stopDataCollection();
-          } else if (consent.biosignals &&
-              _subscriptions.isEmpty &&
-              _dataCollectionStarted) {
-            // Consent re-granted after revoke - start again (do not run during initial onStart)
-            // SynheartLogger.log(
-            //   '[WearModule] Biosignals consent granted - starting data collection',
-            // );
+          } else if (consent.biosignals && _subscriptions.isEmpty) {
+            // Consent granted (either initially or after revoke) — start data collection.
             await _startDataCollection();
           }
           return consent;
@@ -187,8 +155,12 @@ class WearModule extends BaseSynheartModule
           },
         );
 
-    // Start data collection
-    await _startDataCollection();
+    // Start data collection only when consent is granted.
+    // This prevents OS health permission dialogs from appearing before the user
+    // grants Synheart biosignals consent.
+    if (_consent.current().biosignals) {
+      await _startDataCollection();
+    }
 
     _dataCollectionStarted = true;
     // SynheartLogger.log(
