@@ -8,6 +8,7 @@ import '../../core/logger.dart';
 import '../base/synheart_module.dart';
 import '../behavior/behavior_events.dart';
 import '../wear/wear_source_handler.dart';
+import 'runtime_behavior_code.dart';
 import 'runtime_bridge.dart';
 import '../../core/defaults.dart';
 
@@ -72,12 +73,21 @@ class RuntimeModule extends BaseSynheartModule {
   /// Use this when pushing from a callback (e.g. notification from BehaviorModule) so behavioral data is not stuck at 0.
   void pushBehaviorAndEnsureTick(int tsMs, int eventType, double value) {
     if (_runtime == null) return;
-    _lastPushedTsMs = tsMs;
-    _runtime!.pushBehavior(tsMs, eventType, value);
+    // In batch mode, behavior events must be buffered (see _handleBehaviorEvent),
+    // not pushed directly, otherwise we violate "HSI only on stop".
+    if (batchIngestOnStop) return;
+
+    var safeTsMs = tsMs;
+    final lastTsMs = _lastPushedTsMs;
+    if (lastTsMs != null && safeTsMs <= lastTsMs) {
+      safeTsMs = lastTsMs + 1;
+    }
+    _runtime!.pushBehavior(safeTsMs, eventType, value);
+    _lastPushedTsMs = safeTsMs;
     if (!_tickTimerStarted) {
       _startTickTimer();
       _tickTimerStarted = true;
-      _runtime!.tick(tsMs);
+      _runtime!.tick(safeTsMs);
     }
   }
 
@@ -184,9 +194,6 @@ class RuntimeModule extends BaseSynheartModule {
           error: e,
           stackTrace: st,
         ),
-      );
-      print(
-        'BEHAVIOR_PIPELINE: [RuntimeModule] subscribed to behavior stream (bridge ${_runtime != null ? "available" : "NULL"})',
       );
     }
 
@@ -509,9 +516,6 @@ class RuntimeModule extends BaseSynheartModule {
   }
 
   void _handleBehaviorEvent(BehaviorEvent event) {
-    print(
-      'BEHAVIOR_PIPELINE: [RuntimeModule] received behavior event type=${event.type.name} (bridge ${_runtime != null ? "ok" : "NULL"})',
-    );
     if (_runtime == null) {
       SynheartLogger.log(
         '[RuntimeModule] Dropping behavior event — native bridge not loaded. Copy libsynheart_runtime.so into android/app/src/main/jniLibs/<abi>/ and do a clean build.',
@@ -527,65 +531,56 @@ class RuntimeModule extends BaseSynheartModule {
       if (tsMs <= lastTsMs) tsMs = lastTsMs + 1;
     }
 
-    // Runtime event_type: 0=ScreenOn, 1=ScreenOff, 2=Touch, 3=AppSwitch,
-    // 4=NotificationReceived, 5=Scroll, 6=Swipe, 7=Call
     final int eventType;
     final double value;
     switch (event.type) {
       case BehaviorEventType.screenOn:
-        eventType = 0;
+        eventType = RuntimeBehaviorCode.screenOn;
         value = 1.0;
         break;
       case BehaviorEventType.screenOff:
-        eventType = 1;
+        eventType = RuntimeBehaviorCode.screenOff;
         value = 1.0;
         break;
       case BehaviorEventType.tap:
       case BehaviorEventType.keyDown:
       case BehaviorEventType.keyUp:
-        eventType = 2; // Touch
+        eventType = RuntimeBehaviorCode.input;
         value = 1.0;
         break;
       case BehaviorEventType.appSwitch:
-        eventType = 3;
+        eventType = RuntimeBehaviorCode.appSwitch;
         value = 1.0;
         break;
       case BehaviorEventType.notificationReceived:
       case BehaviorEventType.notificationOpened:
-        eventType = 4;
+        eventType = RuntimeBehaviorCode.notification;
         value = 1.0;
         break;
       case BehaviorEventType.scroll:
-        eventType = 5;
+        eventType = RuntimeBehaviorCode.scroll;
         value = event.metadata?['delta'] is num
             ? (event.metadata!['delta'] as num).toDouble()
             : 1.0;
         break;
       case BehaviorEventType.swipe:
-        eventType = 6;
+        eventType = RuntimeBehaviorCode.swipe;
         value = event.metadata?['velocity'] is num
             ? (event.metadata!['velocity'] as num).toDouble()
             : 1.0;
         break;
       case BehaviorEventType.call:
-        eventType = 7;
+        eventType = RuntimeBehaviorCode.call;
         value = 1.0;
         break;
     }
 
     if (batchIngestOnStop) {
       _batchEventBuffer.add(_behaviorEventToBatchMap(tsMs, event));
-      print(
-        'BEHAVIOR_PIPELINE: [RuntimeModule] buffered for batch type=${event.type.name} (buffer size=${_batchEventBuffer.length})',
-      );
       return;
     }
 
     _lastPushedTsMs = tsMs;
-    print('BEHAVIOR_PIPELINE: [RuntimeModule] pushBehavior tsMs=$tsMs eventType=$eventType (${event.type.name}) value=$value');
-    SynheartLogger.log(
-      '[RuntimeModule] pushBehavior tsMs=$tsMs eventType=$eventType (${event.type.name}) value=$value',
-    );
     _runtime!.pushBehavior(tsMs, eventType, value);
 
     // Anchor window on first push of any type (matches Rust batch_ingest: t0 = min(ts_ms)).

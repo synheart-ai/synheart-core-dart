@@ -209,8 +209,13 @@ class PlatformIngestClient {
   }
 
   String _maskHeaderValue(String key, String value) {
-    // TEMP DEBUG: no masking so full header values appear in logs.
-    // Re-enable masking after debugging to avoid leaking secrets in logs.
+    final lower = key.toLowerCase();
+    if (lower.contains('signature') ||
+        lower.contains('token') ||
+        lower.contains('key')) {
+      final visible = value.length > 6 ? 6 : value.length;
+      return '${value.substring(0, visible)}...REDACTED';
+    }
     return value;
   }
 

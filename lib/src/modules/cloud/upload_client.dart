@@ -107,11 +107,6 @@ class UploadClient {
           return UploadResponse.fromJson(body);
         }
 
-        // Log every non-2xx response so the HSI upload error is visible in logcat
-        print(
-          '[CloudConnector] HSI upload error: status=${response.statusCode} body=${response.body}',
-        );
-
         // Parse error response (API may return JSON or plain text e.g. "404 page not found")
         Map<String, dynamic>? errorBody;
         try {
