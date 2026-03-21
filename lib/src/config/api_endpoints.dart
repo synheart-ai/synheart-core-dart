@@ -19,8 +19,8 @@ abstract final class ApiEndpoints {
   static const String defaultConsentBaseUrl = 'https://consent.synheart.ai';
 
   // ── Cloud Ingest ──────────────────────────────────────────────────
-  /// HSI ingest path (v2).
-  static const String ingestPath = '/v2/hsi/ingest';
+  /// HSI ingest path (v1).
+  static const String ingestPath = '/v1/hsi/ingest';
 
   // ── Platform Ingest ──────────────────────────────────────────────
   static const String defaultPlatformIngestBaseUrl =
