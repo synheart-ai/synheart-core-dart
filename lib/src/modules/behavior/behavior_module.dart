@@ -213,6 +213,8 @@ class BehaviorModule extends BaseSynheartModule
     final eventType = event.eventType;
 
     switch (eventType) {
+      case sb.BehaviorEventType.app_switch:
+        return BehaviorEvent.appSwitch();
       case sb.BehaviorEventType.tap:
         return BehaviorEvent.tap(Offset.zero);
       case sb.BehaviorEventType.scroll:
