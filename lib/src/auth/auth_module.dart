@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/api_endpoints.dart';
 import 'token_storage.dart';
 
 /// Authentication status (RFC-CORE-0008).
@@ -54,7 +55,7 @@ class AuthModule {
 
   AuthModule({
     required String appId,
-    String baseUrl = 'https://api.synheart.com',
+    String baseUrl = ApiEndpoints.defaultAuthBaseUrl,
     TokenStorage? tokenStorage,
   })  : _appId = appId,
         _baseUrl = baseUrl,
@@ -90,7 +91,7 @@ class AuthModule {
     required String token,
   }) async {
     final response = await http.post(
-      Uri.parse('$_baseUrl/v1/auth/exchange'),
+      Uri.parse('$_baseUrl${ApiEndpoints.authExchangePath}'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'provider': provider,
@@ -147,7 +148,7 @@ class AuthModule {
     }
 
     final response = await http.post(
-      Uri.parse('$_baseUrl/v1/auth/refresh'),
+      Uri.parse('$_baseUrl${ApiEndpoints.authRefreshPath}'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'refresh_token': rt}),
     );

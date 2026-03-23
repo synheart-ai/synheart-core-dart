@@ -15,64 +15,41 @@ typedef _RuntimeNewDart = Pointer<Void> Function(Pointer<Utf8> configJson);
 typedef _RuntimeFreeC = Void Function(Pointer<Void> handle);
 typedef _RuntimeFreeDart = void Function(Pointer<Void> handle);
 
-typedef _RuntimePushRrC = Void Function(
-  Pointer<Void> handle,
-  Int64 tsMs,
-  Double rrMs,
-);
-typedef _RuntimePushRrDart = void Function(
-  Pointer<Void> handle,
-  int tsMs,
-  double rrMs,
-);
+typedef _RuntimePushRrC =
+    Void Function(Pointer<Void> handle, Int64 tsMs, Double rrMs);
+typedef _RuntimePushRrDart =
+    void Function(Pointer<Void> handle, int tsMs, double rrMs);
 
-typedef _RuntimePushHrC = Void Function(
-  Pointer<Void> handle,
-  Int64 tsMs,
-  Double bpm,
-);
-typedef _RuntimePushHrDart = void Function(
-  Pointer<Void> handle,
-  int tsMs,
-  double bpm,
-);
+typedef _RuntimePushHrC =
+    Void Function(Pointer<Void> handle, Int64 tsMs, Double bpm);
+typedef _RuntimePushHrDart =
+    void Function(Pointer<Void> handle, int tsMs, double bpm);
 
-typedef _RuntimePushAccelC = Void Function(
-  Pointer<Void> handle,
-  Int64 tsMs,
-  Double x,
-  Double y,
-  Double z,
-);
-typedef _RuntimePushAccelDart = void Function(
-  Pointer<Void> handle,
-  int tsMs,
-  double x,
-  double y,
-  double z,
-);
+typedef _RuntimePushAccelC =
+    Void Function(
+      Pointer<Void> handle,
+      Int64 tsMs,
+      Double x,
+      Double y,
+      Double z,
+    );
+typedef _RuntimePushAccelDart =
+    void Function(Pointer<Void> handle, int tsMs, double x, double y, double z);
 
-typedef _RuntimePushBehaviorC = Void Function(
-  Pointer<Void> handle,
-  Int64 tsMs,
-  Int32 eventType,
-  Double value,
-);
-typedef _RuntimePushBehaviorDart = void Function(
-  Pointer<Void> handle,
-  int tsMs,
-  int eventType,
-  double value,
-);
+typedef _RuntimePushBehaviorC =
+    Void Function(
+      Pointer<Void> handle,
+      Int64 tsMs,
+      Int32 eventType,
+      Double value,
+    );
+typedef _RuntimePushBehaviorDart =
+    void Function(Pointer<Void> handle, int tsMs, int eventType, double value);
 
-typedef _RuntimeTickC = Pointer<Utf8> Function(
-  Pointer<Void> handle,
-  Int64 nowMs,
-);
-typedef _RuntimeTickDart = Pointer<Utf8> Function(
-  Pointer<Void> handle,
-  int nowMs,
-);
+typedef _RuntimeTickC =
+    Pointer<Utf8> Function(Pointer<Void> handle, Int64 nowMs);
+typedef _RuntimeTickDart =
+    Pointer<Utf8> Function(Pointer<Void> handle, int nowMs);
 
 typedef _RuntimeLastQualityC = Pointer<Utf8> Function(Pointer<Void> handle);
 typedef _RuntimeLastQualityDart = Pointer<Utf8> Function(Pointer<Void> handle);
@@ -80,9 +57,10 @@ typedef _RuntimeLastQualityDart = Pointer<Utf8> Function(Pointer<Void> handle);
 typedef _RuntimeLastHsvC = Pointer<Utf8> Function(Pointer<Void> handle);
 typedef _RuntimeLastHsvDart = Pointer<Utf8> Function(Pointer<Void> handle);
 
-typedef _RuntimeLastPreprocessedC = Pointer<Utf8> Function(Pointer<Void> handle);
-typedef _RuntimeLastPreprocessedDart = Pointer<Utf8> Function(
-    Pointer<Void> handle);
+typedef _RuntimeLastPreprocessedC =
+    Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _RuntimeLastPreprocessedDart =
+    Pointer<Utf8> Function(Pointer<Void> handle);
 
 typedef _RuntimeFrameCountC = Uint64 Function(Pointer<Void> handle);
 typedef _RuntimeFrameCountDart = int Function(Pointer<Void> handle);
@@ -97,72 +75,130 @@ typedef _RuntimeVersionC = Pointer<Utf8> Function();
 typedef _RuntimeVersionDart = Pointer<Utf8> Function();
 
 // Sleep stages
-typedef _RuntimePushSleepStagesC = Void Function(
-    Pointer<Void> handle, Pointer<Utf8> json);
-typedef _RuntimePushSleepStagesDart = void Function(
-    Pointer<Void> handle, Pointer<Utf8> json);
+typedef _RuntimePushSleepStagesC =
+    Void Function(Pointer<Void> handle, Pointer<Utf8> json);
+typedef _RuntimePushSleepStagesDart =
+    void Function(Pointer<Void> handle, Pointer<Utf8> json);
 
 // Batch ingest
-typedef _RuntimeIngestBatchC = Pointer<Utf8> Function(
-    Pointer<Void> handle, Pointer<Utf8> batchJson, Int64 nowMs);
-typedef _RuntimeIngestBatchDart = Pointer<Utf8> Function(
-    Pointer<Void> handle, Pointer<Utf8> batchJson, int nowMs);
+typedef _RuntimeIngestBatchC =
+    Pointer<Utf8> Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> batchJson,
+      Int64 nowMs,
+    );
+typedef _RuntimeIngestBatchDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> batchJson,
+      int nowMs,
+    );
 
 // Diagnostics
 typedef _RuntimeLastErrorCodeC = Int32 Function(Pointer<Void> handle);
 typedef _RuntimeLastErrorCodeDart = int Function(Pointer<Void> handle);
 
-typedef _RuntimeDiagnosticsJsonC = Pointer<Utf8> Function(
-    Pointer<Void> handle);
-typedef _RuntimeDiagnosticsJsonDart = Pointer<Utf8> Function(
-    Pointer<Void> handle);
+typedef _RuntimeDiagnosticsJsonC = Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _RuntimeDiagnosticsJsonDart =
+    Pointer<Utf8> Function(Pointer<Void> handle);
 
 typedef _RuntimeClearDiagnosticsC = Void Function(Pointer<Void> handle);
 typedef _RuntimeClearDiagnosticsDart = void Function(Pointer<Void> handle);
 
 // SRM
 typedef _RuntimeBaselinesJsonC = Pointer<Utf8> Function(Pointer<Void> handle);
-typedef _RuntimeBaselinesJsonDart = Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _RuntimeBaselinesJsonDart =
+    Pointer<Utf8> Function(Pointer<Void> handle);
 
 typedef _RuntimeBaselineSummaryC = Pointer<Utf8> Function(Pointer<Void> handle);
-typedef _RuntimeBaselineSummaryDart = Pointer<Utf8> Function(
-    Pointer<Void> handle);
+typedef _RuntimeBaselineSummaryDart =
+    Pointer<Utf8> Function(Pointer<Void> handle);
 
-typedef _RuntimeExportSrmSnapshotC = Pointer<Utf8> Function(
-    Pointer<Void> handle);
-typedef _RuntimeExportSrmSnapshotDart = Pointer<Utf8> Function(
-    Pointer<Void> handle);
+typedef _RuntimeExportSrmSnapshotC =
+    Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _RuntimeExportSrmSnapshotDart =
+    Pointer<Utf8> Function(Pointer<Void> handle);
 
-typedef _RuntimeLoadSrmSnapshotC = Int32 Function(
-    Pointer<Void> handle, Pointer<Utf8> snapshotJson);
-typedef _RuntimeLoadSrmSnapshotDart = int Function(
-    Pointer<Void> handle, Pointer<Utf8> snapshotJson);
+typedef _RuntimeLoadSrmSnapshotC =
+    Int32 Function(Pointer<Void> handle, Pointer<Utf8> snapshotJson);
+typedef _RuntimeLoadSrmSnapshotDart =
+    int Function(Pointer<Void> handle, Pointer<Utf8> snapshotJson);
 
 // Lab
-typedef _LabStartC = Pointer<Utf8> Function(
-    Pointer<Void> handle, Pointer<Utf8> protocolJson, Int64 startedAtMs);
-typedef _LabStartDart = Pointer<Utf8> Function(
-    Pointer<Void> handle, Pointer<Utf8> protocolJson, int startedAtMs);
+typedef _LabStartC =
+    Pointer<Utf8> Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> protocolJson,
+      Int64 startedAtMs,
+    );
+typedef _LabStartDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> protocolJson,
+      int startedAtMs,
+    );
 
-typedef _LabOpenWindowC = Pointer<Utf8> Function(Pointer<Void> handle,
-    Pointer<Utf8> parentId, Pointer<Utf8> windowType, Pointer<Utf8> label, Int64 startedAtMs);
-typedef _LabOpenWindowDart = Pointer<Utf8> Function(Pointer<Void> handle,
-    Pointer<Utf8> parentId, Pointer<Utf8> windowType, Pointer<Utf8> label, int startedAtMs);
+typedef _LabOpenWindowC =
+    Pointer<Utf8> Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> parentId,
+      Pointer<Utf8> windowType,
+      Pointer<Utf8> label,
+      Int64 startedAtMs,
+    );
+typedef _LabOpenWindowDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> parentId,
+      Pointer<Utf8> windowType,
+      Pointer<Utf8> label,
+      int startedAtMs,
+    );
 
-typedef _LabCloseWindowC = Void Function(
-    Pointer<Void> handle, Pointer<Utf8> windowId, Int64 endedAtMs);
-typedef _LabCloseWindowDart = void Function(
-    Pointer<Void> handle, Pointer<Utf8> windowId, int endedAtMs);
+typedef _LabCloseWindowC =
+    Void Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> windowId,
+      Int64 endedAtMs,
+    );
+typedef _LabCloseWindowDart =
+    void Function(Pointer<Void> handle, Pointer<Utf8> windowId, int endedAtMs);
 
-typedef _LabSetWindowValuesC = Void Function(
-    Pointer<Void> handle, Pointer<Utf8> windowId, Pointer<Utf8> valuesJson);
-typedef _LabSetWindowValuesDart = void Function(
-    Pointer<Void> handle, Pointer<Utf8> windowId, Pointer<Utf8> valuesJson);
+typedef _LabSetWindowValuesC =
+    Void Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> windowId,
+      Pointer<Utf8> valuesJson,
+    );
+typedef _LabSetWindowValuesDart =
+    void Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> windowId,
+      Pointer<Utf8> valuesJson,
+    );
 
-typedef _LabFinalizeC = Pointer<Utf8> Function(
-    Pointer<Void> handle, Int64 endedAtMs);
-typedef _LabFinalizeDart = Pointer<Utf8> Function(
-    Pointer<Void> handle, int endedAtMs);
+typedef _LabMergeSessionExtraDataC =
+    Pointer<Utf8> Function(Pointer<Void> handle, Pointer<Utf8> patchJson);
+typedef _LabMergeSessionExtraDataDart =
+    Pointer<Utf8> Function(Pointer<Void> handle, Pointer<Utf8> patchJson);
+
+typedef _LabSetWindowStateOverridesC =
+    Void Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> windowId,
+      Pointer<Utf8> overridesJson,
+    );
+typedef _LabSetWindowStateOverridesDart =
+    void Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> windowId,
+      Pointer<Utf8> overridesJson,
+    );
+
+typedef _LabFinalizeC =
+    Pointer<Utf8> Function(Pointer<Void> handle, Int64 endedAtMs);
+typedef _LabFinalizeDart =
+    Pointer<Utf8> Function(Pointer<Void> handle, int endedAtMs);
 
 // --- Config ---
 
@@ -183,12 +219,12 @@ class RuntimeConfig {
   });
 
   Map<String, dynamic> toJson() => {
-        'window_ms': windowMs,
-        'step_ms': stepMs,
-        'subject_id': subjectId,
-        'session_id': sessionId,
-        'behavior_enabled': behaviorEnabled,
-      };
+    'window_ms': windowMs,
+    'step_ms': stepMs,
+    'subject_id': subjectId,
+    'session_id': sessionId,
+    'behavior_enabled': behaviorEnabled,
+  };
 }
 
 // --- RuntimeBridge ---
@@ -237,21 +273,20 @@ class RuntimeBridge {
   _LabOpenWindowDart? _labOpenWindowFfi;
   _LabCloseWindowDart? _labCloseWindowFfi;
   _LabSetWindowValuesDart? _labSetWindowValuesFfi;
+  _LabMergeSessionExtraDataDart? _labMergeSessionExtraDataFfi;
+  _LabSetWindowStateOverridesDart? _labSetWindowStateOverridesFfi;
   _LabFinalizeDart? _labFinalizeFfi;
 
   RuntimeBridge._(this._lib, this._handle) {
-    _runtimeFree = _lib
-        .lookupFunction<_RuntimeFreeC, _RuntimeFreeDart>(
-          'synheart_runtime_free',
-        );
-    _pushRrFfi = _lib
-        .lookupFunction<_RuntimePushRrC, _RuntimePushRrDart>(
-          'synheart_runtime_push_rr',
-        );
-    _pushHrFfi = _lib
-        .lookupFunction<_RuntimePushHrC, _RuntimePushHrDart>(
-          'synheart_runtime_push_hr',
-        );
+    _runtimeFree = _lib.lookupFunction<_RuntimeFreeC, _RuntimeFreeDart>(
+      'synheart_runtime_free',
+    );
+    _pushRrFfi = _lib.lookupFunction<_RuntimePushRrC, _RuntimePushRrDart>(
+      'synheart_runtime_push_rr',
+    );
+    _pushHrFfi = _lib.lookupFunction<_RuntimePushHrC, _RuntimePushHrDart>(
+      'synheart_runtime_push_hr',
+    );
     _pushAccelFfi = _lib
         .lookupFunction<_RuntimePushAccelC, _RuntimePushAccelDart>(
           'synheart_runtime_push_accel',
@@ -260,10 +295,9 @@ class RuntimeBridge {
         .lookupFunction<_RuntimePushBehaviorC, _RuntimePushBehaviorDart>(
           'synheart_runtime_push_behavior',
         );
-    _tickFfi = _lib
-        .lookupFunction<_RuntimeTickC, _RuntimeTickDart>(
-          'synheart_runtime_tick',
-        );
+    _tickFfi = _lib.lookupFunction<_RuntimeTickC, _RuntimeTickDart>(
+      'synheart_runtime_tick',
+    );
     _lastQualityFfi = _lib
         .lookupFunction<_RuntimeLastQualityC, _RuntimeLastQualityDart>(
           'synheart_runtime_last_quality',
@@ -274,10 +308,9 @@ class RuntimeBridge {
         .lookupFunction<_RuntimeFrameCountC, _RuntimeFrameCountDart>(
           'synheart_runtime_frame_count',
         );
-    _resetFfi = _lib
-        .lookupFunction<_RuntimeResetC, _RuntimeResetDart>(
-          'synheart_runtime_reset',
-        );
+    _resetFfi = _lib.lookupFunction<_RuntimeResetC, _RuntimeResetDart>(
+      'synheart_runtime_reset',
+    );
     _freeString = _lib
         .lookupFunction<_RuntimeFreeStringC, _RuntimeFreeStringDart>(
           'synheart_runtime_free_string',
@@ -295,16 +328,22 @@ class RuntimeBridge {
     _labOpenWindowFfi = _lookupLabOpenWindow(_lib);
     _labCloseWindowFfi = _lookupLabCloseWindow(_lib);
     _labSetWindowValuesFfi = _lookupLabSetWindowValues(_lib);
+    _labMergeSessionExtraDataFfi = _lookupLabMergeSessionExtraData(_lib);
+    _labSetWindowStateOverridesFfi = _lookupLabSetWindowStateOverrides(_lib);
     _labFinalizeFfi = _lookupLabFinalize(_lib);
+    SynheartLogger.log(
+      '[RuntimeBridge] Native lib loaded. Lab symbols available: ${_labStartFfi != null} (build runtime with --features lab if false)',
+    );
   }
 
   static _RuntimePushSleepStagesDart? _lookupPushSleepStages(
-      DynamicLibrary lib) {
+    DynamicLibrary lib,
+  ) {
     try {
-      return lib.lookupFunction<_RuntimePushSleepStagesC,
-          _RuntimePushSleepStagesDart>(
-        'synheart_runtime_push_sleep_stages',
-      );
+      return lib.lookupFunction<
+        _RuntimePushSleepStagesC,
+        _RuntimePushSleepStagesDart
+      >('synheart_runtime_push_sleep_stages');
     } catch (_) {
       return null;
     }
@@ -322,34 +361,36 @@ class RuntimeBridge {
 
   static _RuntimeLastErrorCodeDart? _lookupLastErrorCode(DynamicLibrary lib) {
     try {
-      return lib.lookupFunction<_RuntimeLastErrorCodeC,
-          _RuntimeLastErrorCodeDart>(
-        'synheart_runtime_last_error_code',
-      );
+      return lib
+          .lookupFunction<_RuntimeLastErrorCodeC, _RuntimeLastErrorCodeDart>(
+            'synheart_runtime_last_error_code',
+          );
     } catch (_) {
       return null;
     }
   }
 
   static _RuntimeDiagnosticsJsonDart? _lookupDiagnosticsJson(
-      DynamicLibrary lib) {
+    DynamicLibrary lib,
+  ) {
     try {
-      return lib.lookupFunction<_RuntimeDiagnosticsJsonC,
-          _RuntimeDiagnosticsJsonDart>(
-        'synheart_runtime_diagnostics_json',
-      );
+      return lib.lookupFunction<
+        _RuntimeDiagnosticsJsonC,
+        _RuntimeDiagnosticsJsonDart
+      >('synheart_runtime_diagnostics_json');
     } catch (_) {
       return null;
     }
   }
 
   static _RuntimeClearDiagnosticsDart? _lookupClearDiagnostics(
-      DynamicLibrary lib) {
+    DynamicLibrary lib,
+  ) {
     try {
-      return lib.lookupFunction<_RuntimeClearDiagnosticsC,
-          _RuntimeClearDiagnosticsDart>(
-        'synheart_runtime_clear_diagnostics',
-      );
+      return lib.lookupFunction<
+        _RuntimeClearDiagnosticsC,
+        _RuntimeClearDiagnosticsDart
+      >('synheart_runtime_clear_diagnostics');
     } catch (_) {
       return null;
     }
@@ -369,10 +410,10 @@ class RuntimeBridge {
     DynamicLibrary lib,
   ) {
     try {
-      return lib.lookupFunction<_RuntimeLastPreprocessedC,
-          _RuntimeLastPreprocessedDart>(
-        'synheart_runtime_last_preprocessed',
-      );
+      return lib.lookupFunction<
+        _RuntimeLastPreprocessedC,
+        _RuntimeLastPreprocessedDart
+      >('synheart_runtime_last_preprocessed');
     } catch (_) {
       return null;
     }
@@ -380,8 +421,10 @@ class RuntimeBridge {
 
   static _RuntimeBaselinesJsonDart? _lookupBaselinesJson(DynamicLibrary lib) {
     try {
-      return lib.lookupFunction<_RuntimeBaselinesJsonC,
-          _RuntimeBaselinesJsonDart>('synheart_runtime_baselines_json');
+      return lib
+          .lookupFunction<_RuntimeBaselinesJsonC, _RuntimeBaselinesJsonDart>(
+            'synheart_runtime_baselines_json',
+          );
     } catch (_) {
       return null;
     }
@@ -391,10 +434,10 @@ class RuntimeBridge {
     DynamicLibrary lib,
   ) {
     try {
-      return lib.lookupFunction<_RuntimeBaselineSummaryC,
-          _RuntimeBaselineSummaryDart>(
-        'synheart_runtime_baseline_summary',
-      );
+      return lib.lookupFunction<
+        _RuntimeBaselineSummaryC,
+        _RuntimeBaselineSummaryDart
+      >('synheart_runtime_baseline_summary');
     } catch (_) {
       return null;
     }
@@ -404,10 +447,10 @@ class RuntimeBridge {
     DynamicLibrary lib,
   ) {
     try {
-      return lib.lookupFunction<_RuntimeExportSrmSnapshotC,
-          _RuntimeExportSrmSnapshotDart>(
-        'synheart_runtime_export_srm_snapshot',
-      );
+      return lib.lookupFunction<
+        _RuntimeExportSrmSnapshotC,
+        _RuntimeExportSrmSnapshotDart
+      >('synheart_runtime_export_srm_snapshot');
     } catch (_) {
       return null;
     }
@@ -417,10 +460,10 @@ class RuntimeBridge {
     DynamicLibrary lib,
   ) {
     try {
-      return lib.lookupFunction<_RuntimeLoadSrmSnapshotC,
-          _RuntimeLoadSrmSnapshotDart>(
-        'synheart_runtime_load_srm_snapshot',
-      );
+      return lib.lookupFunction<
+        _RuntimeLoadSrmSnapshotC,
+        _RuntimeLoadSrmSnapshotDart
+      >('synheart_runtime_load_srm_snapshot');
     } catch (_) {
       return null;
     }
@@ -459,11 +502,38 @@ class RuntimeBridge {
   }
 
   static _LabSetWindowValuesDart? _lookupLabSetWindowValues(
-      DynamicLibrary lib) {
+    DynamicLibrary lib,
+  ) {
     try {
       return lib.lookupFunction<_LabSetWindowValuesC, _LabSetWindowValuesDart>(
         'synheart_lab_set_window_values',
       );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _LabMergeSessionExtraDataDart? _lookupLabMergeSessionExtraData(
+    DynamicLibrary lib,
+  ) {
+    try {
+      return lib.lookupFunction<
+        _LabMergeSessionExtraDataC,
+        _LabMergeSessionExtraDataDart
+      >('synheart_lab_merge_session_extra_data');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _LabSetWindowStateOverridesDart? _lookupLabSetWindowStateOverrides(
+    DynamicLibrary lib,
+  ) {
+    try {
+      return lib.lookupFunction<
+        _LabSetWindowStateOverridesC,
+        _LabSetWindowStateOverridesDart
+      >('synheart_lab_set_window_state_overrides');
     } catch (_) {
       return null;
     }
@@ -490,10 +560,9 @@ class RuntimeBridge {
         return null;
       }
 
-      final runtimeNew = lib
-          .lookupFunction<_RuntimeNewC, _RuntimeNewDart>(
-            'synheart_runtime_new',
-          );
+      final runtimeNew = lib.lookupFunction<_RuntimeNewC, _RuntimeNewDart>(
+        'synheart_runtime_new',
+      );
 
       final configJson = jsonEncode(config.toJson());
       final configNative = configJson.toNativeUtf8();
@@ -832,6 +901,42 @@ class RuntimeBridge {
     } finally {
       malloc.free(widNative);
       malloc.free(vjNative);
+    }
+  }
+
+  /// Merge session-level metadata into `session_metadata.extra_data`.
+  ///
+  /// [patchJson] must be a JSON object at the root.
+  /// Returns `null` on success, or an error string on failure.
+  String? labMergeSessionExtraData(String patchJson) {
+    final ffi = _labMergeSessionExtraDataFfi;
+    if (ffi == null) return 'lab merge_session_extra_data symbol not available';
+    final native = patchJson.toNativeUtf8();
+    try {
+      final ptr = ffi(_handle, native);
+      if (ptr == nullptr) return null; // success
+      final err = ptr.toDartString();
+      _freeString(ptr);
+      return err;
+    } finally {
+      malloc.free(native);
+    }
+  }
+
+  /// Set state-data overrides for a lab window before closing it.
+  ///
+  /// [overridesJson] should be a JSON object containing optional:
+  /// `device_context`, `system_state`, `session_spacing`.
+  void labSetWindowStateOverrides(String windowId, String overridesJson) {
+    final ffi = _labSetWindowStateOverridesFfi;
+    if (ffi == null) return;
+    final widNative = windowId.toNativeUtf8();
+    final ovNative = overridesJson.toNativeUtf8();
+    try {
+      ffi(_handle, widNative, ovNative);
+    } finally {
+      malloc.free(widNative);
+      malloc.free(ovNative);
     }
   }
 

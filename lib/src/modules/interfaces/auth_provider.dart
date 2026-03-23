@@ -14,7 +14,7 @@ abstract class AuthProvider {
   /// Typical headers: `Authorization`, `X-Device-Signature`, etc.
   ///
   /// - [method]: HTTP method (e.g., "POST")
-  /// - [path]: Request path (e.g., "/v2/hsi/ingest")
+  /// - [path]: Request path (e.g., "/v1/hsi/ingest")
   /// - [bodyBytes]: Serialized request body
   Future<Map<String, String>> signRequest({
     required String method,
