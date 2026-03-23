@@ -48,6 +48,10 @@ abstract final class ApiEndpoints {
   static const String platformMetadataIngestPath =
       '/v1/platform/metadata/ingest';
 
+  // ── Device Capabilities ─────────────────────────────────────────
+  /// Path for fetching device capability tokens (device-signed).
+  static const String deviceCapabilitiesPath = '/v1/device/capabilities';
+
   // ── Auth / Account ────────────────────────────────────────────────
   static const String authExchangePath = '/v1/auth/exchange';
   static const String authRefreshPath = '/v1/auth/refresh';

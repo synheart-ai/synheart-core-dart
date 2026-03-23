@@ -31,7 +31,8 @@ dependencies:
   # synheart-runtime and accessed via RuntimeBridge.lastHsv().
   synheart_behavior:
     path: ../synheart-behavior-dart
-
+  synheart_auth:
+    path: ../synheart-auth-dart
 
   # FFI for synheart-runtime native library
   ffi: ^2.1.0
@@ -71,6 +72,8 @@ dependency_overrides:
     path: ../synheart-wear-dart
   synheart_behavior:
     path: ../synheart-behavior-dart
+  synheart_auth:
+    path: ../synheart-auth-dart
 
 dev_dependencies:
   flutter_test:

@@ -54,6 +54,12 @@
 @import sqflite_darwin;
 #endif
 
+#if __has_include(<synheart_auth/SynheartAuthPlugin.h>)
+#import <synheart_auth/SynheartAuthPlugin.h>
+#else
+@import synheart_auth;
+#endif
+
 #if __has_include(<synheart_behavior/SynheartBehaviorPlugin.h>)
 #import <synheart_behavior/SynheartBehaviorPlugin.h>
 #else
@@ -89,6 +95,7 @@
   [PathProviderPlugin registerWithRegistrar:[registry registrarForPlugin:@"PathProviderPlugin"]];
   [SharedPreferencesPlugin registerWithRegistrar:[registry registrarForPlugin:@"SharedPreferencesPlugin"]];
   [SqflitePlugin registerWithRegistrar:[registry registrarForPlugin:@"SqflitePlugin"]];
+  [SynheartAuthPlugin registerWithRegistrar:[registry registrarForPlugin:@"SynheartAuthPlugin"]];
   [SynheartBehaviorPlugin registerWithRegistrar:[registry registrarForPlugin:@"SynheartBehaviorPlugin"]];
   [SynheartSessionPlugin registerWithRegistrar:[registry registrarForPlugin:@"SynheartSessionPlugin"]];
   [SynheartWearPlugin registerWithRegistrar:[registry registrarForPlugin:@"SynheartWearPlugin"]];
