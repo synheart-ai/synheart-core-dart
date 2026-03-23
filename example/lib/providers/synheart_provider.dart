@@ -305,10 +305,7 @@ class SynheartProvider extends ChangeNotifier {
               userId: userId,
               region: 'US',
             ),
-            // Use remote-dev ingest so uploads reach a host that resolves from device.
-            // Switch to ApiEndpoints.defaultCloudBaseUrl when ingest.synheart.ai is reachable.
             cloudConfig: CloudConfig(
-              baseUrl: ApiEndpoints.defaultCloudBaseUrlRemoteDev,
               tenantId: 'YOUR_TENANT_ID',
               hmacSecret: 'YOUR_HMAC_SECRET',
               subjectId: userId,

@@ -7,6 +7,7 @@ import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
 import '../interfaces/feature_providers.dart';
 import '../interfaces/raw_data_provider.dart';
+import '../runtime/runtime_behavior_code.dart';
 import 'behavior_events.dart';
 import 'behavior_event_stream.dart';
 import 'window_aggregator.dart';
@@ -15,6 +16,10 @@ import 'window_aggregator.dart';
 ///
 /// Captures user-device interaction patterns using synheart_behavior package.
 /// RFC-CORE-0007 compliant: no feature computation in Core.
+///
+/// Consent gating policy: no collection at all without consent.
+/// synheart_behavior.initialize() starts native collection, so we only
+/// initialize when `behavior` consent is granted (inside onStart).
 class BehaviorModule extends BaseSynheartModule
     implements RawBehaviorDataProvider {
   @override
@@ -25,6 +30,7 @@ class BehaviorModule extends BaseSynheartModule
 
   final CapabilityProvider _capabilities;
   final ConsentProvider _consent;
+  final bool _enableMotionLite;
 
   StreamSubscription<BehaviorEvent>? _eventSubscription;
   StreamSubscription? _synheartBehaviorSubscription;
@@ -33,11 +39,22 @@ class BehaviorModule extends BaseSynheartModule
   StreamSubscription<ConsentSnapshot>? _consentSubscription;
   bool _isStarting = false;
 
+  /// When set, all behavior events are pushed to the runtime via this callback
+  /// (so the runtime receives events even if stream delivery is delayed).
+  void Function(int tsMs, int eventType, double value)? _pushBehaviorToRuntime;
+  set pushBehaviorToRuntime(
+    void Function(int tsMs, int eventType, double value)? f,
+  ) {
+    _pushBehaviorToRuntime = f;
+  }
+
   BehaviorModule({
     required CapabilityProvider capabilities,
     required ConsentProvider consent,
+    bool enableMotionLite = false,
   }) : _capabilities = capabilities,
-       _consent = consent;
+       _consent = consent,
+       _enableMotionLite = enableMotionLite;
 
   /// Get the event stream for recording events (for manual instrumentation)
   BehaviorEventStream get eventStream => _eventStream;
@@ -53,7 +70,6 @@ class BehaviorModule extends BaseSynheartModule
   /// }
   /// ```
   sb.SynheartBehavior? get synheartBehavior => _synheartBehavior;
-
 
   // MARK: - RawBehaviorDataProvider
 
@@ -72,11 +88,56 @@ class BehaviorModule extends BaseSynheartModule
     // initialize when `behavior` consent is granted (inside onStart).
   }
 
+  /// Handle events from synheart_behavior, forwarding to event stream and runtime.
+  void _onSynheartBehaviorEvent(sb.BehaviorEvent event) {
+    if (!_consent.current().behavior) return;
+    final behaviorEvent = _convertSynheartEvent(event);
+    if (behaviorEvent != null) {
+      _eventStream.addEvent(behaviorEvent);
+      // Push directly to runtime so app_switch, notification, etc. are never missed.
+      final mapped = _behaviorEventToRuntimeCode(behaviorEvent);
+      if (mapped != null) {
+        final tsMs = behaviorEvent.timestamp.millisecondsSinceEpoch;
+        _pushBehaviorToRuntime?.call(tsMs, mapped.$1, mapped.$2);
+      }
+    }
+  }
+
+  /// Maps internal BehaviorEvent to runtime (eventType, value).
+  (int, double)? _behaviorEventToRuntimeCode(BehaviorEvent event) {
+    switch (event.type) {
+      case BehaviorEventType.screenOn:
+        return (RuntimeBehaviorCode.screenOn, 1.0);
+      case BehaviorEventType.screenOff:
+        return (RuntimeBehaviorCode.screenOff, 1.0);
+      case BehaviorEventType.tap:
+      case BehaviorEventType.keyDown:
+      case BehaviorEventType.keyUp:
+        return (RuntimeBehaviorCode.input, 1.0);
+      case BehaviorEventType.appSwitch:
+        return (RuntimeBehaviorCode.appSwitch, 1.0);
+      case BehaviorEventType.notificationReceived:
+      case BehaviorEventType.notificationOpened:
+        return (RuntimeBehaviorCode.notification, 1.0);
+      case BehaviorEventType.scroll:
+        final delta = event.metadata?['delta'] is num
+            ? (event.metadata!['delta'] as num).toDouble()
+            : 1.0;
+        return (RuntimeBehaviorCode.scroll, delta);
+      case BehaviorEventType.swipe:
+        final vel = event.metadata?['velocity'] is num
+            ? (event.metadata!['velocity'] as num).toDouble()
+            : 1.0;
+        return (RuntimeBehaviorCode.swipe, vel);
+      case BehaviorEventType.call:
+        return (RuntimeBehaviorCode.call, 1.0);
+    }
+  }
+
   @override
   Future<void> onStart() async {
     SynheartLogger.log('[BehaviorModule] Starting behavior tracking...');
 
-    // Consent gating policy: no collection at all without consent.
     // Observe consent so we can start/stop dynamically.
     _consentSubscription ??= _consent.observe().listen(
       (consent) async {
@@ -108,11 +169,10 @@ class BehaviorModule extends BaseSynheartModule
       if (_synheartBehavior == null) {
         try {
           _synheartBehavior = await sb.SynheartBehavior.initialize(
-            config: const sb.BehaviorConfig(
+            config: sb.BehaviorConfig(
               enableInputSignals: true,
               enableAttentionSignals: true,
-              enableMotionLite:
-                  false, // Disabled: 50Hz sensor + ONNX inference is too heavy during debug
+              enableMotionLite: _enableMotionLite,
             ),
           );
           SynheartLogger.log(
@@ -123,7 +183,6 @@ class BehaviorModule extends BaseSynheartModule
             '[BehaviorModule] Failed to initialize synheart_behavior: $e',
             error: e,
           );
-          // Continue without automatic capture - fallback to manual instrumentation
           _synheartBehavior = null;
         }
       }
@@ -145,13 +204,7 @@ class BehaviorModule extends BaseSynheartModule
       final synheartBehavior = _synheartBehavior;
       if (synheartBehavior != null) {
         _synheartBehaviorSubscription = synheartBehavior.onEvent.listen(
-          (event) {
-            if (!_consent.current().behavior) return;
-            final behaviorEvent = _convertSynheartEvent(event);
-            if (behaviorEvent != null) {
-              _eventStream.addEvent(behaviorEvent);
-            }
-          },
+          _onSynheartBehaviorEvent,
           onError: (e, st) => SynheartLogger.log(
             '[BehaviorModule] synheart_behavior event error: $e',
             error: e,
@@ -197,22 +250,17 @@ class BehaviorModule extends BaseSynheartModule
 
   /// Convert synheart_behavior event to internal BehaviorEvent format
   BehaviorEvent? _convertSynheartEvent(sb.BehaviorEvent event) {
-    // Map synheart_behavior events to internal event types
     final eventType = event.eventType;
 
     switch (eventType) {
       case sb.BehaviorEventType.tap:
         return BehaviorEvent.tap(Offset.zero);
       case sb.BehaviorEventType.scroll:
-        // Extract velocity from metrics (synheart_behavior uses 'velocity' key)
         final velocity = event.metrics['velocity'] as double? ?? 0.0;
-        // Use velocity as delta for scroll events
         return BehaviorEvent.scroll(velocity);
       case sb.BehaviorEventType.typing:
-        // Map typing to keyDown for now
         return BehaviorEvent.keyDown();
       case sb.BehaviorEventType.notification:
-        // Check the action in metrics to determine if received or opened
         final action = event.metrics['action'] as String?;
         if (action == 'opened') {
           return BehaviorEvent.notificationOpened();
@@ -220,13 +268,18 @@ class BehaviorModule extends BaseSynheartModule
           return BehaviorEvent.notificationReceived();
         }
       case sb.BehaviorEventType.call:
-        // Map call events to notification received for now
-        return BehaviorEvent.notificationReceived();
+        return BehaviorEvent.call();
       case sb.BehaviorEventType.swipe:
-        // Map swipe to tap for now (could be enhanced later)
-        return BehaviorEvent.tap(Offset.zero);
+        final velocity = event.metrics['velocity'] is num
+            ? (event.metrics['velocity'] as num).toDouble()
+            : 1.0;
+        final direction = event.metrics['direction'] is String
+            ? event.metrics['direction'] as String
+            : null;
+        return BehaviorEvent.swipe(velocity: velocity, direction: direction);
+      case sb.BehaviorEventType.app_switch:
+        return BehaviorEvent.appSwitch();
       case sb.BehaviorEventType.clipboard:
-        // Clipboard events don't map to an internal behavior event
         return null;
     }
   }

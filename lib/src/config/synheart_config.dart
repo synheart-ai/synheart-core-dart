@@ -10,10 +10,7 @@ class StorageConfig {
   final bool enabled;
   final int? retentionDays;
 
-  const StorageConfig({
-    this.enabled = true,
-    this.retentionDays,
-  });
+  const StorageConfig({this.enabled = true, this.retentionDays});
 }
 
 /// Sync sub-configuration (RFC-CORE-0005).
@@ -23,7 +20,7 @@ class SyncConfig {
 
   const SyncConfig({
     this.enabled = false,
-    this.baseUrl = 'https://api.synheart.com',
+    this.baseUrl = ApiEndpoints.defaultAuthBaseUrl,
   });
 }
 
@@ -31,9 +28,7 @@ class SyncConfig {
 class PrivacyConfig {
   final bool allowResearch;
 
-  const PrivacyConfig({
-    this.allowResearch = false,
-  });
+  const PrivacyConfig({this.allowResearch = false});
 }
 
 /// Configuration for Synheart Core SDK
@@ -145,15 +140,21 @@ class SynheartConfig {
     }
     if (appId.isEmpty) {
       throw const SynheartError(
-          'ERR_NOT_CONFIGURED', 'appId must not be empty');
+        'ERR_NOT_CONFIGURED',
+        'appId must not be empty',
+      );
     }
     if (subjectId.isEmpty) {
       throw const SynheartError(
-          'ERR_NOT_CONFIGURED', 'subjectId must not be empty');
+        'ERR_NOT_CONFIGURED',
+        'subjectId must not be empty',
+      );
     }
     if (subjectId.contains('|')) {
       throw const SynheartError(
-          'ERR_INVALID_MODE', 'subjectId must not contain pipe character');
+        'ERR_INVALID_MODE',
+        'subjectId must not contain pipe character',
+      );
     }
   }
 }
@@ -209,10 +210,17 @@ class BehaviorConfig {
   /// Minimum idle gap to record (in seconds)
   final double minIdleGapSeconds;
 
+  /// Enable on-device motion-state inference in synheart_behavior.
+  ///
+  /// When enabled, the behavior pipeline uses high-rate motion sensors and
+  /// the embedded model to infer `motion_state`.
+  final bool enableMotionLite;
+
   const BehaviorConfig({
     this.enableGestureTracking = true,
     this.enableTypingTracking = true,
     this.minIdleGapSeconds = 1.0,
+    this.enableMotionLite = false,
   });
 }
 

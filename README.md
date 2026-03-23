@@ -1,6 +1,6 @@
 # Synheart Core SDK - Dart/Flutter
 
-[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
 [![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.32.0-blue.svg)](https://flutter.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
@@ -126,6 +126,40 @@ Then run:
 ```bash
 flutter pub get
 ```
+
+## Endpoint Configuration (No Hardcoded URLs)
+
+This SDK supports endpoint injection via `--dart-define` / `--dart-define-from-file`.
+To avoid committing real endpoints:
+
+1. Copy `env/synheart.endpoints.example.json` to a local file such as
+   `env/synheart.endpoints.local.json` (gitignored).
+2. Put your real endpoint URLs in the local file.
+3. Run your app with:
+
+```bash
+flutter run --dart-define-from-file=env/synheart.endpoints.local.json
+```
+
+**Example file shape** (`env/synheart.endpoints.example.json` — placeholders only; do not commit secrets):
+
+```json
+{
+  "SYNHEART_CLOUD_BASE_URL": "https://your-cloud.example.com",
+  "SYNHEART_CONSENT_BASE_URL": "https://your-consent.example.com",
+  "SYNHEART_PLATFORM_INGEST_BASE_URL": "https://your-platform.example.com",
+  "SYNHEART_AUTH_BASE_URL": "https://your-auth.example.com"
+}
+```
+
+| Define key | Used for |
+|------------|----------|
+| `SYNHEART_CLOUD_BASE_URL` | HSI cloud ingest (`ApiEndpoints.defaultCloudBaseUrl`) |
+| `SYNHEART_CONSENT_BASE_URL` | Consent service API (`ApiEndpoints.defaultConsentBaseUrl`) |
+| `SYNHEART_PLATFORM_INGEST_BASE_URL` | Platform session/metadata ingest |
+| `SYNHEART_AUTH_BASE_URL` | Auth/account API (exchange, refresh, account delete) |
+
+Values are read at compile time via `String.fromEnvironment` in `lib/src/config/api_endpoints.dart`.
 
 ## Usage
 
