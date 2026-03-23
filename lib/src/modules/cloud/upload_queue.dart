@@ -70,9 +70,10 @@ class UploadQueue {
   }
 
   /// Confirm batch was successfully uploaded (remove from queue)
-  void confirmBatch(List<String> batch) {
-    _queue.removeRange(0, batch.length);
-    persistToStorage();
+  Future<void> confirmBatch(List<String> batch) async {
+    final removeCount = batch.length.clamp(0, _queue.length);
+    _queue.removeRange(0, removeCount);
+    await persistToStorage();
   }
 
   /// Re-enqueue batch on failure

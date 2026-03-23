@@ -60,11 +60,9 @@ class ConsentUIManager {
 
   /// Get default profile from list (if available)
   ConsentProfile? getDefaultProfile(List<ConsentProfile> profiles) {
-    try {
-      return profiles.firstWhere((p) => p.isDefault);
-    } catch (e) {
-      // No default profile found
-      return null;
+    for (final p in profiles) {
+      if (p.isDefault) return p;
     }
+    return null;
   }
 }

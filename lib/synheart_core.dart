@@ -108,8 +108,13 @@ export 'src/modules/runtime/runtime_bridge.dart';
 // Watch Session (adapter around synheart_session for watch relay)
 export 'src/modules/session/watch_session_module.dart';
 
-// Services
-export 'src/services/auth_service.dart';
+// Device Auth
+export 'src/modules/cloud/device_auth_provider.dart';
+export 'src/modules/capabilities/capability_token_fetcher.dart';
+export 'src/modules/capabilities/remote_capability_token_fetcher.dart';
+
+// Device Auth (re-exported from synheart_auth, hiding name collisions)
+export 'package:synheart_auth/synheart_auth.dart' hide NetworkError;
 
 // Session lifecycle (re-exported from synheart_session)
 export 'package:synheart_session/synheart_session.dart';

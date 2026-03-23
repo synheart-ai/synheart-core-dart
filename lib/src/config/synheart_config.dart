@@ -5,6 +5,29 @@ import 'platform_ingest_config.dart';
 import 'synheart_mode.dart';
 import 'synheart_errors.dart';
 
+/// Device authentication configuration.
+///
+/// When provided, the SDK will automatically:
+/// 1. Configure SynheartAuth with [authBaseUrl]
+/// 2. Register the device (idempotent)
+/// 3. Fetch capability tokens from the server using device-signed requests
+/// 4. Use [DeviceAuthProvider] for cloud/platform ingest signing
+class DeviceAuthConfig {
+  /// Base URL for the device auth service.
+  final String authBaseUrl;
+
+  /// Base URL for the capability token service.
+  /// Defaults to [authBaseUrl] if not set.
+  final String? capabilityBaseUrl;
+
+  const DeviceAuthConfig({
+    required this.authBaseUrl,
+    this.capabilityBaseUrl,
+  });
+
+  String get resolvedCapabilityBaseUrl => capabilityBaseUrl ?? authBaseUrl;
+}
+
 /// Storage sub-configuration (RFC-CORE-0004).
 class StorageConfig {
   final bool enabled;
@@ -88,6 +111,11 @@ class SynheartConfig {
   /// Platform ingestion configuration (custom session/metadata uploads)
   final PlatformIngestConfig? platformIngestConfig;
 
+  /// Device authentication configuration.
+  /// When set, enables automatic device registration, capability token
+  /// fetching, and device-signed request authentication.
+  final DeviceAuthConfig? deviceAuthConfig;
+
   /// Server-signed capability token for feature gating
   final CapabilityToken? capabilityToken;
 
@@ -122,6 +150,7 @@ class SynheartConfig {
     this.cloudConfig,
     this.consentConfig,
     this.platformIngestConfig,
+    this.deviceAuthConfig,
     this.capabilityToken,
     this.capabilitySecret,
     this.allowUnsignedCapabilities = false,
