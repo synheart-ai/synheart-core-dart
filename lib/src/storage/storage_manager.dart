@@ -183,7 +183,12 @@ class StorageManager {
         final shm = File('$dbPath-shm');
         if (await wal.exists()) await wal.delete();
         if (await shm.exists()) await shm.delete();
-      } catch (_) {}
+      } catch (cleanupError) {
+        SynheartLogger.log(
+          '[StorageManager] Failed to delete corrupt database: $cleanupError',
+          error: cleanupError,
+        );
+      }
       _db = await openDatabase(
         dbPath,
         version: 1,

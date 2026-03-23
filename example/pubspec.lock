@@ -717,6 +717,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.0"
+  synheart_auth:
+    dependency: transitive
+    description:
+      path: "../../synheart-auth-dart"
+      relative: true
+    source: path
+    version: "1.0.0"
   synheart_behavior:
     dependency: "direct main"
     description:

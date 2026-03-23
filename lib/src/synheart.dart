@@ -39,7 +39,10 @@ import 'modules/platform_ingest/platform_ingest_client.dart';
 import 'modules/platform_ingest/platform_payload_builder.dart';
 import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
+import 'package:synheart_auth/synheart_auth.dart';
 import 'auth/auth_module.dart';
+import 'modules/cloud/device_auth_provider.dart';
+import 'modules/capabilities/remote_capability_token_fetcher.dart';
 import 'sync/sync_module.dart';
 import 'sync/artifact_envelope.dart';
 import 'crypto/urk.dart';
@@ -96,6 +99,7 @@ class Synheart {
   BehaviorModule? _behaviorModule;
   RuntimeModule? _runtimeModule;
   CloudConnectorModule? _cloudConnector;
+  DeviceAuthProvider? _deviceAuthProvider;
   PlatformIngestModule? _platformIngestModule;
 
   // Watch session module
@@ -554,8 +558,13 @@ class Synheart {
       SynheartLogger.log('[Synheart] Initializing capability module...');
       _capabilityModule = CapabilityModule();
       final resolvedConfig = config ?? SynheartConfig.defaults();
-      if (resolvedConfig.capabilityToken != null &&
+
+      if (resolvedConfig.deviceAuthConfig != null) {
+        // ── Device auth path ──────────────────────────────────────
+        await _initDeviceAuth(resolvedConfig);
+      } else if (resolvedConfig.capabilityToken != null &&
           resolvedConfig.capabilitySecret != null) {
+        // ── Static token path (HMAC-verified) ─────────────────────
         await _capabilityModule!.loadFromToken(
           resolvedConfig.capabilityToken!,
           resolvedConfig.capabilitySecret!,
@@ -567,7 +576,9 @@ class Synheart {
         await _capabilityModule!.loadDefaults();
       } else {
         throw StateError(
-          'Capability token and secret are required. Set allowUnsignedCapabilities: true for debug/testing.',
+          'Capability token and secret are required. '
+          'Provide deviceAuthConfig, capabilityToken+capabilitySecret, '
+          'or set allowUnsignedCapabilities: true for debug/testing.',
         );
       }
 
@@ -647,11 +658,32 @@ class Synheart {
 
       if (_config?.cloudConfig != null) {
         SynheartLogger.log('[Synheart] Initializing Cloud Connector...');
+        final cloudCfg = _config!.cloudConfig!;
+        // If device auth is configured and no custom authProvider was set,
+        // use the DeviceAuthProvider automatically.
+        final effectiveCloudConfig =
+            (cloudCfg.authProvider == null && _deviceAuthProvider != null)
+                ? CloudConfig(
+                    tenantId: cloudCfg.tenantId,
+                    authProvider: _deviceAuthProvider,
+                    subjectId: cloudCfg.subjectId,
+                    instanceId: cloudCfg.instanceId,
+                    apiKey: cloudCfg.apiKey,
+                    orgId: cloudCfg.orgId,
+                    baseUrl: cloudCfg.baseUrl,
+                    subjectType: cloudCfg.subjectType,
+                    maxQueueSize: cloudCfg.maxQueueSize,
+                    batchSize: cloudCfg.batchSize,
+                    uploadInterval: cloudCfg.uploadInterval,
+                    maxRetries: cloudCfg.maxRetries,
+                    enableBacklog: cloudCfg.enableBacklog,
+                  )
+                : cloudCfg;
         _cloudConnector = CloudConnectorModule(
           capabilities: _capabilityModule!,
           consent: _consentModule!,
           hsiRuntime: _runtimeModule!,
-          config: _config!.cloudConfig!,
+          config: effectiveCloudConfig,
         );
         _moduleManager.registerModule(
           _cloudConnector!,
@@ -1441,14 +1473,18 @@ class Synheart {
     _sessionWearSubscription?.cancel();
     _sessionHsiBuffer = [];
     _sessionWearBuffer = [];
-    _sessionHsiSubscription = _runtimeModule!.hsiStream.listen((hsiJson) {
-      final consent = _consentModule?.current();
-      if (consent == null || !consent.biosignals) return;
-      _sessionHsiBuffer.add(hsiJson);
-    });
-    _sessionWearSubscription = _wearModule!.rawSampleStream.listen(
-      (sample) => _sessionWearBuffer.add(sample),
-    );
+    if (_runtimeModule != null) {
+      _sessionHsiSubscription = _runtimeModule!.hsiStream.listen((hsiJson) {
+        final consent = _consentModule?.current();
+        if (consent == null || !consent.biosignals) return;
+        _sessionHsiBuffer.add(hsiJson);
+      });
+    }
+    if (_wearModule != null) {
+      _sessionWearSubscription = _wearModule!.rawSampleStream.listen(
+        (sample) => _sessionWearBuffer.add(sample),
+      );
+    }
   }
 
   /// Log runtime (native synheart-runtime) summary to the Flutter terminal.
@@ -1464,7 +1500,7 @@ class Synheart {
     final fc = bridge.frameCount();
     final q = bridge.lastQuality();
     final wearSamples = _runtimeModule?.wearSampleCount ?? 0;
-    debugPrint(
+    SynheartLogger.log(
       '[Runtime] Session end: frameCount=$fc lastQuality=$q'
       '${fc == 0 ? " (no HSI produced — no window completed, wearSamplesReceived=$wearSamples)" : ""}',
     );
@@ -2577,6 +2613,72 @@ class Synheart {
       if (_hasConsentForFeature(feature)) return true;
     }
     return false;
+  }
+
+  /// Configure device authentication, register device, and fetch capabilities.
+  Future<void> _initDeviceAuth(SynheartConfig resolvedConfig) async {
+    final dac = resolvedConfig.deviceAuthConfig!;
+    SynheartLogger.log('[Synheart] Configuring device authentication...');
+
+    // 1. Configure SynheartAuth
+    await SynheartAuth.instance.configure(dac.authBaseUrl);
+
+    // 2. Register device (idempotent — returns alreadyRegistered if done)
+    final regResult = await SynheartAuth.instance.registerDevice(
+      resolvedConfig.appId,
+    );
+    if (regResult.status == RegistrationStatus.failed) {
+      if (resolvedConfig.allowUnsignedCapabilities) {
+        SynheartLogger.log(
+          '[Synheart] WARNING: Device registration failed, falling back to unsigned capabilities.',
+        );
+        await _capabilityModule!.loadDefaults();
+        return;
+      }
+      throw StateError(
+        'Device registration failed. Set allowUnsignedCapabilities: true for dev mode.',
+      );
+    }
+    SynheartLogger.log(
+      '[Synheart] Device registered: ${regResult.deviceId}',
+    );
+
+    // 3. Fetch capability token from server (device-signed request)
+    try {
+      final fetcher = RemoteCapabilityTokenFetcher(
+        appId: resolvedConfig.appId,
+        baseUrl: dac.resolvedCapabilityBaseUrl,
+      );
+      final token = await fetcher.fetch();
+
+      if (resolvedConfig.capabilitySecret != null) {
+        // Verify token locally if secret is provided.
+        await _capabilityModule!.loadFromToken(
+          token,
+          resolvedConfig.capabilitySecret!,
+        );
+      } else {
+        // Trust the server-provided token — the request itself was
+        // device-signed, so the server already authenticated the device.
+        await _capabilityModule!.loadFromTokenUnsigned(token);
+      }
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] Capability token fetch failed: $e',
+        error: e,
+      );
+      if (resolvedConfig.allowUnsignedCapabilities) {
+        SynheartLogger.log(
+          '[Synheart] WARNING: Falling back to unsigned default capabilities.',
+        );
+        await _capabilityModule!.loadDefaults();
+      } else {
+        rethrow;
+      }
+    }
+
+    // 4. Create DeviceAuthProvider for cloud/platform signing
+    _deviceAuthProvider = DeviceAuthProvider(appId: resolvedConfig.appId);
   }
 
   /// Check whether the CapabilityModule allows a given feature.

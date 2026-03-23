@@ -438,7 +438,9 @@ class PlatformPayloadBuilder {
       if (s.length < 2) return 0.0;
       return s.last.difference(s.first).inMilliseconds / 1000.0;
     }).toList();
-    final totalTypingDuration = sessionDurations.reduce((a, b) => a + b);
+    final totalTypingDuration = sessionDurations.isEmpty
+        ? 0.0
+        : sessionDurations.reduce((a, b) => a + b);
 
     // Session gaps
     final sessionGaps = <double>[];
