@@ -59,4 +59,16 @@ abstract final class ApiEndpoints {
       '/api/v1/apps/$appId/consent-profiles';
   static const String consentTokenPath = '/api/v1/sdk/consent-token';
   static const String consentRevokePath = '/api/v1/sdk/consent-revoke';
+
+  /// Throws [ArgumentError] if [url] is still the placeholder value.
+  /// Call at module init to fail fast instead of silent 404s at runtime.
+  static void assertConfigured(String url, String name) {
+    if (url == 'https://example.invalid' || url.isEmpty) {
+      throw ArgumentError(
+        '$name is not configured. '
+        'Set it via --dart-define or --dart-define-from-file. '
+        'See README for details.',
+      );
+    }
+  }
 }

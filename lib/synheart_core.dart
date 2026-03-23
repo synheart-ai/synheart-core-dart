@@ -108,9 +108,6 @@ export 'src/modules/runtime/runtime_bridge.dart';
 // Watch Session (adapter around synheart_session for watch relay)
 export 'src/modules/session/watch_session_module.dart';
 
-// Services
-export 'src/services/auth_service.dart';
-
 // Session lifecycle (re-exported from synheart_session)
 export 'package:synheart_session/synheart_session.dart';
 

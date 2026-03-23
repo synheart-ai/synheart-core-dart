@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../config/api_endpoints.dart';
 import '../../core/logger.dart';
 import 'hsi_schema_transformer.dart';
 import '../base/synheart_module.dart';
@@ -89,6 +90,7 @@ class CloudConnectorModule extends BaseSynheartModule {
   @override
   Future<void> onInitialize() async {
     SynheartLogger.log('[CloudConnector] Initializing Cloud Connector...');
+    ApiEndpoints.assertConfigured(_config.baseUrl, 'CloudConfig.baseUrl');
 
     if (_config.hmacSecret != null) {
       _hmacSigner = HMACSigner(hmacSecret: _config.hmacSecret!);
@@ -251,7 +253,7 @@ class CloudConnectorModule extends BaseSynheartModule {
       );
 
       // Success - remove from queue
-      _uploadQueue.confirmBatch(batch);
+      await _uploadQueue.confirmBatch(batch);
 
       _lastUploadBatchId = response.batchId;
       _lastUploadAt = DateTime.now();
@@ -284,7 +286,7 @@ class CloudConnectorModule extends BaseSynheartModule {
       _lastUploadAttemptAt = DateTime.now();
 
       if (e is SchemaValidationError) {
-        _uploadQueue.confirmBatch(batch);
+        await _uploadQueue.confirmBatch(batch);
         _droppedSnapshotCount += batch.length;
         final reason =
             'Schema validation failed — dropped ${batch.length} snapshots';

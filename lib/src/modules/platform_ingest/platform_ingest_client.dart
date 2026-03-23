@@ -81,6 +81,7 @@ class PlatformIngestClient {
     required String apiKey,
     String? consentToken,
   }) async {
+    ApiEndpoints.assertConfigured(baseUrl, 'PlatformIngestConfig.baseUrl');
     final bodyJson = jsonEncode(payload);
     final bodyBytes = utf8.encode(bodyJson).length;
     int attempts = 0;

@@ -1441,14 +1441,18 @@ class Synheart {
     _sessionWearSubscription?.cancel();
     _sessionHsiBuffer = [];
     _sessionWearBuffer = [];
-    _sessionHsiSubscription = _runtimeModule!.hsiStream.listen((hsiJson) {
-      final consent = _consentModule?.current();
-      if (consent == null || !consent.biosignals) return;
-      _sessionHsiBuffer.add(hsiJson);
-    });
-    _sessionWearSubscription = _wearModule!.rawSampleStream.listen(
-      (sample) => _sessionWearBuffer.add(sample),
-    );
+    if (_runtimeModule != null) {
+      _sessionHsiSubscription = _runtimeModule!.hsiStream.listen((hsiJson) {
+        final consent = _consentModule?.current();
+        if (consent == null || !consent.biosignals) return;
+        _sessionHsiBuffer.add(hsiJson);
+      });
+    }
+    if (_wearModule != null) {
+      _sessionWearSubscription = _wearModule!.rawSampleStream.listen(
+        (sample) => _sessionWearBuffer.add(sample),
+      );
+    }
   }
 
   /// Log runtime (native synheart-runtime) summary to the Flutter terminal.
@@ -1464,7 +1468,7 @@ class Synheart {
     final fc = bridge.frameCount();
     final q = bridge.lastQuality();
     final wearSamples = _runtimeModule?.wearSampleCount ?? 0;
-    debugPrint(
+    SynheartLogger.log(
       '[Runtime] Session end: frameCount=$fc lastQuality=$q'
       '${fc == 0 ? " (no HSI produced — no window completed, wearSamplesReceived=$wearSamples)" : ""}',
     );
