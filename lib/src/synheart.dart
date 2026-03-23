@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:rxdart/rxdart.dart';
+import 'config/api_endpoints.dart';
 import 'config/synheart_config.dart';
 import 'core/logger.dart';
 import 'modules/base/module_manager.dart';
@@ -125,7 +126,6 @@ class Synheart {
   Completer<void>? _initCompleter; // guards concurrent init
   String? _userId;
   SynheartConfig? _config;
-  ConsentSnapshot? _previousConsent;
 
   // Phase 1: Artifact pipeline & storage
   StorageManager? _storageManager;
@@ -356,7 +356,7 @@ class Synheart {
     if (auth != null && auth.isAuthenticated && auth.accessToken != null) {
       try {
         await http.post(
-          Uri.parse('https://api.synheart.com/v1/account/delete'),
+          shared._buildAccountApiUri(ApiEndpoints.accountDeletePath),
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ${auth.accessToken}',
@@ -387,7 +387,7 @@ class Synheart {
 
     try {
       final response = await http.post(
-        Uri.parse('https://api.synheart.com/v1/account/delete/cancel'),
+        shared._buildAccountApiUri(ApiEndpoints.accountDeleteCancelPath),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${auth.accessToken}',
@@ -678,7 +678,6 @@ class Synheart {
       SynheartLogger.log('[Synheart] Initializing all modules...');
       await _moduleManager.initializeAll();
 
-      _previousConsent = _consentModule!.current();
       _consentModule!.addListener(_onConsentChanged);
 
       _hsvSubscription = _runtimeModule!.hsiStream.listen(
@@ -741,7 +740,10 @@ class Synheart {
       // Phase 3: Initialize auth and sync modules
       final appId = resolvedConfig.appId;
       if (appId.isNotEmpty) {
-        _authModule = AuthModule(appId: appId);
+        _authModule = AuthModule(
+          appId: appId,
+          baseUrl: resolvedConfig.sync.baseUrl,
+        );
         await _authModule!.restoreSession();
 
         if (_storageManager != null && _storageManager!.isOpen) {
@@ -2426,7 +2428,6 @@ class Synheart {
     SynheartLogger.log('  - Cloud Upload: ${newConsent.cloudUpload}');
     SynheartLogger.log('  - Syni: ${newConsent.syni}');
 
-    _previousConsent = newConsent;
     _reevaluateAllFeatures();
   }
 
@@ -2655,7 +2656,6 @@ class Synheart {
       _behaviorModule = null;
       _runtimeModule = null;
       _activationManager = null;
-      _previousConsent = null;
       _pendingConsent = null;
 
       // Phase 1: Close storage
@@ -2682,6 +2682,19 @@ class Synheart {
         stackTrace: stack,
       );
     }
+  }
+
+  String _accountApiBaseUrl() {
+    final configured = _config?.sync.baseUrl.trim();
+    if (configured != null && configured.isNotEmpty) {
+      return configured;
+    }
+    return ApiEndpoints.defaultAuthBaseUrl;
+  }
+
+  Uri _buildAccountApiUri(String path) {
+    final base = Uri.parse(_accountApiBaseUrl());
+    return base.resolve(path);
   }
 }
 

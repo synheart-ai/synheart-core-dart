@@ -167,6 +167,8 @@ class HSI11Reading {
   final double confidence;
   final String windowId;
   final String? direction;
+  final String? unit;
+  final List<String>? evidenceSourceIds;
   final String? notes;
 
   HSI11Reading({
@@ -175,6 +177,8 @@ class HSI11Reading {
     required this.confidence,
     required this.windowId,
     this.direction,
+    this.unit,
+    this.evidenceSourceIds,
     this.notes,
   });
 
@@ -184,6 +188,9 @@ class HSI11Reading {
         confidence: (json['confidence'] as num).toDouble(),
         windowId: json['window_id'] as String,
         direction: json['direction'] as String?,
+        unit: json['unit'] as String?,
+        evidenceSourceIds: (json['evidence_source_ids'] as List<dynamic>?)
+            ?.cast<String>(),
         notes: json['notes'] as String?,
       );
 
@@ -193,6 +200,9 @@ class HSI11Reading {
         'confidence': confidence,
         'window_id': windowId,
         if (direction != null) 'direction': direction,
+        if (unit != null) 'unit': unit,
+        if (evidenceSourceIds != null)
+          'evidence_source_ids': evidenceSourceIds,
         if (notes != null) 'notes': notes,
       };
 }

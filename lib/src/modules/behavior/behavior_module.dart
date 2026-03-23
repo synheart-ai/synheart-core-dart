@@ -7,6 +7,7 @@ import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
 import '../interfaces/feature_providers.dart';
 import '../interfaces/raw_data_provider.dart';
+import '../runtime/runtime_behavior_code.dart';
 import 'behavior_events.dart';
 import 'behavior_event_stream.dart';
 import 'window_aggregator.dart';
@@ -84,7 +85,6 @@ class BehaviorModule extends BaseSynheartModule
           enableAttentionSignals: true,
           enableMotionLite: _enableMotionLite,
         ),
-        onEventCallback: _onSynheartBehaviorEvent,
       );
       SynheartLogger.log(
         '[BehaviorModule] synheart_behavior initialized successfully',
@@ -100,9 +100,6 @@ class BehaviorModule extends BaseSynheartModule
     // Subscribe to synheart_behavior as soon as SDK is ready so we never miss
     // events that arrive before onStart() (e.g. app_switch right after app open).
     if (_synheartBehavior != null) {
-      print(
-        'BEHAVIOR_PIPELINE: [BehaviorModule] subscribed to synheart_behavior at init (diagnostics on)',
-      );
       _synheartBehaviorSubscription = _synheartBehavior!.onEvent.listen(
         _onSynheartBehaviorEvent,
         onError: (e, st) => SynheartLogger.log(
@@ -118,26 +115,12 @@ class BehaviorModule extends BaseSynheartModule
   }
 
   void _onSynheartBehaviorEvent(sb.BehaviorEvent event) {
-    print(
-      'BEHAVIOR_PIPELINE: [BehaviorModule] event: type=${event.eventType} ts=${event.timestamp}',
-    );
     SynheartLogger.log(
       '[BehaviorModule] synheart_behavior event: type=${event.eventType} ts=${event.timestamp}',
     );
-    if (!_consent.current().behavior) {
-      print(
-        'BEHAVIOR_PIPELINE: [BehaviorModule] event dropped (behavior consent false)',
-      );
-      return;
-    }
+    if (!_consent.current().behavior) return;
     final behaviorEvent = _convertSynheartEvent(event);
     if (behaviorEvent != null) {
-      print(
-        'BEHAVIOR_PIPELINE: [BehaviorModule] forwarding to runtime: ${behaviorEvent.type}',
-      );
-      SynheartLogger.log(
-        '[BehaviorModule] forwarding to runtime: ${behaviorEvent.type}',
-      );
       _eventStream.addEvent(behaviorEvent);
       // Push every behavior event directly to runtime (so app_switch, notification, etc. are never missed)
       final mapped = _behaviorEventToRuntimeCode(behaviorEvent);
@@ -152,30 +135,30 @@ class BehaviorModule extends BaseSynheartModule
   (int, double)? _behaviorEventToRuntimeCode(BehaviorEvent event) {
     switch (event.type) {
       case BehaviorEventType.screenOn:
-        return (0, 1.0);
+        return (RuntimeBehaviorCode.screenOn, 1.0);
       case BehaviorEventType.screenOff:
-        return (1, 1.0);
+        return (RuntimeBehaviorCode.screenOff, 1.0);
       case BehaviorEventType.tap:
       case BehaviorEventType.keyDown:
       case BehaviorEventType.keyUp:
-        return (2, 1.0);
+        return (RuntimeBehaviorCode.input, 1.0);
       case BehaviorEventType.appSwitch:
-        return (3, 1.0);
+        return (RuntimeBehaviorCode.appSwitch, 1.0);
       case BehaviorEventType.notificationReceived:
       case BehaviorEventType.notificationOpened:
-        return (4, 1.0);
+        return (RuntimeBehaviorCode.notification, 1.0);
       case BehaviorEventType.scroll:
         final delta = event.metadata?['delta'] is num
             ? (event.metadata!['delta'] as num).toDouble()
             : 1.0;
-        return (5, delta);
+        return (RuntimeBehaviorCode.scroll, delta);
       case BehaviorEventType.swipe:
         final vel = event.metadata?['velocity'] is num
             ? (event.metadata!['velocity'] as num).toDouble()
             : 1.0;
-        return (6, vel);
+        return (RuntimeBehaviorCode.swipe, vel);
       case BehaviorEventType.call:
-        return (7, 1.0);
+        return (RuntimeBehaviorCode.call, 1.0);
     }
   }
 
@@ -206,9 +189,6 @@ class BehaviorModule extends BaseSynheartModule
 
     // synheart_behavior already subscribed in onInitialize() so we never miss events
     if (_synheartBehavior != null && _synheartBehaviorSubscription == null) {
-      print(
-        'BEHAVIOR_PIPELINE: [BehaviorModule] subscribing to synheart_behavior (late start)',
-      );
       _synheartBehaviorSubscription = _synheartBehavior!.onEvent.listen(
         _onSynheartBehaviorEvent,
         onError: (e, st) => SynheartLogger.log(
@@ -233,6 +213,8 @@ class BehaviorModule extends BaseSynheartModule
     final eventType = event.eventType;
 
     switch (eventType) {
+      case sb.BehaviorEventType.app_switch:
+        return BehaviorEvent.appSwitch();
       case sb.BehaviorEventType.tap:
         return BehaviorEvent.tap(Offset.zero);
       case sb.BehaviorEventType.scroll:
@@ -261,8 +243,6 @@ class BehaviorModule extends BaseSynheartModule
             ? event.metrics['direction'] as String
             : null;
         return BehaviorEvent.swipe(velocity: velocity, direction: direction);
-      case sb.BehaviorEventType.app_switch:
-        return BehaviorEvent.appSwitch();
       case sb.BehaviorEventType.clipboard:
         // Clipboard events don't map to an internal behavior event
         return null;

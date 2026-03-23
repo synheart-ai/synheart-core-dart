@@ -5,30 +5,54 @@
 /// via [CloudConfig] / [ConsentConfig].
 abstract final class ApiEndpoints {
   // ── Base URLs (defaults) ──────────────────────────────────────────
-  /// Production cloud ingest (HSI uploads).
-  static const String defaultCloudBaseUrl = 'https://api.synheart.ai';
+  /// Cloud ingest base URL.
+  ///
+  /// Configure with `--dart-define SYNHEART_CLOUD_BASE_URL=...`
+  /// or `--dart-define-from-file` to avoid committing real endpoints.
+  static const String defaultCloudBaseUrl = String.fromEnvironment(
+    'SYNHEART_CLOUD_BASE_URL',
+    defaultValue: 'https://example.invalid',
+  );
 
-  /// Dev/staging cloud ingest base URL. Per Guidelines, dev is localhost; override for remote dev.
-  static const String defaultCloudBaseUrlDev = 'http://localhost:8083';
-
-  /// Remote dev ingest (reachable from device when ingest.synheart.ai is not).
-  /// Use in example app so uploads don't fail with "host lookup"; may return 404 if v2 not deployed.
-  static const String defaultCloudBaseUrlRemoteDev =
-      'https://ingest-service-temp-dev.synheart.io';
-
-  static const String defaultConsentBaseUrl = 'https://consent.synheart.ai';
+  /// Consent service base URL.
+  ///
+  /// Configure with `--dart-define SYNHEART_CONSENT_BASE_URL=...`.
+  static const String defaultConsentBaseUrl = String.fromEnvironment(
+    'SYNHEART_CONSENT_BASE_URL',
+    defaultValue: 'https://example.invalid',
+  );
 
   // ── Cloud Ingest ──────────────────────────────────────────────────
   /// HSI ingest path (v1).
   static const String ingestPath = '/v1/hsi/ingest';
 
   // ── Platform Ingest ──────────────────────────────────────────────
-  static const String defaultPlatformIngestBaseUrl =
-      'https://api.synheart.ai';
+  /// Platform ingest base URL.
+  ///
+  /// Configure with `--dart-define SYNHEART_PLATFORM_INGEST_BASE_URL=...`.
+  static const String defaultPlatformIngestBaseUrl = String.fromEnvironment(
+    'SYNHEART_PLATFORM_INGEST_BASE_URL',
+    defaultValue: 'https://example.invalid',
+  );
+
+  /// Default auth/account API base URL.
+  ///
+  /// Configure with `--dart-define SYNHEART_AUTH_BASE_URL=...`.
+  static const String defaultAuthBaseUrl = String.fromEnvironment(
+    'SYNHEART_AUTH_BASE_URL',
+    defaultValue: 'https://example.invalid',
+  );
+
   static const String platformSessionIngestPath =
       '/v1/platform/session/ingest';
   static const String platformMetadataIngestPath =
       '/v1/platform/metadata/ingest';
+
+  // ── Auth / Account ────────────────────────────────────────────────
+  static const String authExchangePath = '/v1/auth/exchange';
+  static const String authRefreshPath = '/v1/auth/refresh';
+  static const String accountDeletePath = '/v1/account/delete';
+  static const String accountDeleteCancelPath = '/v1/account/delete/cancel';
 
   // ── Consent Service ───────────────────────────────────────────────
   static String consentProfilesPath(String appId) =>

@@ -1145,9 +1145,6 @@ class _SessionResultsScreenState extends State<SessionResultsScreen> {
         return Colors.teal;
       case sb.BehaviorEventType.clipboard:
         return Colors.indigo;
-      case sb.BehaviorEventType.app_switch:
-        // TODO: Handle this case.
-        throw UnimplementedError();
     }
   }
 

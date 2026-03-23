@@ -316,7 +316,11 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
 
   /// Request consent token directly by profile id (without fetching profiles first).
   /// Useful when integrator already knows the consent_profile_id.
-  Future<ConsentToken> requestConsentByProfileId(String profileId) async {
+  Future<ConsentToken> requestConsentByProfileId(
+    String profileId, {
+    String? ipAddress,
+    String? userAgent,
+  }) async {
     if (_apiClient == null || _consentConfig == null) {
       throw StateError(
         'Consent service not configured. Provide ConsentConfig with appId and appApiKey.',
@@ -332,9 +336,8 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       platform: platform,
       userId: _consentConfig!.userId,
       region: _consentConfig!.region,
-      // Temporary integration defaults from backend sample payload.
-      ipAddress: '192.168.0.0',
-      userAgent: 'Mozilla/firefox',
+      ipAddress: ipAddress,
+      userAgent: userAgent,
     );
 
     await _tokenStorage?.saveToken(token);

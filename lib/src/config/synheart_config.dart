@@ -20,7 +20,7 @@ class SyncConfig {
 
   const SyncConfig({
     this.enabled = false,
-    this.baseUrl = 'https://api.synheart.com',
+    this.baseUrl = ApiEndpoints.defaultAuthBaseUrl,
   });
 }
 

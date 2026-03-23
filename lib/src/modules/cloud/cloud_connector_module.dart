@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:uuid/uuid.dart';
 import '../../core/logger.dart';
+import 'hsi_schema_transformer.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../consent/consent_module.dart';
@@ -35,6 +35,8 @@ class CloudConnectorModule extends BaseSynheartModule {
   late final RateLimiter _rateLimiter;
   late final NetworkMonitor _networkMonitor;
 
+  final HsiSchemaTransformer _schemaTransformer = const HsiSchemaTransformer();
+
   StreamSubscription? _hsvSubscription;
   StreamSubscription? _networkSubscription;
 
@@ -64,6 +66,15 @@ class CloudConnectorModule extends BaseSynheartModule {
 
   /// Time of the last upload attempt (success or failure); null if no attempt yet.
   DateTime? get lastUploadAttemptAt => _lastUploadAttemptAt;
+
+  /// Total snapshots dropped due to schema validation failures (not retried).
+  int _droppedSnapshotCount = 0;
+
+  /// Total snapshots dropped due to schema validation failures.
+  int get droppedSnapshotCount => _droppedSnapshotCount;
+
+  /// Optional callback fired when snapshots are dropped (e.g. schema validation failure).
+  void Function(int droppedCount, String reason)? onSnapshotsDropped;
 
   CloudConnectorModule({
     required CapabilityProvider capabilities,
@@ -186,141 +197,6 @@ class CloudConnectorModule extends BaseSynheartModule {
     }
   }
 
-  static const _validInferenceModes = {
-    'deterministic',
-    'probabilistic',
-    'composite',
-  };
-  static const _validWindowAggregations = {'instant', 'windowed', 'cumulative'};
-  static const _validAxisCategories = {
-    'behavior',
-    'engagement',
-    'physiological',
-  };
-
-  /// Patch raw HSI map to be compliant with hsi-1.1.schema.json.
-  /// Ensures every axis entry has `evidence_source_ids` and a valid
-  /// `inference_mode`, and that `producer.instance_id` is present.
-  Map<String, dynamic> _patchHsiV1_1(Map<String, dynamic> hsi) {
-    final defaultSourceId = 'src_${const Uuid().v4().replaceAll('-', '')}';
-
-    // Some runtime shapes include unsupported root fields for hsi-1.1.
-    hsi.remove('window_ids');
-
-    // --- meta.provenance.sources (ensure >= 1 source) ---
-    final meta =
-        (hsi['meta'] is Map<String, dynamic>)
-            ? (hsi['meta'] as Map<String, dynamic>)
-            : <String, dynamic>{};
-    hsi['meta'] = meta;
-
-    final provenance =
-        (meta['provenance'] is Map<String, dynamic>)
-            ? (meta['provenance'] as Map<String, dynamic>)
-            : <String, dynamic>{};
-    meta['provenance'] = provenance;
-
-    final sources =
-        (provenance['sources'] is Map<String, dynamic>)
-            ? (provenance['sources'] as Map<String, dynamic>)
-            : <String, dynamic>{};
-    provenance['sources'] = sources;
-
-    if (sources.isEmpty) {
-      sources[defaultSourceId] = <String, dynamic>{
-        'type': 'derived',
-        'quality': 0.0,
-        'degraded': false,
-      };
-    }
-
-    final canonicalSourceId = sources.keys.first;
-
-    // --- axes ---
-    final axes = hsi['axes'];
-    if (axes is Map<String, dynamic>) {
-      // Drop non-schema categories, e.g. "affect".
-      final keysToRemove =
-          axes.keys
-              .where((key) => !_validAxisCategories.contains(key))
-              .toList();
-      for (final key in keysToRemove) {
-        axes.remove(key);
-      }
-
-      for (final category in axes.keys) {
-        final entries = axes[category];
-        if (entries is List) {
-          for (var i = 0; i < entries.length; i++) {
-            final entry = entries[i];
-            if (entry is Map<String, dynamic>) {
-              final sourceIds = entry['evidence_source_ids'];
-              if (sourceIds is List) {
-                final normalized =
-                    sourceIds
-                        .whereType<Object>()
-                        .map((value) => value.toString())
-                        .where((value) => value.isNotEmpty)
-                        .toList();
-                entry['evidence_source_ids'] =
-                    normalized.isEmpty ? [canonicalSourceId] : normalized;
-              } else {
-                entry['evidence_source_ids'] = [canonicalSourceId];
-              }
-
-              final mode = entry['inference_mode'];
-              if (mode == null || !_validInferenceModes.contains(mode)) {
-                entry['inference_mode'] = 'deterministic';
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // --- windows.aggregation ---
-    final windows = hsi['windows'];
-    if (windows is Map<String, dynamic>) {
-      for (final windowId in windows.keys) {
-        final window = windows[windowId];
-        if (window is Map<String, dynamic>) {
-          final aggregation = window['aggregation']?.toString();
-          if (aggregation == null ||
-              !_validWindowAggregations.contains(aggregation)) {
-            window['aggregation'] = 'windowed';
-          }
-        }
-      }
-    }
-
-    // --- privacy.consent ---
-    final privacy = hsi['privacy'];
-    if (privacy is Map<String, dynamic>) {
-      final consent = privacy['consent'];
-      if (consent is Map<String, dynamic>) {
-        consent['level'] = consent['level']?.toString() ?? 'explicit';
-        consent['embedding'] = consent['embedding'] == true;
-        consent['raw_biosignals'] = consent['raw_biosignals'] == true;
-        consent['derived_metrics'] = consent['derived_metrics'] != false;
-      } else {
-        privacy['consent'] = <String, dynamic>{
-          'level': consent?.toString() ?? 'explicit',
-          'embedding': true,
-          'raw_biosignals': false,
-          'derived_metrics': true,
-        };
-      }
-    }
-
-    // --- producer.instance_id ---
-    final producer = hsi['producer'];
-    if (producer is Map<String, dynamic>) {
-      producer.putIfAbsent('instance_id', () => const Uuid().v4());
-    }
-
-    return hsi;
-  }
-
   Future<void> _attemptUpload() async {
     // Get batch from queue
     final batch = _uploadQueue.dequeueBatch(_rateLimiter.batchSize);
@@ -338,7 +214,7 @@ class CloudConnectorModule extends BaseSynheartModule {
       final snapshots = <Map<String, dynamic>>[];
       for (final hsiJson in batch) {
         final hsiMap = jsonDecode(hsiJson) as Map<String, dynamic>;
-        _patchHsiV1_1(hsiMap);
+        _schemaTransformer.patch(hsiMap);
         final timestamp =
             (hsiMap['observed_at_utc'] as String?) ??
             (hsiMap['computed_at_utc'] as String?) ??
@@ -347,7 +223,7 @@ class CloudConnectorModule extends BaseSynheartModule {
       }
 
       SynheartLogger.log(
-        '[CloudConnector] Uploading ${snapshots.length} HSI snapshots (v1.1 patched)',
+        '[CloudConnector] Uploading ${snapshots.length} HSI snapshots',
       );
 
       // Create upload payload
@@ -409,9 +285,11 @@ class CloudConnectorModule extends BaseSynheartModule {
 
       if (e is SchemaValidationError) {
         _uploadQueue.confirmBatch(batch);
-        SynheartLogger.log(
-          '[CloudConnector] Schema validation failed — dropping ${batch.length} snapshots to avoid infinite retry',
-        );
+        _droppedSnapshotCount += batch.length;
+        final reason =
+            'Schema validation failed — dropped ${batch.length} snapshots';
+        SynheartLogger.log('[CloudConnector] $reason');
+        onSnapshotsDropped?.call(batch.length, reason);
       } else {
         await _uploadQueue.requeueBatch(batch);
       }
