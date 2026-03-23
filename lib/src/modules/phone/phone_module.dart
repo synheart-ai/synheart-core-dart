@@ -27,6 +27,8 @@ class PhoneModule extends BaseSynheartModule
   final ConsentProvider _consent;
 
   final List<StreamSubscription> _subscriptions = [];
+  StreamSubscription<ConsentSnapshot>? _consentSubscription;
+  bool _isStartingCollection = false;
 
   PhoneModule({
     required CapabilityProvider capabilities,
@@ -53,72 +55,112 @@ class PhoneModule extends BaseSynheartModule
   Future<void> onStart() async {
     SynheartLogger.log('[PhoneModule] Starting phone data collection...');
 
-    // Start motion collection
-    await _motionCollector.start();
-    _subscriptions.add(
-      _motionCollector.motionStream.listen(
-        (motion) => _cache.addMotionData(motion),
-        onError: (e, st) => SynheartLogger.log(
-          '[PhoneModule] Motion error: $e',
-          error: e,
-          stackTrace: st,
-        ),
+    // Consent gating policy: no collection at all without consent.
+    // Always observe consent so we can start/stop dynamically.
+    _consentSubscription ??= _consent.observe().listen(
+      (consent) async {
+        if (!consent.phoneContext) {
+          await _stopDataCollection();
+        } else {
+          await _startDataCollectionIfNeeded();
+        }
+      },
+      onError: (e, st) => SynheartLogger.log(
+        '[PhoneModule] Consent observation error: $e',
+        error: e,
+        stackTrace: st,
       ),
     );
 
-    // Start screen state tracking
-    await _screenTracker.start();
-    _subscriptions.add(
-      _screenTracker.screenStream.listen(
-        (state) => _cache.addScreenState(state, DateTime.now()),
-        onError: (e, st) => SynheartLogger.log(
-          '[PhoneModule] Screen state error: $e',
-          error: e,
-          stackTrace: st,
-        ),
-      ),
-    );
-
-    // Start app tracking (if capability allows)
-    if (_capabilities.capability(Module.phone).index >=
-        CapabilityLevel.extended.index) {
-      await _appTracker.start();
-      _subscriptions.add(
-        _appTracker.appSwitchStream.listen(
-          (_) => _cache.addAppSwitch(DateTime.now()),
-          onError: (e, st) => SynheartLogger.log(
-            '[PhoneModule] App tracking error: $e',
-            error: e,
-            stackTrace: st,
-          ),
-        ),
-      );
-    }
-
-    // Start notification tracking (if capability allows)
-    if (_capabilities.capability(Module.phone).index >=
-        CapabilityLevel.extended.index) {
-      await _notificationTracker.start();
-      _subscriptions.add(
-        _notificationTracker.notificationStream.listen(
-          (event) => _cache.addNotification(event),
-          onError: (e, st) => SynheartLogger.log(
-            '[PhoneModule] Notification error: $e',
-            error: e,
-            stackTrace: st,
-          ),
-        ),
-      );
-    }
-
-    SynheartLogger.log(
-      '[PhoneModule] Started ${_subscriptions.length} collectors',
-    );
+    // Start only if consent is granted.
+    await _startDataCollectionIfNeeded();
   }
 
-  @override
-  Future<void> onStop() async {
-    SynheartLogger.log('[PhoneModule] Stopping phone data collection...');
+  Future<void> _startDataCollectionIfNeeded() async {
+    if (_isStartingCollection || _subscriptions.isNotEmpty) return;
+    if (!_consent.current().phoneContext) return;
+    _isStartingCollection = true;
+    try {
+      // Start motion collection
+      await _motionCollector.start();
+      _subscriptions.add(
+        _motionCollector.motionStream.listen(
+          (motion) {
+            if (!_consent.current().phoneContext) return;
+            _cache.addMotionData(motion);
+          },
+          onError: (e, st) => SynheartLogger.log(
+            '[PhoneModule] Motion error: $e',
+            error: e,
+            stackTrace: st,
+          ),
+        ),
+      );
+
+      // Start screen state tracking
+      await _screenTracker.start();
+      _subscriptions.add(
+        _screenTracker.screenStream.listen(
+          (state) {
+            if (!_consent.current().phoneContext) return;
+            _cache.addScreenState(state, DateTime.now());
+          },
+          onError: (e, st) => SynheartLogger.log(
+            '[PhoneModule] Screen state error: $e',
+            error: e,
+            stackTrace: st,
+          ),
+        ),
+      );
+
+      // Start app tracking (if capability allows)
+      if (_capabilities.capability(Module.phone).index >=
+          CapabilityLevel.extended.index) {
+        await _appTracker.start();
+        _subscriptions.add(
+          _appTracker.appSwitchStream.listen(
+            (_) {
+              if (!_consent.current().phoneContext) return;
+              _cache.addAppSwitch(DateTime.now());
+            },
+            onError: (e, st) => SynheartLogger.log(
+              '[PhoneModule] App tracking error: $e',
+              error: e,
+              stackTrace: st,
+            ),
+          ),
+        );
+      }
+
+      // Start notification tracking (if capability allows)
+      if (_capabilities.capability(Module.phone).index >=
+          CapabilityLevel.extended.index) {
+        await _notificationTracker.start();
+        _subscriptions.add(
+          _notificationTracker.notificationStream.listen(
+            (event) {
+              if (!_consent.current().phoneContext) return;
+              _cache.addNotification(event);
+            },
+            onError: (e, st) => SynheartLogger.log(
+              '[PhoneModule] Notification error: $e',
+              error: e,
+              stackTrace: st,
+            ),
+          ),
+        );
+      }
+
+      SynheartLogger.log(
+        '[PhoneModule] Started ${_subscriptions.length} collectors',
+      );
+    } finally {
+      _isStartingCollection = false;
+    }
+  }
+
+  Future<void> _stopDataCollection() async {
+    if (_subscriptions.isEmpty) return;
 
     // Cancel all subscriptions
     for (final sub in _subscriptions) {
@@ -131,6 +173,16 @@ class PhoneModule extends BaseSynheartModule
     await _screenTracker.stop();
     await _appTracker.stop();
     await _notificationTracker.stop();
+    SynheartLogger.log('[PhoneModule] Phone collectors stopped');
+  }
+
+  @override
+  Future<void> onStop() async {
+    SynheartLogger.log('[PhoneModule] Stopping phone data collection...');
+
+    await _consentSubscription?.cancel();
+    _consentSubscription = null;
+    await _stopDataCollection();
   }
 
   /// Clear all cached data

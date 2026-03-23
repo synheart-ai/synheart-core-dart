@@ -16,6 +16,10 @@ import 'window_aggregator.dart';
 ///
 /// Captures user-device interaction patterns using synheart_behavior package.
 /// RFC-CORE-0007 compliant: no feature computation in Core.
+///
+/// Consent gating policy: no collection at all without consent.
+/// synheart_behavior.initialize() starts native collection, so we only
+/// initialize when `behavior` consent is granted (inside onStart).
 class BehaviorModule extends BaseSynheartModule
     implements RawBehaviorDataProvider {
   @override
@@ -32,9 +36,11 @@ class BehaviorModule extends BaseSynheartModule
   StreamSubscription? _synheartBehaviorSubscription;
   Timer? _cleanupTimer;
   sb.SynheartBehavior? _synheartBehavior;
+  StreamSubscription<ConsentSnapshot>? _consentSubscription;
+  bool _isStarting = false;
 
   /// When set, all behavior events are pushed to the runtime via this callback
-  /// (so the runtime receives events even if stream delivery is delayed). Signature: (tsMs, eventType, value).
+  /// (so the runtime receives events even if stream delivery is delayed).
   void Function(int tsMs, int eventType, double value)? _pushBehaviorToRuntime;
   set pushBehaviorToRuntime(
     void Function(int tsMs, int eventType, double value)? f,
@@ -75,54 +81,20 @@ class BehaviorModule extends BaseSynheartModule
 
   @override
   Future<void> onInitialize() async {
-    SynheartLogger.log('[BehaviorModule] Initializing behavior tracking...');
-
-    // Initialize synheart_behavior package for automatic event capture
-    try {
-      _synheartBehavior = await sb.SynheartBehavior.initialize(
-        config: sb.BehaviorConfig(
-          enableInputSignals: true,
-          enableAttentionSignals: true,
-          enableMotionLite: _enableMotionLite,
-        ),
-      );
-      SynheartLogger.log(
-        '[BehaviorModule] synheart_behavior initialized successfully',
-      );
-    } catch (e) {
-      SynheartLogger.log(
-        '[BehaviorModule] Failed to initialize synheart_behavior: $e',
-        error: e,
-      );
-      // Continue without automatic capture - fallback to manual instrumentation
-    }
-
-    // Subscribe to synheart_behavior as soon as SDK is ready so we never miss
-    // events that arrive before onStart() (e.g. app_switch right after app open).
-    if (_synheartBehavior != null) {
-      _synheartBehaviorSubscription = _synheartBehavior!.onEvent.listen(
-        _onSynheartBehaviorEvent,
-        onError: (e, st) => SynheartLogger.log(
-          '[BehaviorModule] synheart_behavior event error: $e',
-          error: e,
-          stackTrace: st,
-        ),
-      );
-      SynheartLogger.log(
-        '[BehaviorModule] Subscribed to synheart_behavior events (at init)',
-      );
-    }
+    // Intentionally do not initialize synheart_behavior here.
+    //
+    // Consent gating policy: no collection at all without consent.
+    // synheart_behavior.initialize() starts native collection, so we only
+    // initialize when `behavior` consent is granted (inside onStart).
   }
 
+  /// Handle events from synheart_behavior, forwarding to event stream and runtime.
   void _onSynheartBehaviorEvent(sb.BehaviorEvent event) {
-    SynheartLogger.log(
-      '[BehaviorModule] synheart_behavior event: type=${event.eventType} ts=${event.timestamp}',
-    );
     if (!_consent.current().behavior) return;
     final behaviorEvent = _convertSynheartEvent(event);
     if (behaviorEvent != null) {
       _eventStream.addEvent(behaviorEvent);
-      // Push every behavior event directly to runtime (so app_switch, notification, etc. are never missed)
+      // Push directly to runtime so app_switch, notification, etc. are never missed.
       final mapped = _behaviorEventToRuntimeCode(behaviorEvent);
       if (mapped != null) {
         final tsMs = behaviorEvent.timestamp.millisecondsSinceEpoch;
@@ -131,7 +103,7 @@ class BehaviorModule extends BaseSynheartModule
     }
   }
 
-  /// Maps internal BehaviorEvent to runtime (eventType, value). Returns null for types we skip (e.g. clipboard).
+  /// Maps internal BehaviorEvent to runtime (eventType, value).
   (int, double)? _behaviorEventToRuntimeCode(BehaviorEvent event) {
     switch (event.type) {
       case BehaviorEventType.screenOn:
@@ -166,65 +138,129 @@ class BehaviorModule extends BaseSynheartModule
   Future<void> onStart() async {
     SynheartLogger.log('[BehaviorModule] Starting behavior tracking...');
 
-    // Check consent status
-    final consent = _consent.current();
-    SynheartLogger.log(
-      '[BehaviorModule] Behavior consent: ${consent.behavior}',
-    );
-
-    // Subscribe to manual event stream
-    _eventSubscription = _eventStream.events.listen(
-      (event) {
-        // Check consent before adding event
-        if (_consent.current().behavior) {
-          _aggregator.addEvent(event);
+    // Observe consent so we can start/stop dynamically.
+    _consentSubscription ??= _consent.observe().listen(
+      (consent) async {
+        if (!consent.behavior) {
+          await _stopTracking(disposeSdk: true);
+        } else {
+          await _startTrackingIfNeeded();
         }
       },
       onError: (e, st) => SynheartLogger.log(
-        '[BehaviorModule] Event stream error: $e',
+        '[BehaviorModule] Consent observation error: $e',
         error: e,
         stackTrace: st,
       ),
     );
 
-    // synheart_behavior already subscribed in onInitialize() so we never miss events
-    if (_synheartBehavior != null && _synheartBehaviorSubscription == null) {
-      _synheartBehaviorSubscription = _synheartBehavior!.onEvent.listen(
-        _onSynheartBehaviorEvent,
+    // Start only if consent is granted.
+    await _startTrackingIfNeeded();
+  }
+
+  Future<void> _startTrackingIfNeeded() async {
+    if (_isStarting) return;
+    if (_eventSubscription != null || _cleanupTimer != null) return;
+    if (!_consent.current().behavior) return;
+
+    _isStarting = true;
+    try {
+      // Initialize synheart_behavior only after consent is granted.
+      if (_synheartBehavior == null) {
+        try {
+          _synheartBehavior = await sb.SynheartBehavior.initialize(
+            config: sb.BehaviorConfig(
+              enableInputSignals: true,
+              enableAttentionSignals: true,
+              enableMotionLite: _enableMotionLite,
+            ),
+          );
+          SynheartLogger.log(
+            '[BehaviorModule] synheart_behavior initialized successfully',
+          );
+        } catch (e) {
+          SynheartLogger.log(
+            '[BehaviorModule] Failed to initialize synheart_behavior: $e',
+            error: e,
+          );
+          _synheartBehavior = null;
+        }
+      }
+
+      // Subscribe to manual event stream only when consent is granted.
+      _eventSubscription = _eventStream.events.listen(
+        (event) {
+          if (!_consent.current().behavior) return;
+          _aggregator.addEvent(event);
+        },
         onError: (e, st) => SynheartLogger.log(
-          '[BehaviorModule] synheart_behavior event error: $e',
+          '[BehaviorModule] Event stream error: $e',
           error: e,
           stackTrace: st,
         ),
       );
+
+      // Subscribe to synheart_behavior automatic events (if available).
+      final synheartBehavior = _synheartBehavior;
+      if (synheartBehavior != null) {
+        _synheartBehaviorSubscription = synheartBehavior.onEvent.listen(
+          _onSynheartBehaviorEvent,
+          onError: (e, st) => SynheartLogger.log(
+            '[BehaviorModule] synheart_behavior event error: $e',
+            error: e,
+            stackTrace: st,
+          ),
+        );
+      }
+
+      // Start cleanup timer (every minute) only while collecting.
+      _cleanupTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        _aggregator.cleanOldWindows();
+      });
+
+      SynheartLogger.log('[BehaviorModule] Behavior tracking started');
+    } finally {
+      _isStarting = false;
     }
+  }
 
-    // Start cleanup timer (every minute)
-    _cleanupTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
-      _aggregator.cleanOldWindows();
-    });
+  Future<void> _stopTracking({required bool disposeSdk}) async {
+    await _eventSubscription?.cancel();
+    _eventSubscription = null;
 
-    SynheartLogger.log('[BehaviorModule] Behavior tracking started');
+    await _synheartBehaviorSubscription?.cancel();
+    _synheartBehaviorSubscription = null;
+
+    _cleanupTimer?.cancel();
+    _cleanupTimer = null;
+
+    if (disposeSdk) {
+      try {
+        await _synheartBehavior?.dispose();
+      } catch (e) {
+        SynheartLogger.log(
+          '[BehaviorModule] Error disposing synheart_behavior: $e',
+          error: e,
+        );
+      } finally {
+        _synheartBehavior = null;
+      }
+    }
   }
 
   /// Convert synheart_behavior event to internal BehaviorEvent format
   BehaviorEvent? _convertSynheartEvent(sb.BehaviorEvent event) {
-    // Map synheart_behavior events to internal event types
     final eventType = event.eventType;
 
     switch (eventType) {
       case sb.BehaviorEventType.tap:
         return BehaviorEvent.tap(Offset.zero);
       case sb.BehaviorEventType.scroll:
-        // Extract velocity from metrics (synheart_behavior uses 'velocity' key)
         final velocity = event.metrics['velocity'] as double? ?? 0.0;
-        // Use velocity as delta for scroll events
         return BehaviorEvent.scroll(velocity);
       case sb.BehaviorEventType.typing:
-        // Map typing to keyDown for now
         return BehaviorEvent.keyDown();
       case sb.BehaviorEventType.notification:
-        // Check the action in metrics to determine if received or opened
         final action = event.metrics['action'] as String?;
         if (action == 'opened') {
           return BehaviorEvent.notificationOpened();
@@ -241,8 +277,9 @@ class BehaviorModule extends BaseSynheartModule
             ? event.metrics['direction'] as String
             : null;
         return BehaviorEvent.swipe(velocity: velocity, direction: direction);
+      case sb.BehaviorEventType.app_switch:
+        return BehaviorEvent.appSwitch();
       case sb.BehaviorEventType.clipboard:
-        // Clipboard events don't map to an internal behavior event
         return null;
     }
   }
@@ -250,15 +287,9 @@ class BehaviorModule extends BaseSynheartModule
   @override
   Future<void> onStop() async {
     SynheartLogger.log('[BehaviorModule] Stopping behavior tracking...');
-
-    await _eventSubscription?.cancel();
-    _eventSubscription = null;
-
-    await _synheartBehaviorSubscription?.cancel();
-    _synheartBehaviorSubscription = null;
-
-    _cleanupTimer?.cancel();
-    _cleanupTimer = null;
+    await _consentSubscription?.cancel();
+    _consentSubscription = null;
+    await _stopTracking(disposeSdk: true);
   }
 
   /// Clear all cached data
