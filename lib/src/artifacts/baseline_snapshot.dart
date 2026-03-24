@@ -125,10 +125,12 @@ class BaselineData {
 class BaselineSnapshotArtifact {
   final ArtifactHeader header;
   final BaselineData baseline;
+  final Map<String, dynamic>? wearableReference;
 
   BaselineSnapshotArtifact({
     required this.header,
     required this.baseline,
+    this.wearableReference,
   });
 
   factory BaselineSnapshotArtifact.create({
@@ -151,6 +153,7 @@ class BaselineSnapshotArtifact {
   Map<String, dynamic> toJson() => {
         ...header.toJson(),
         'baseline': baseline.toJson(),
+        if (wearableReference != null) 'wearable_reference': wearableReference,
       };
 
   factory BaselineSnapshotArtifact.fromJson(Map<String, dynamic> json) =>
@@ -158,5 +161,6 @@ class BaselineSnapshotArtifact {
         header: ArtifactHeader.fromJson(json),
         baseline:
             BaselineData.fromJson(json['baseline'] as Map<String, dynamic>),
+        wearableReference: json['wearable_reference'] as Map<String, dynamic>?,
       );
 }

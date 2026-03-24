@@ -41,7 +41,16 @@ class ModuleManager {
     for (final moduleId in initOrder) {
       final module = _modules[moduleId];
       if (module != null) {
-        await module.initialize();
+        try {
+          await module.initialize();
+        } catch (e) {
+          // Log error but continue initializing other modules.
+          // Non-critical modules (e.g. cloud) should not block startup.
+          SynheartLogger.log(
+            'Module $moduleId failed to initialize (skipped): $e',
+            error: e,
+          );
+        }
       }
     }
 

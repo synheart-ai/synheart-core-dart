@@ -13,6 +13,9 @@ abstract class StoragePolicy {
   /// Whether app metrics may be included in session summaries.
   bool canIncludeMetrics();
 
+  /// Whether wearable events may be persisted.
+  bool canPersistWearableEvent();
+
   /// Get the storage policy for the given mode.
   factory StoragePolicy.forMode(SynheartMode mode) {
     switch (mode) {
@@ -41,6 +44,9 @@ class _PersonalPolicy implements StoragePolicy {
 
   @override
   bool canIncludeMetrics() => false;
+
+  @override
+  bool canPersistWearableEvent() => true;
 }
 
 class _InsightPolicy implements StoragePolicy {
@@ -61,6 +67,9 @@ class _InsightPolicy implements StoragePolicy {
 
   @override
   bool canIncludeMetrics() => true;
+
+  @override
+  bool canPersistWearableEvent() => true;
 }
 
 class _ResearchPolicy implements StoragePolicy {
@@ -74,4 +83,7 @@ class _ResearchPolicy implements StoragePolicy {
 
   @override
   bool canIncludeMetrics() => true;
+
+  @override
+  bool canPersistWearableEvent() => true;
 }
