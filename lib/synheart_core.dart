@@ -60,6 +60,12 @@ export 'src/models/session_handle.dart';
 export 'src/models/hsi_state.dart';
 export 'src/models/metric_event.dart';
 
+// Wearable Events
+export 'src/models/canonical_wearable_event.dart';
+
+// Longitudinal SRM
+export 'src/modules/srm/longitudinal_srm_module.dart';
+
 // Data Models
 export 'src/models/behavior.dart';
 export 'src/models/context.dart';

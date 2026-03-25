@@ -105,6 +105,16 @@ typedef _RuntimeDiagnosticsJsonDart =
 typedef _RuntimeClearDiagnosticsC = Void Function(Pointer<Void> handle);
 typedef _RuntimeClearDiagnosticsDart = void Function(Pointer<Void> handle);
 
+// SRM Wearable
+typedef _SrmPushWearableDailyValueC = Int32 Function(Pointer<Void>, Pointer<Utf8>, Uint32, Double, Double, Int32);
+typedef _SrmPushWearableDailyValueDart = int Function(Pointer<Void>, Pointer<Utf8>, int, double, double, int);
+
+typedef _SrmTriggerWearableRecomputeC = Int32 Function(Pointer<Void>, Int32, Uint32);
+typedef _SrmTriggerWearableRecomputeDart = int Function(Pointer<Void>, int, int);
+
+typedef _SrmGetWearableReferenceC = Pointer<Utf8> Function(Pointer<Void>);
+typedef _SrmGetWearableReferenceDart = Pointer<Utf8> Function(Pointer<Void>);
+
 // SRM
 typedef _RuntimeBaselinesJsonC = Pointer<Utf8> Function(Pointer<Void> handle);
 typedef _RuntimeBaselinesJsonDart =
@@ -268,6 +278,11 @@ class RuntimeBridge {
   _RuntimeExportSrmSnapshotDart? _exportSrmSnapshotFfi;
   _RuntimeLoadSrmSnapshotDart? _loadSrmSnapshotFfi;
 
+  // SRM Wearable (optional)
+  _SrmPushWearableDailyValueDart? _pushWearableDailyValueFfi;
+  _SrmTriggerWearableRecomputeDart? _triggerWearableRecomputeFfi;
+  _SrmGetWearableReferenceDart? _getWearableReferenceFfi;
+
   // Lab (optional — requires lab feature in runtime .so)
   _LabStartDart? _labStartFfi;
   _LabOpenWindowDart? _labOpenWindowFfi;
@@ -324,6 +339,9 @@ class RuntimeBridge {
     _baselineSummaryFfi = _lookupBaselineSummary(_lib);
     _exportSrmSnapshotFfi = _lookupExportSrmSnapshot(_lib);
     _loadSrmSnapshotFfi = _lookupLoadSrmSnapshot(_lib);
+    _pushWearableDailyValueFfi = _lookupPushWearableDailyValue(_lib);
+    _triggerWearableRecomputeFfi = _lookupTriggerWearableRecompute(_lib);
+    _getWearableReferenceFfi = _lookupGetWearableReference(_lib);
     _labStartFfi = _lookupLabStart(_lib);
     _labOpenWindowFfi = _lookupLabOpenWindow(_lib);
     _labCloseWindowFfi = _lookupLabCloseWindow(_lib);
@@ -464,6 +482,47 @@ class RuntimeBridge {
         _RuntimeLoadSrmSnapshotC,
         _RuntimeLoadSrmSnapshotDart
       >('synheart_runtime_load_srm_snapshot');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // SRM Wearable lookups
+
+  static _SrmPushWearableDailyValueDart? _lookupPushWearableDailyValue(
+    DynamicLibrary lib,
+  ) {
+    try {
+      return lib.lookupFunction<
+        _SrmPushWearableDailyValueC,
+        _SrmPushWearableDailyValueDart
+      >('synheart_srm_push_wearable_daily_value');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _SrmTriggerWearableRecomputeDart? _lookupTriggerWearableRecompute(
+    DynamicLibrary lib,
+  ) {
+    try {
+      return lib.lookupFunction<
+        _SrmTriggerWearableRecomputeC,
+        _SrmTriggerWearableRecomputeDart
+      >('synheart_srm_trigger_wearable_recompute');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static _SrmGetWearableReferenceDart? _lookupGetWearableReference(
+    DynamicLibrary lib,
+  ) {
+    try {
+      return lib.lookupFunction<
+        _SrmGetWearableReferenceC,
+        _SrmGetWearableReferenceDart
+      >('synheart_srm_get_wearable_reference');
     } catch (_) {
       return null;
     }
@@ -819,6 +878,35 @@ class RuntimeBridge {
     } finally {
       malloc.free(native);
     }
+  }
+
+  // -- SRM Wearable --
+
+  int? pushWearableDailyValue(String dimension, int dayIndex, double value, double confidence, int fidelity) {
+    final ffi = _pushWearableDailyValueFfi;
+    if (ffi == null) return null;
+    final native = dimension.toNativeUtf8();
+    try {
+      return ffi(_handle, native, dayIndex, value, confidence, fidelity);
+    } finally {
+      malloc.free(native);
+    }
+  }
+
+  int? triggerWearableRecompute(int triggerType, int asOfDay) {
+    final ffi = _triggerWearableRecomputeFfi;
+    if (ffi == null) return null;
+    return ffi(_handle, triggerType, asOfDay);
+  }
+
+  String? getWearableReference() {
+    final ffi = _getWearableReferenceFfi;
+    if (ffi == null) return null;
+    final ptr = ffi(_handle);
+    if (ptr == nullptr) return null;
+    final result = ptr.toDartString();
+    _freeString(ptr);
+    return result;
   }
 
   // -- Lab Session --

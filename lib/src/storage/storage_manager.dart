@@ -290,6 +290,30 @@ class StorageManager {
         value TEXT NOT NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS wearable_events (
+        event_id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        event_class TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        provider_record_id TEXT,
+        observed_at TEXT NOT NULL,
+        ingested_at TEXT NOT NULL,
+        effective_start TEXT,
+        effective_end TEXT,
+        payload BLOB NOT NULL,
+        provenance TEXT,
+        confidence REAL NOT NULL,
+        source_fidelity TEXT NOT NULL,
+        schema_version INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX idx_we_type_observed ON wearable_events(event_type, observed_at)');
+    await db.execute(
+        'CREATE INDEX idx_we_subject ON wearable_events(subject_id)');
   }
 
   Database get _database {
@@ -724,6 +748,30 @@ class StorageManager {
     return rows.first['artifact_id'] as String?;
   }
 
+  // --- Wearable Events ---
+
+  Future<void> insertWearableEvent(Map<String, dynamic> record) async {
+    await _database.insert('wearable_events', record,
+        conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  Future<List<Map<String, dynamic>>> queryWearableEvents({
+    required String eventType,
+    required String startDate,
+    required String endDate,
+  }) async {
+    return await _database.query('wearable_events',
+        where: 'event_type = ? AND observed_at >= ? AND observed_at <= ?',
+        whereArgs: [eventType, startDate, endDate],
+        orderBy: 'observed_at ASC');
+  }
+
+  Future<int> wearableEventCount() async {
+    final result = await _database
+        .rawQuery('SELECT COUNT(*) as cnt FROM wearable_events');
+    return (result.first['cnt'] as int?) ?? 0;
+  }
+
   Future<void> wipeAll() async {
     await _database.transaction((txn) async {
       await txn.delete('metrics');
@@ -732,6 +780,7 @@ class StorageManager {
       await txn.delete('artifacts');
       await txn.delete('sessions');
       await txn.delete('sync_state');
+      await txn.delete('wearable_events');
     });
   }
 
