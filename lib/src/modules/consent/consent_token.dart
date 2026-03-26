@@ -96,9 +96,13 @@ class ConsentToken {
       (payload.length + 3) ~/ 4 * 4,
       '=',
     );
-    final decodedBytes = base64Url.decode(normalizedPayload);
-    final claims =
-        jsonDecode(utf8.decode(decodedBytes)) as Map<String, dynamic>;
+    Map<String, dynamic> claims;
+    try {
+      final decodedBytes = base64Url.decode(normalizedPayload);
+      claims = jsonDecode(utf8.decode(decodedBytes)) as Map<String, dynamic>;
+    } catch (e) {
+      throw FormatException('Failed to decode JWT payload: $e');
+    }
 
     // Extract profile ID - API may return either "profile_id" or "consent_profile_id"
     final profileId =

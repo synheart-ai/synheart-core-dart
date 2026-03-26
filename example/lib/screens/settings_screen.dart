@@ -5,8 +5,79 @@ import '../widgets/feature_toggle_card.dart';
 import '../widgets/hsi_export_viewer.dart';
 
 /// Settings screen with feature toggles and configuration
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _consentUrlController;
+  late final TextEditingController _appIdController;
+  late final TextEditingController _appApiKeyController;
+  bool _consentSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _consentUrlController = TextEditingController();
+    _appIdController = TextEditingController();
+    _appApiKeyController = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final provider = context.read<SynheartProvider>();
+      await provider.loadConsentCredentialsFromStorage();
+      if (mounted) {
+        setState(() {
+          _consentUrlController.text = provider.savedConsentServiceUrl;
+          _appIdController.text = provider.savedConsentAppId;
+          _appApiKeyController.text = provider.savedConsentAppApiKey;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _consentUrlController.dispose();
+    _appIdController.dispose();
+    _appApiKeyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveConsentCredentials(
+      BuildContext context, SynheartProvider provider) async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _consentSaving = true);
+    try {
+      await provider.saveConsentCredentials(
+        consentServiceUrl: _consentUrlController.text,
+        appId: _appIdController.text,
+        appApiKey: _appApiKeyController.text,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Consent API saved. Re-initialize SDK to use new values.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Save failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _consentSaving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,6 +91,96 @@ class SettingsScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(16.0),
             children: [
+              // Consent API credentials
+              Text(
+                'Consent API',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Stored locally. Used when initializing the SDK and for consent profile / token calls. Re-initialize SDK after saving.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.7),
+                    ),
+              ),
+              const SizedBox(height: 12),
+              Form(
+                key: _formKey,
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextFormField(
+                          controller: _consentUrlController,
+                          decoration: const InputDecoration(
+                            labelText: 'Consent service URL',
+                            hintText: 'https://consent-service-dev.synheart.io',
+                            border: OutlineInputBorder(),
+                          ),
+                          keyboardType: TextInputType.url,
+                          autocorrect: false,
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return null;
+                            final u = Uri.tryParse(v.trim());
+                            if (u == null || !u.hasScheme) {
+                              return 'Enter a valid URL';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _appIdController,
+                          decoration: const InputDecoration(
+                            labelText: 'App ID',
+                            hintText: 'app_synheart_xxx',
+                            border: OutlineInputBorder(),
+                          ),
+                          autocorrect: false,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _appApiKeyController,
+                          decoration: const InputDecoration(
+                            labelText: 'App API key',
+                            hintText: 'synheart_sk_live_...',
+                            border: OutlineInputBorder(),
+                          ),
+                          obscureText: true,
+                          autocorrect: false,
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          onPressed: _consentSaving
+                              ? null
+                              : () => _saveConsentCredentials(context, provider),
+                          icon: _consentSaving
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.save),
+                          label: Text(
+                              _consentSaving ? 'Saving...' : 'Save consent API'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
               // Feature Toggles
               Text(
                 'Features',
@@ -40,23 +201,6 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
               ],
-              FeatureToggleCard(
-                title: 'Emotion Module',
-                description: 'Real-time emotion estimation',
-                enabled: provider.emotionEnabled,
-                icon: Icons.psychology,
-                enabledColor: Colors.purple,
-                onToggle: () => _handleEmotionToggle(context, provider),
-              ),
-              const SizedBox(height: 12),
-              FeatureToggleCard(
-                title: 'Focus Module',
-                description: 'Real-time focus and engagement estimation',
-                enabled: provider.focusEnabled,
-                icon: Icons.center_focus_strong,
-                enabledColor: Colors.blue,
-                onToggle: () => _handleFocusToggle(context, provider),
-              ),
               const SizedBox(height: 24),
 
               // SDK Status
@@ -159,46 +303,6 @@ class SettingsScreen extends StatelessWidget {
           ),
         );
       }
-    }
-  }
-
-  void _handleEmotionToggle(BuildContext context, SynheartProvider provider) {
-    if (provider.emotionEnabled) {
-      provider.disableEmotion();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Emotion module disabled'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    } else {
-      provider.enableEmotion();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Emotion module enabled'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }
-  }
-
-  void _handleFocusToggle(BuildContext context, SynheartProvider provider) {
-    if (provider.focusEnabled) {
-      provider.disableFocus();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Focus module disabled'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    } else {
-      provider.enableFocus();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Focus module enabled'),
-          backgroundColor: Colors.green,
-        ),
-      );
     }
   }
 }

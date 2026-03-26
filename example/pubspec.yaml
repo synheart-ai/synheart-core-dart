@@ -45,8 +45,17 @@ dependencies:
   # State management
   provider: ^6.1.1
 
+  # Persist runtime mode preference (batch vs realtime)
+  shared_preferences: ^2.2.2
+
   # Synheart behavior SDK (for behavior metrics)
   synheart_behavior: ^0.1.3
+
+dependency_overrides:
+  synheart_wear:
+    path: ../../synheart-wear-dart
+  synheart_behavior:
+    path: ../../synheart-behavior-dart
 
 dev_dependencies:
   flutter_test:

@@ -1,29 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:synheart_core/synheart_core.dart';
 import 'dart:convert';
 
 /// HSI export viewer widget
 class HSIExportViewer extends StatelessWidget {
-  final HumanStateVector? hsv;
+  final String? hsv;
 
   const HSIExportViewer({super.key, this.hsv});
 
   @override
   Widget build(BuildContext context) {
     if (hsv == null) {
-      return const Center(child: Text('No HSV data available'));
+      return const Center(child: Text('No HSI data available'));
     }
 
     try {
-      final hsi10 = hsv!.toHSI10(
-        producerName: 'Synheart Example App',
-        producerVersion: '1.0.0',
-        instanceId: 'example-instance-${DateTime.now().millisecondsSinceEpoch}',
-      );
-
-      final json = hsi10.toJson();
-      final jsonString = JsonEncoder.withIndent('  ').convert(json);
+      final jsonString = hsv!;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -32,7 +24,7 @@ class HSIExportViewer extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'HSI 1.0 Export',
+                'HSI 1.1 Export',
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -82,7 +74,7 @@ class HSIExportViewer extends StatelessWidget {
             const Icon(Icons.error_outline, color: Colors.red, size: 48),
             const SizedBox(height: 16),
             Text(
-              'Failed to export HSI',
+              'Failed to display HSI',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),

@@ -16,7 +16,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
   // User's consent choices
   bool _biosignals = false;
   bool _behavior = false;
-  bool _motion = false;
+  bool _phoneContext = false;
   bool _cloudUpload = false;
   String? _selectedProfileId;
   bool _isGranting = false;
@@ -45,6 +45,46 @@ class _ConsentScreenState extends State<ConsentScreen> {
       ),
       body: Consumer<SynheartProvider>(
         builder: (context, provider, child) {
+          // Require SDK to be initialized first (consent module is created during init)
+          if (!provider.isInitialized) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 64,
+                      color: theme.colorScheme.outline,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Initialize the SDK first',
+                      style: theme.textTheme.titleLarge,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Enter your User ID on the home screen and tap Initialize. '
+                      'Then you can manage consent here.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Back to Home'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           // If consent is needed, show consent form
           if (provider.needsConsent) {
             return _buildConsentForm(context, provider);
@@ -155,15 +195,15 @@ class _ConsentScreenState extends State<ConsentScreen> {
               const SizedBox(height: 16),
             ],
 
-            if (provider.consentInfo.containsKey('motion')) ...[
+            if (provider.consentInfo.containsKey('phoneContext')) ...[
               _buildConsentOption(
                 context,
                 title: 'Motion & Phone Context',
-                description: provider.consentInfo['motion']!,
+                description: provider.consentInfo['phoneContext']!,
                 icon: Icons.phone_android,
                 color: const Color(0xFF4CAF50),
-                value: _motion,
-                onChanged: (value) => setState(() => _motion = value),
+                value: _phoneContext,
+                onChanged: (value) => setState(() => _phoneContext = value),
               ),
               const SizedBox(height: 16),
             ],
@@ -792,7 +832,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
       await provider.grantConsent(
         biosignals: _biosignals,
         behavior: _behavior,
-        motion: _motion,
+        phoneContext: _phoneContext,
         cloudUpload: _cloudUpload,
         profileId: _cloudUpload ? _selectedProfileId : null,
       );
@@ -891,7 +931,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
               ),
             );
             // Enable cloud sync after consent
-            await provider.enableCloudSync();
+            provider.enableCloudSync();
           }
         }
       }

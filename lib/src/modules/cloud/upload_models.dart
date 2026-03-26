@@ -1,18 +1,7 @@
-import 'package:json_annotation/json_annotation.dart';
-
-part 'upload_models.g.dart';
-
-@JsonSerializable()
 class UploadMetadata {
-  @JsonKey(name: 'sdk_version')
   final String sdkVersion;
-
   final String platform;
-
-  @JsonKey(name: 'capability_level')
   final String capabilityLevel;
-
-  @JsonKey(name: 'org_id')
   final String? orgId;
 
   UploadMetadata({
@@ -22,19 +11,25 @@ class UploadMetadata {
     this.orgId,
   });
 
-  factory UploadMetadata.fromJson(Map<String, dynamic> json) =>
-      _$UploadMetadataFromJson(json);
-  Map<String, dynamic> toJson() => _$UploadMetadataToJson(this);
+  factory UploadMetadata.fromJson(Map<String, dynamic> json) => UploadMetadata(
+        sdkVersion: json['sdk_version'] as String? ?? '',
+        platform: json['platform'] as String? ?? '',
+        capabilityLevel: json['capability_level'] as String? ?? '',
+        orgId: json['org_id'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'sdk_version': sdkVersion,
+        'platform': platform,
+        'capability_level': capabilityLevel,
+        if (orgId != null) 'org_id': orgId,
+      };
 }
 
-@JsonSerializable(explicitToJson: true)
 class UploadRequest {
-  @JsonKey(name: 'user_id')
   final String userId;
-
   final UploadMetadata metadata;
-  final List<Map<String, dynamic>>
-  snapshots; // Array of snapshot objects with hsi, focus, emotion, timestamp
+  final List<Map<String, dynamic>> snapshots;
 
   UploadRequest({
     required this.userId,
@@ -42,48 +37,100 @@ class UploadRequest {
     required this.snapshots,
   });
 
-  factory UploadRequest.fromJson(Map<String, dynamic> json) =>
-      _$UploadRequestFromJson(json);
-  Map<String, dynamic> toJson() => _$UploadRequestToJson(this);
+  factory UploadRequest.fromJson(Map<String, dynamic> json) => UploadRequest(
+        userId: json['user_id'] as String,
+        metadata: UploadMetadata.fromJson(
+            json['metadata'] as Map<String, dynamic>),
+        snapshots: (json['snapshots'] as List<dynamic>)
+            .cast<Map<String, dynamic>>(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'user_id': userId,
+        'metadata': metadata.toJson(),
+        'snapshots': snapshots,
+      };
 }
 
-@JsonSerializable()
 class UploadResponse {
-  final String status;
-
-  @JsonKey(name: 'snapshot_id')
-  final String? snapshotId;
-
-  final int timestamp;
+  final bool? success;
+  final String? batchId;
+  final List<String>? snapshotIds;
+  final List<String>? s3Keys;
+  final String? message;
 
   UploadResponse({
-    required this.status,
-    this.snapshotId,
-    required this.timestamp,
+    this.success,
+    this.batchId,
+    this.snapshotIds,
+    this.s3Keys,
+    this.message,
   });
 
   factory UploadResponse.fromJson(Map<String, dynamic> json) =>
-      _$UploadResponseFromJson(json);
-  Map<String, dynamic> toJson() => _$UploadResponseToJson(this);
+      UploadResponse(
+        success: json['success'] as bool?,
+        batchId: json['batch_id'] as String?,
+        snapshotIds: (json['snapshot_ids'] as List<dynamic>?)
+            ?.cast<String>(),
+        s3Keys: (json['s3_keys'] as List<dynamic>?)?.cast<String>(),
+        message: json['message'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        if (success != null) 'success': success,
+        if (batchId != null) 'batch_id': batchId,
+        if (snapshotIds != null) 'snapshot_ids': snapshotIds,
+        if (s3Keys != null) 's3_keys': s3Keys,
+        if (message != null) 'message': message,
+      };
 }
 
-@JsonSerializable()
 class UploadErrorResponse {
-  final String status;
-  final String code;
-  final String message;
+  final UploadErrorDetail? error;
+  final int? retryAfter;
 
-  @JsonKey(name: 'retry_after')
-  final int? retryAfter; // For 429 responses
+  UploadErrorResponse({this.error, this.retryAfter});
 
-  UploadErrorResponse({
-    required this.status,
-    required this.code,
-    required this.message,
-    this.retryAfter,
-  });
+  String get errorCode => error?.code ?? 'unknown';
+  String get errorMessage => error?.message ?? 'Unknown error';
 
   factory UploadErrorResponse.fromJson(Map<String, dynamic> json) =>
-      _$UploadErrorResponseFromJson(json);
-  Map<String, dynamic> toJson() => _$UploadErrorResponseToJson(this);
+      UploadErrorResponse(
+        error: json['error'] is Map
+            ? UploadErrorDetail.fromJson(
+                json['error'] as Map<String, dynamic>)
+            : null,
+        retryAfter: json['retry_after'] as int?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        if (error != null) 'error': error!.toJson(),
+        if (retryAfter != null) 'retry_after': retryAfter,
+      };
+}
+
+class UploadErrorDetail {
+  final String code;
+  final String message;
+  final String? details;
+
+  UploadErrorDetail({
+    required this.code,
+    required this.message,
+    this.details,
+  });
+
+  factory UploadErrorDetail.fromJson(Map<String, dynamic> json) =>
+      UploadErrorDetail(
+        code: json['code'] as String,
+        message: json['message'] as String,
+        details: json['details'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'message': message,
+        if (details != null) 'details': details,
+      };
 }

@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.example"
+    namespace = "ai.synheart.wear.watch"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,14 +20,20 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.example"
+        applicationId = "ai.synheart.wear.watch"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 26
+        minSdk = 28
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // Ensure libsynheart_runtime.so from src/main/jniLibs/<abi>/ is packaged into the APK.
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("src/main/jniLibs")
+        }
     }
 
     buildTypes {

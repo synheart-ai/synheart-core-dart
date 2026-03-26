@@ -1,12 +1,11 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../../models/hsv.dart';
 import '../../core/logger.dart';
 
 class UploadQueue {
   final int maxSize;
   final FlutterSecureStorage? _storage;
-  final List<HumanStateVector> _queue = [];
+  final List<String> _queue = [];
 
   static const String _storageKey = 'synheart_upload_queue';
 
@@ -26,7 +25,7 @@ class UploadQueue {
       if (jsonString == null || jsonString.isEmpty) return;
 
       final List<dynamic> json = jsonDecode(jsonString);
-      _queue.addAll(json.map((e) => HumanStateVector.fromJson(e)));
+      _queue.addAll(json.cast<String>());
     } catch (e) {
       SynheartLogger.log(
         '[UploadQueue] Failed to load from storage: $e',
@@ -41,8 +40,7 @@ class UploadQueue {
     if (storage == null) return;
 
     try {
-      final json = _queue.map((hsv) => hsv.toJson()).toList();
-      await storage.write(key: _storageKey, value: jsonEncode(json));
+      await storage.write(key: _storageKey, value: jsonEncode(_queue));
     } catch (e) {
       SynheartLogger.log(
         '[UploadQueue] Failed to persist to storage: $e',
@@ -51,9 +49,9 @@ class UploadQueue {
     }
   }
 
-  /// Enqueue a new HSV snapshot
-  Future<void> enqueue(HumanStateVector hsv) async {
-    _queue.add(hsv);
+  /// Enqueue a new HSI JSON string
+  Future<void> enqueue(String hsiJson) async {
+    _queue.add(hsiJson);
 
     // Enforce max size (FIFO eviction)
     if (_queue.length > maxSize) {
@@ -64,7 +62,7 @@ class UploadQueue {
   }
 
   /// Dequeue a batch of snapshots
-  List<HumanStateVector> dequeueBatch(int batchSize) {
+  List<String> dequeueBatch(int batchSize) {
     if (_queue.isEmpty) return [];
 
     final count = _queue.length < batchSize ? _queue.length : batchSize;
@@ -72,13 +70,14 @@ class UploadQueue {
   }
 
   /// Confirm batch was successfully uploaded (remove from queue)
-  void confirmBatch(List<HumanStateVector> batch) {
-    _queue.removeRange(0, batch.length);
-    persistToStorage();
+  Future<void> confirmBatch(List<String> batch) async {
+    final removeCount = batch.length.clamp(0, _queue.length);
+    _queue.removeRange(0, removeCount);
+    await persistToStorage();
   }
 
   /// Re-enqueue batch on failure
-  Future<void> requeueBatch(List<HumanStateVector> batch) async {
+  Future<void> requeueBatch(List<String> batch) async {
     // Batch is still at the front of queue - no action needed
     // Just persist to ensure it's saved
     await persistToStorage();

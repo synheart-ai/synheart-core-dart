@@ -42,6 +42,18 @@ class CapabilityModule extends BaseSynheartModule
     _capabilitiesStream.add(_capabilities);
   }
 
+  /// Load capabilities from a server-provided token without local HMAC
+  /// verification. Use only when the token was fetched over an authenticated
+  /// channel (e.g., device-signed request).
+  Future<void> loadFromTokenUnsigned(CapabilityToken token) async {
+    if (token.isExpired) {
+      throw CapabilityException('Capability token is expired');
+    }
+    _token = token;
+    _capabilities = SDKCapabilities.fromToken(token);
+    _capabilitiesStream.add(_capabilities);
+  }
+
   @override
   CapabilityLevel capability(Module module) {
     if (_capabilities == null) {
@@ -61,7 +73,6 @@ class CapabilityModule extends BaseSynheartModule
 
   @override
   bool canAccessFeature(String moduleId, String featureId) {
-    // TODO: Implement fine-grained feature access control
     return true;
   }
 

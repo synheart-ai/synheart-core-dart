@@ -35,8 +35,8 @@ Thank you for your interest in contributing to the Synheart Core SDK! This docum
 
 1. **Fork and clone the repository**
    ```bash
-   git clone https://github.com/synheart/synheart-core-flutter.git
-   cd synheart-core-flutter
+   git clone https://github.com/synheart/synheart-core-dart.git
+   cd synheart-core-dart
    ```
 
 2. **Install dependencies**
@@ -51,18 +51,14 @@ Thank you for your interest in contributing to the Synheart Core SDK! This docum
 
 4. **Read the documentation**
    - [README.md](README.md) - Project overview
-   - [DEVELOPMENT.md](DEVELOPMENT.md) - Development setup
-   - [docs/core-sdk-prd.md](docs/core-sdk-prd.md) - Product requirements
-   - [docs/internal-module.md](docs/internal-module.md) - Internal architecture
+   - [CHANGELOG.md](CHANGELOG.md) - Release history
 
 ## 🔄 Development Workflow
 
 ### 1. Pick a Task
 
-- Check [TASKS.md](TASKS.md) for available tasks
-- Look for tasks marked `[ ]` (available)
-- Tasks with `[🔗]` have dependencies - check those first
-- Comment on the task or create an issue to claim it
+- Check GitHub Issues for available tasks
+- Comment on an issue to claim it
 
 ### 2. Create a Branch
 
@@ -86,7 +82,7 @@ git checkout -b fix/bug-description
 - Write code following our [coding standards](#coding-standards)
 - Add tests for your changes
 - Update documentation as needed
-- Update [TASKS.md](TASKS.md) to mark your task as `[🚧]` (in progress)
+- Update the issue to mark your task as in progress
 
 ### 4. Test Your Changes
 
@@ -258,8 +254,6 @@ genhtml coverage/lcov.info -o coverage/html
 
 ### Architecture Documentation
 
-- Update `docs/internal-module.md` if you change module architecture
-- Update `docs/core-sdk-module.md` if you change module interfaces
 - Document design decisions in code comments
 
 ## 🔀 Submitting Changes
@@ -269,7 +263,7 @@ genhtml coverage/lcov.info -o coverage/html
 - [ ] Code follows project style guidelines
 - [ ] Tests added/updated and passing
 - [ ] Documentation updated
-- [ ] [TASKS.md](TASKS.md) updated (mark task as complete)
+- [ ] Related issue updated
 - [ ] No breaking changes (or documented if intentional)
 - [ ] Performance impact considered
 - [ ] Privacy/security implications reviewed
@@ -281,7 +275,7 @@ genhtml coverage/lcov.info -o coverage/html
 Brief description of changes
 
 ## Related Task/Issue
-Closes #issue-number or References [TASKS.md](TASKS.md) task
+Closes #issue-number
 
 ## Type of Change
 - [ ] Bug fix
@@ -307,7 +301,6 @@ Closes #issue-number or References [TASKS.md](TASKS.md) task
 
 All modules should:
 - Extend `SynheartModule` base class
-- Implement required interfaces (`WearFeatureProvider`, etc.)
 - Handle consent checks
 - Respect capability levels
 - Provide proper error handling
@@ -316,7 +309,7 @@ All modules should:
 ### Module Structure
 
 ```dart
-class MyModule extends BaseSynheartModule implements MyFeatureProvider {
+class MyModule extends BaseSynheartModule {
   @override
   String get moduleId => 'my_module';
 
@@ -424,8 +417,7 @@ Any other relevant information
 
 ## 📞 Getting Help
 
-- Check [DEVELOPMENT.md](DEVELOPMENT.md) for setup issues
-- Check [docs/](docs/) for architecture questions
+- Check [README.md](README.md) for setup and architecture
 - Open an issue for bugs or feature requests
 - Ask questions in discussions
 
@@ -436,5 +428,5 @@ Your contributions make Synheart Core SDK better for everyone. Thank you for tak
 ---
 
 **Author:** Israel Goytom  
-**Last Updated:** 2025-01-XX
+**Last Updated:** 2026-03-07
 

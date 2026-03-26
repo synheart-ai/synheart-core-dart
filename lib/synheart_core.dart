@@ -18,16 +18,61 @@ library synheart_core;
 export 'src/synheart.dart';
 
 // Configuration
+export 'src/config/api_endpoints.dart';
 export 'src/config/synheart_config.dart';
+export 'src/config/synheart_feature.dart';
+export 'src/config/synheart_mode.dart';
+export 'src/config/synheart_errors.dart';
+export 'src/config/platform_ingest_config.dart';
+
+// Artifacts (RFC-CORE-0006 Tier A)
+export 'src/artifacts/artifact_id.dart';
+export 'src/artifacts/artifact_header.dart';
+export 'src/artifacts/hsi_window.dart';
+export 'src/artifacts/baseline_snapshot.dart';
+export 'src/artifacts/session_summary.dart';
+export 'src/artifacts/tombstone.dart';
+export 'src/artifacts/artifact_pipeline.dart';
+
+// Storage (RFC-CORE-0004)
+// SessionRecord is internal to StorageManager — not part of the public API.
+export 'src/storage/storage_manager.dart' hide SessionRecord;
+export 'src/storage/storage_policy.dart';
+
+// Crypto (RFC-CORE-0004 Section 9, RFC-CORE-0005)
+export 'src/crypto/smk.dart';
+export 'src/crypto/artifact_crypto.dart';
+export 'src/crypto/urk.dart';
+
+// Auth (RFC-CORE-0008)
+export 'src/auth/auth_module.dart';
+export 'src/auth/token_storage.dart';
+
+// Sync (RFC-CORE-0005)
+export 'src/sync/artifact_envelope.dart';
+export 'src/sync/sync_module.dart';
+export 'src/sync/sync_engine.dart';
+
+// Session model
+export 'src/models/session_handle.dart';
+
+// Phase 2: Typed state and metrics
+export 'src/models/hsi_state.dart';
+export 'src/models/metric_event.dart';
+
+// Wearable Events
+export 'src/models/canonical_wearable_event.dart';
+
+// Longitudinal SRM
+export 'src/modules/srm/longitudinal_srm_module.dart';
 
 // Data Models
-export 'src/models/hsv.dart';
-export 'src/models/emotion.dart';
-export 'src/models/focus.dart';
 export 'src/models/behavior.dart';
 export 'src/models/context.dart';
 export 'src/models/hsi_axes.dart';
 export 'src/models/hsi_export.dart';
+export 'src/models/behavior_session_results.dart';
+export 'src/models/preprocessed_window.dart';
 
 // Module Base
 export 'src/modules/base/synheart_module.dart';
@@ -35,6 +80,7 @@ export 'src/modules/base/module_manager.dart';
 
 // Module Interfaces
 export 'src/modules/interfaces/capability_provider.dart';
+export 'src/modules/interfaces/auth_provider.dart';
 export 'src/modules/interfaces/consent_provider.dart';
 export 'src/modules/interfaces/feature_providers.dart';
 
@@ -46,12 +92,39 @@ export 'src/modules/consent/consent_profile.dart';
 export 'src/modules/consent/consent_token.dart';
 export 'src/modules/consent/consent_ui.dart';
 export 'src/modules/wear/wear_module.dart';
+export 'src/modules/wear/wear_module_status.dart';
+export 'src/modules/wear/wear_source_handler.dart' show WearSample;
 export 'src/modules/phone/phone_module.dart';
 export 'src/modules/behavior/behavior_module.dart';
-export 'src/modules/hsi_runtime/hsi_runtime_module.dart';
+export 'src/modules/behavior/behavior_events.dart';
+export 'src/modules/runtime/runtime_module.dart';
 export 'src/modules/cloud/cloud_connector_module.dart';
 export 'src/modules/cloud/upload_models.dart';
 export 'src/modules/cloud/cloud_exceptions.dart';
+export 'src/modules/cloud/hmac_signer.dart';
 
-// Services
-export 'src/services/auth_service.dart';
+// Platform Ingest
+export 'src/modules/platform_ingest/platform_ingest_module.dart';
+export 'src/modules/platform_ingest/platform_ingest_client.dart';
+export 'src/modules/platform_ingest/platform_payload_builder.dart';
+
+// Runtime Bridge (FFI to synheart-runtime, includes SRM baseline access)
+export 'src/modules/runtime/runtime_bridge.dart';
+
+// Watch Session (adapter around synheart_session for watch relay)
+export 'src/modules/session/watch_session_module.dart';
+
+// Device Auth
+export 'src/modules/cloud/device_auth_provider.dart';
+export 'src/modules/capabilities/capability_token_fetcher.dart';
+export 'src/modules/capabilities/remote_capability_token_fetcher.dart';
+
+// Device Auth (re-exported from synheart_auth, hiding name collisions)
+export 'package:synheart_auth/synheart_auth.dart' hide NetworkError;
+
+// Session lifecycle (re-exported from synheart_session)
+export 'package:synheart_session/synheart_session.dart';
+
+// BLE Heart Rate Monitor (re-exported from synheart_wear)
+export 'package:synheart_wear/src/adapters/ble_hrm_models.dart';
+export 'package:synheart_wear/src/adapters/ble_hrm_bridge.dart';

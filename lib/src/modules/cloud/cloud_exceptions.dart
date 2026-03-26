@@ -24,7 +24,7 @@ class InvalidTenantError extends CloudConnectorException {
 }
 
 class SchemaValidationError extends CloudConnectorException {
-  SchemaValidationError() : super('HSI 1.0 schema validation failed');
+  SchemaValidationError() : super('HSI 1.1 schema validation failed');
 }
 
 class NetworkError extends CloudConnectorException {

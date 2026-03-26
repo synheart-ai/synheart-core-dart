@@ -1,13 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../config/api_endpoints.dart';
 import '../../core/logger.dart';
+import 'hsi_schema_transformer.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../consent/consent_module.dart';
-import '../hsi_runtime/hsi_runtime_module.dart';
+import '../runtime/runtime_module.dart';
 import '../../config/synheart_config.dart';
-import '../../models/hsv.dart';
-import '../../models/hsi_export.dart';
 import 'hmac_signer.dart';
 import 'upload_client.dart';
 import 'upload_queue.dart';
@@ -15,6 +16,9 @@ import 'rate_limiter.dart';
 import 'network_monitor.dart';
 import 'upload_models.dart';
 import 'cloud_exceptions.dart';
+import 'platform_impl_stub.dart'
+    if (dart.library.io) 'platform_impl_io.dart'
+    as platform_impl;
 
 class CloudConnectorModule extends BaseSynheartModule {
   @override
@@ -22,23 +26,61 @@ class CloudConnectorModule extends BaseSynheartModule {
 
   final CapabilityProvider _capabilities;
   final ConsentModule _consent;
-  final HSIRuntimeModule _hsiRuntime;
+  final RuntimeModule _hsiRuntime;
   final CloudConfig _config;
 
   // Components
-  late final HMACSigner _hmacSigner;
+  HMACSigner? _hmacSigner;
   late final UploadClient _uploadClient;
   late final UploadQueue _uploadQueue;
   late final RateLimiter _rateLimiter;
   late final NetworkMonitor _networkMonitor;
 
+  final HsiSchemaTransformer _schemaTransformer = const HsiSchemaTransformer();
+
   StreamSubscription? _hsvSubscription;
   StreamSubscription? _networkSubscription;
+
+  /// Last successful upload batch id (from API response).
+  String? _lastUploadBatchId;
+
+  /// When the last successful upload completed.
+  DateTime? _lastUploadAt;
+
+  /// Last upload failure message (null after a success).
+  String? _lastUploadError;
+
+  /// When the last upload attempt (success or failure) occurred.
+  DateTime? _lastUploadAttemptAt;
+
+  /// Pending snapshots in the upload queue.
+  int get uploadQueueLength => _uploadQueue.length;
+
+  /// Batch id from the last successful ingest (null if none yet).
+  String? get lastUploadBatchId => _lastUploadBatchId;
+
+  /// Time of the last successful ingest (null if none yet).
+  DateTime? get lastUploadAt => _lastUploadAt;
+
+  /// Last upload error message (null when last attempt succeeded or no attempt yet).
+  String? get lastUploadError => _lastUploadError;
+
+  /// Time of the last upload attempt (success or failure); null if no attempt yet.
+  DateTime? get lastUploadAttemptAt => _lastUploadAttemptAt;
+
+  /// Total snapshots dropped due to schema validation failures (not retried).
+  int _droppedSnapshotCount = 0;
+
+  /// Total snapshots dropped due to schema validation failures.
+  int get droppedSnapshotCount => _droppedSnapshotCount;
+
+  /// Optional callback fired when snapshots are dropped (e.g. schema validation failure).
+  void Function(int droppedCount, String reason)? onSnapshotsDropped;
 
   CloudConnectorModule({
     required CapabilityProvider capabilities,
     required ConsentModule consent,
-    required HSIRuntimeModule hsiRuntime,
+    required RuntimeModule hsiRuntime,
     required CloudConfig config,
   }) : _capabilities = capabilities,
        _consent = consent,
@@ -48,9 +90,11 @@ class CloudConnectorModule extends BaseSynheartModule {
   @override
   Future<void> onInitialize() async {
     SynheartLogger.log('[CloudConnector] Initializing Cloud Connector...');
+    ApiEndpoints.assertConfigured(_config.baseUrl, 'CloudConfig.baseUrl');
 
-    // 1. Initialize components
-    _hmacSigner = HMACSigner(hmacSecret: _config.hmacSecret);
+    if (_config.hmacSecret != null) {
+      _hmacSigner = HMACSigner(hmacSecret: _config.hmacSecret!);
+    }
     _uploadClient = UploadClient(baseUrl: _config.baseUrl);
     _uploadQueue = UploadQueue(
       maxSize: _config.maxQueueSize,
@@ -61,7 +105,6 @@ class CloudConnectorModule extends BaseSynheartModule {
     );
     _networkMonitor = NetworkMonitor();
 
-    // 2. Load persisted queue
     await _uploadQueue.loadFromStorage();
 
     SynheartLogger.log('[CloudConnector] Cloud Connector initialized');
@@ -71,16 +114,12 @@ class CloudConnectorModule extends BaseSynheartModule {
   Future<void> onStart() async {
     SynheartLogger.log('[CloudConnector] Starting Cloud Connector...');
 
-    // 1. Subscribe to HSV stream
-    _hsvSubscription = _hsiRuntime.hsiStream.listen(_handleHSVUpdate);
+    _hsvSubscription = _hsiRuntime.hsiStream.listen(_handleHSIUpdate);
 
-    // 2. Subscribe to network changes
     _networkSubscription = _networkMonitor.connectivityStream.listen(
       _handleNetworkChange,
     );
 
-    // 3. Attempt to flush queue if online (non-blocking - don't await)
-    // This ensures initialization completes even if uploads fail
     if (_networkMonitor.isOnline) {
       flushQueue().catchError((error) {
         SynheartLogger.log(
@@ -139,19 +178,14 @@ class CloudConnectorModule extends BaseSynheartModule {
     _networkMonitor.dispose();
   }
 
-  void _handleHSVUpdate(HumanStateVector hsv) async {
+  void _handleHSIUpdate(String hsiJson) async {
     // Check consent
     if (!_consent.current().cloudUpload) {
       return; // Silent return - no upload
     }
 
-    // Check rate limit
-    if (!_rateLimiter.canUpload(hsv.meta.embedding.windowType)) {
-      return; // Silent return - rate limited
-    }
-
-    // Enqueue for upload
-    await _uploadQueue.enqueue(hsv);
+    // Enqueue for upload (raw HSI JSON string)
+    await _uploadQueue.enqueue(hsiJson);
 
     // Try immediate upload if online
     if (_networkMonitor.isOnline) {
@@ -171,37 +205,35 @@ class CloudConnectorModule extends BaseSynheartModule {
     if (batch.isEmpty) return;
 
     try {
-      // Get platform and capability level from first HSV (assuming all in batch are from same device)
-      final firstHsv = batch.first;
-      final platform = firstHsv.meta.device.platform;
       final capabilityLevel = _capabilities.capability(Module.cloud);
       final capabilityLevelStr = capabilityLevel
           .toString()
           .split('.')
           .last; // Convert enum to string
 
-      // Convert to HSI 1.0 and create snapshots with focus/emotion
-      final snapshots = batch.map((hsv) {
-        final hsi10 = hsv.toHSI10(
-          producerName: 'Synheart Core SDK',
-          producerVersion: '1.0.0',
-          instanceId: _config.instanceId,
-        );
+      // Build snapshots per API guide: each snapshot has "hsi" (object) and "timestamp" (ISO 8601).
+      // Use observed_at_utc or computed_at_utc from HSI when present; otherwise fallback to now.
+      final snapshots = <Map<String, dynamic>>[];
+      for (final hsiJson in batch) {
+        final hsiMap = jsonDecode(hsiJson) as Map<String, dynamic>;
+        _schemaTransformer.patch(hsiMap);
+        final timestamp =
+            (hsiMap['observed_at_utc'] as String?) ??
+            (hsiMap['computed_at_utc'] as String?) ??
+            DateTime.now().toUtc().toIso8601String();
+        snapshots.add({'hsi': hsiMap, 'timestamp': timestamp});
+      }
 
-        return {
-          'hsi': hsi10.toJson(),
-          'focus': hsv.toFocusSnapshot(),
-          'emotion': hsv.toEmotionSnapshot(),
-          'timestamp': hsv.getTimestampString(),
-        };
-      }).toList();
+      SynheartLogger.log(
+        '[CloudConnector] Uploading ${snapshots.length} HSI snapshots',
+      );
 
-      // Create upload payload with new structure
+      // Create upload payload
       final payload = UploadRequest(
         userId: _config.subjectId,
         metadata: UploadMetadata(
           sdkVersion: '1.0.0',
-          platform: platform,
+          platform: platform_impl.currentIngestPlatform,
           capabilityLevel: capabilityLevelStr,
           orgId: _config.orgId,
         ),
@@ -217,19 +249,19 @@ class CloudConnectorModule extends BaseSynheartModule {
         signer: _hmacSigner,
         apiKey: _config.apiKey,
         consentToken: consentToken,
+        authProvider: _config.authProvider,
       );
 
       // Success - remove from queue
-      _uploadQueue.confirmBatch(batch);
+      await _uploadQueue.confirmBatch(batch);
 
-      // Update rate limiter
-      _rateLimiter.recordUpload(
-        batch.first.meta.embedding.windowType,
-        batchSize: batch.length,
-      );
+      _lastUploadBatchId = response.batchId;
+      _lastUploadAt = DateTime.now();
+      _lastUploadError = null;
+      _lastUploadAttemptAt = DateTime.now();
 
       SynheartLogger.log(
-        '[CloudConnector] Upload successful: ${response.status}',
+        '[CloudConnector] Upload successful: ${response.batchId ?? response.message ?? "ok"}',
       );
     } catch (e) {
       // Handle token expiration - try to refresh
@@ -239,7 +271,7 @@ class CloudConnectorModule extends BaseSynheartModule {
         );
         try {
           await _consent.refreshTokenIfNeeded();
-          // Retry upload with new token (will happen on next HSV update)
+          // Retry upload with new token (will happen on next HSI update)
           await _uploadQueue.requeueBatch(batch);
           return;
         } catch (refreshError) {
@@ -250,11 +282,20 @@ class CloudConnectorModule extends BaseSynheartModule {
         }
       }
 
-      // Re-enqueue batch on failure
-      await _uploadQueue.requeueBatch(batch);
+      _lastUploadError = e.toString();
+      _lastUploadAttemptAt = DateTime.now();
 
-      // Log error (but don't throw - this is background operation)
-      // Errors are logged but do not propagate to prevent blocking initialization
+      if (e is SchemaValidationError) {
+        await _uploadQueue.confirmBatch(batch);
+        _droppedSnapshotCount += batch.length;
+        final reason =
+            'Schema validation failed — dropped ${batch.length} snapshots';
+        SynheartLogger.log('[CloudConnector] $reason');
+        onSnapshotsDropped?.call(batch.length, reason);
+      } else {
+        await _uploadQueue.requeueBatch(batch);
+      }
+
       SynheartLogger.log(
         '[CloudConnector] Upload failed (non-blocking): $e',
         error: e,
@@ -267,6 +308,19 @@ class CloudConnectorModule extends BaseSynheartModule {
   }
 
   // Public API
+
+  /// Enqueue raw HSI JSON strings collected externally (e.g. from a foreground
+  /// session that ended before the Cloud Connector flushed) so they are
+  /// included in the next [uploadNow] / [flushQueue] call.
+  Future<void> enqueueSnapshots(List<String> hsiJsons) async {
+    if (!_consent.current().cloudUpload) return;
+    for (final hsiJson in hsiJsons) {
+      await _uploadQueue.enqueue(hsiJson);
+    }
+    SynheartLogger.log(
+      '[CloudConnector] Enqueued ${hsiJsons.length} external HSI snapshots; queue=${_uploadQueue.length}',
+    );
+  }
 
   /// Force upload of queued snapshots now
   Future<void> uploadNow() async {

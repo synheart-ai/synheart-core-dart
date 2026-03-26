@@ -23,7 +23,7 @@ void main() {
         ),
         snapshots: [
           {
-            'hsi': {'hsi_version': '1.0', 'test': 'data'},
+            'hsi': {'hsi_version': '1.1', 'test': 'data'},
             'focus': {'timestamp': '2025-01-01T00:00:00Z', 'state': 'neutral'},
             'emotion': {
               'timestamp': '2025-01-01T00:00:00Z',
@@ -39,9 +39,9 @@ void main() {
       final mockClient = MockClient((request) async {
         return http.Response(
           jsonEncode({
-            'status': 'success',
-            'snapshot_id': 'snap_123',
-            'timestamp': 1704067200,
+            'success': true,
+            'batch_id': 'batch_123',
+            'snapshot_ids': ['snap_123'],
           }),
           200,
           headers: {'content-type': 'application/json'},
@@ -59,9 +59,8 @@ void main() {
         apiKey: 'test_api_key',
       );
 
-      expect(response.status, equals('success'));
-      expect(response.snapshotId, equals('snap_123'));
-      expect(response.timestamp, equals(1704067200));
+      expect(response.success, isTrue);
+      expect(response.batchId, equals('batch_123'));
     });
 
     test('401 invalid_signature throws InvalidSignatureError', () async {
@@ -126,7 +125,7 @@ void main() {
           jsonEncode({
             'status': 'error',
             'code': 'schema_validation_failed',
-            'message': 'Invalid HSI 1.0 format',
+            'message': 'Invalid HSI 1.1 format',
           }),
           400,
           headers: {'content-type': 'application/json'},
@@ -183,7 +182,7 @@ void main() {
       final mockClient = MockClient((request) async {
         capturedRequest = request;
         return http.Response(
-          jsonEncode({'status': 'success', 'timestamp': 1704067200}),
+          jsonEncode({'success': true}),
           200,
           headers: {'content-type': 'application/json'},
         );
@@ -220,7 +219,7 @@ void main() {
           throw Exception('Network error');
         }
         return http.Response(
-          jsonEncode({'status': 'success', 'timestamp': 1704067200}),
+          jsonEncode({'success': true}),
           200,
           headers: {'content-type': 'application/json'},
         );
@@ -238,7 +237,7 @@ void main() {
       );
 
       expect(attemptCount, equals(3));
-      expect(response.status, equals('success'));
+      expect(response.success, isTrue);
     });
 
     test('throws NetworkError after max retry attempts', () async {

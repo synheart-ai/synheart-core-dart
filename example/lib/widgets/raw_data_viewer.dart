@@ -118,9 +118,15 @@ class RawDataViewer extends StatelessWidget {
 
   IconData _getEventIcon(BehaviorEventType type) {
     switch (type) {
+      case BehaviorEventType.screenOn:
+        return Icons.screen_lock_portrait;
+      case BehaviorEventType.screenOff:
+        return Icons.screen_lock_landscape;
       case BehaviorEventType.tap:
         return Icons.touch_app;
       case BehaviorEventType.scroll:
+        return Icons.swipe;
+      case BehaviorEventType.swipe:
         return Icons.swipe;
       case BehaviorEventType.keyDown:
       case BehaviorEventType.keyUp:
@@ -130,6 +136,8 @@ class RawDataViewer extends StatelessWidget {
       case BehaviorEventType.notificationReceived:
       case BehaviorEventType.notificationOpened:
         return Icons.notifications;
+      case BehaviorEventType.call:
+        return Icons.call;
     }
   }
 

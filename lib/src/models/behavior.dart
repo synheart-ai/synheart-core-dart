@@ -1,35 +1,43 @@
-import 'package:json_annotation/json_annotation.dart';
-
-part 'behavior.g.dart';
-
 /// Behavioral metrics from Phone SDK + HSI processing
-@JsonSerializable()
 class BehaviorState {
-  /// Typing cadence (normalized 0.0 - 1.0)
-  final double typingCadence;
-
-  /// Typing burstiness (0.0 - 1.0)
+  final double typingSpeed;
   final double typingBurstiness;
-
-  /// Scroll velocity (normalized 0.0 - 1.0)
   final double scrollVelocity;
-
-  /// Idle gaps between interactions (seconds)
   final double idleGaps;
-
-  /// App switch rate (switches per minute)
   final double appSwitchRate;
+  final double interactionIntensity;
+  final double engagementLevel;
 
   BehaviorState({
-    required this.typingCadence,
-    required this.typingBurstiness,
-    required this.scrollVelocity,
-    required this.idleGaps,
-    required this.appSwitchRate,
+    this.typingSpeed = 0.0,
+    this.typingBurstiness = 0.0,
+    this.scrollVelocity = 0.0,
+    this.idleGaps = 0.0,
+    this.appSwitchRate = 0.0,
+    this.interactionIntensity = 0.0,
+    this.engagementLevel = 0.0,
   });
 
-  factory BehaviorState.fromJson(Map<String, dynamic> json) =>
-      _$BehaviorStateFromJson(json);
+  factory BehaviorState.fromJson(Map<String, dynamic> json) => BehaviorState(
+        typingSpeed: (json['typingSpeed'] as num?)?.toDouble() ?? 0.0,
+        typingBurstiness:
+            (json['typingBurstiness'] as num?)?.toDouble() ?? 0.0,
+        scrollVelocity: (json['scrollVelocity'] as num?)?.toDouble() ?? 0.0,
+        idleGaps: (json['idleGaps'] as num?)?.toDouble() ?? 0.0,
+        appSwitchRate: (json['appSwitchRate'] as num?)?.toDouble() ?? 0.0,
+        interactionIntensity:
+            (json['interactionIntensity'] as num?)?.toDouble() ?? 0.0,
+        engagementLevel:
+            (json['engagementLevel'] as num?)?.toDouble() ?? 0.0,
+      );
 
-  Map<String, dynamic> toJson() => _$BehaviorStateToJson(this);
+  Map<String, dynamic> toJson() => {
+        'typingSpeed': typingSpeed,
+        'typingBurstiness': typingBurstiness,
+        'scrollVelocity': scrollVelocity,
+        'idleGaps': idleGaps,
+        'appSwitchRate': appSwitchRate,
+        'interactionIntensity': interactionIntensity,
+        'engagementLevel': engagementLevel,
+      };
 }

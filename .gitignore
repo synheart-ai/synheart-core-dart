@@ -43,9 +43,20 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Native shared libraries (loaded at runtime, not committed)
+*.so
+
 # Claude Code
 .claude/
 
 # Generated files (commented out - we publish these for pub.dev)
 # *.g.dart
 # *.freezed.dart
+.-flutter_guild.dart
+
+/#Guidelines/
+
+/example/android/app/src/main/jniLibs
+
+# Local endpoint defines (do not commit real endpoints)
+env/*.local.json

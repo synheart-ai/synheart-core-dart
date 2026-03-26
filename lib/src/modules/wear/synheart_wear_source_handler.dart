@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:synheart_wear/synheart_wear.dart' as wear;
+import '../../core/defaults.dart';
 import '../../core/logger.dart';
 import 'wear_source_handler.dart';
 
@@ -71,37 +72,14 @@ class SynheartWearSourceHandler implements WearSourceHandler {
             }),
       );
 
-      // Step 1: Request permissions explicitly (recommended pattern from README)
-      // This allows providing a custom reason for better UX
+      // Initialize the wear SDK — this handles permissions, adapter setup,
+      // and data validation internally. No need to call requestPermissions()
+      // separately; doing so would trigger a duplicate HealthKit dialog.
       try {
-        final permissionResult = await _synheartWear!.requestPermissions(
-          permissions: {
-            wear.PermissionType.heartRate,
-            wear.PermissionType.heartRateVariability,
-            wear.PermissionType.steps,
-            wear.PermissionType.calories,
-          },
-          reason:
-              'Synheart Core needs access to your health data to provide personalized insights.',
-        );
-
-        // Step 2: Check if permissions were granted before initializing
-        if (permissionResult.values.any(
-          (s) => s == wear.ConsentStatus.granted,
-        )) {
-          // Step 3: Initialize SDK (validates permissions and data availability)
-          await _synheartWear!.initialize();
-        } else {
-          // Permissions were denied - throw error
-          throw Exception(
-            'Health data permissions were not granted. Please grant permissions to use wearable features.',
-          );
-        }
+        await _synheartWear!.initialize();
       } on wear.SynheartWearError {
-        // Re-throw synheart_wear errors as-is
         rethrow;
       } catch (e) {
-        // Wrap other errors
         throw Exception('Failed to initialize synheart_wear: $e');
       }
     }
@@ -123,14 +101,14 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     if (_hrSubscription == null &&
         _synheartWear != null &&
         _controller != null) {
-      SynheartLogger.log(
-        '[SynheartWearSourceHandler] Starting HR streaming...',
-      );
+      // SynheartLogger.log(
+      //   '[SynheartWearSourceHandler] Starting HR streaming...',
+      // );
       _startStreaming();
     } else {
-      SynheartLogger.log(
-        '[SynheartWearSourceHandler] Cannot start streaming: hrSubscription=${_hrSubscription != null}, sdk=${_synheartWear != null}, controller=${_controller != null}',
-      );
+      // SynheartLogger.log(
+      //   '[SynheartWearSourceHandler] Cannot start streaming: hrSubscription=${_hrSubscription != null}, sdk=${_synheartWear != null}, controller=${_controller != null}',
+      // );
     }
   }
 
@@ -285,7 +263,7 @@ class SynheartWearSourceHandler implements WearSourceHandler {
   /// This is a placeholder until synheart_wear provides direct motion data
   double _estimateMotionFromSteps(double steps) {
     // Normalize steps to 0-1 range (assuming 10000 steps = max activity)
-    return (steps / 10000.0).clamp(0.0, 1.0);
+    return (steps / SynheartDefaults.maxStepsForMotion).clamp(0.0, 1.0);
   }
 
   @override
@@ -300,7 +278,7 @@ class SynheartWearSourceHandler implements WearSourceHandler {
 
   @override
   Future<void> stop() async {
-    SynheartLogger.log('[SynheartWearSourceHandler] Stopping HR streaming...');
+    // SynheartLogger.log('[SynheartWearSourceHandler] Stopping HR streaming...');
 
     // Cancel subscriptions to stop receiving data
     await _hrSubscription?.cancel();
@@ -314,9 +292,9 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     if (_synheartWear != null) {
       _synheartWear!.dispose();
       _synheartWear = null;
-      SynheartLogger.log(
-        '[SynheartWearSourceHandler] synheart_wear SDK disposed',
-      );
+      // SynheartLogger.log(
+      //   '[SynheartWearSourceHandler] synheart_wear SDK disposed',
+      // );
     }
 
     // Note: _isInitialized remains true to allow checking if re-init is needed

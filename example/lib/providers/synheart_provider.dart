@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:synheart_core/synheart_core.dart';
 import 'package:synheart_core/src/modules/wear/wear_source_handler.dart';
 import 'package:synheart_core/src/modules/behavior/behavior_events.dart';
@@ -15,20 +17,12 @@ class SynheartProvider extends ChangeNotifier {
 
   // Feature States
   bool _cloudSyncEnabled = false;
-  bool _emotionEnabled = false;
-  bool _focusEnabled = false;
 
   // Data Streams
-  HumanStateVector? _latestHSV;
-  EmotionState? _latestEmotion;
-  FocusState? _latestFocus;
-  BehaviorState? _latestBehavior;
-  HSIAxes? _latestAxes;
+  String? _latestHSI;
 
   // Stream Subscriptions
-  StreamSubscription<HumanStateVector>? _hsvSubscription;
-  StreamSubscription<EmotionState>? _emotionSubscription;
-  StreamSubscription<FocusState>? _focusSubscription;
+  StreamSubscription<String>? _hsiSubscription;
 
   // Consent State
   ConsentStatus _consentStatus = ConsentStatus.pending;
@@ -40,6 +34,30 @@ class SynheartProvider extends ChangeNotifier {
   // Config
   SynheartConfig? sdkConfig;
 
+  /// Runtime mode: true = batch ingest on stop, false = realtime HSI every ~10s.
+  /// Persisted; applies to next session start.
+  bool _batchIngestOnStop = false;
+  static const _keyBatchIngestOnStop = 'synheart.batch_ingest_on_stop';
+
+  /// Persisted user id so we can auto-initialize on next app launch (initialize once).
+  static const _keyUserId = 'synheart.user_id';
+
+  /// Persisted consent API credentials (used when building ConsentConfig).
+  static const _keyConsentServiceUrl = 'synheart.consent_service_url';
+  static const _keyConsentAppId = 'synheart.consent_app_id';
+  static const _keyConsentAppApiKey = 'synheart.consent_app_api_key';
+  String? _savedConsentServiceUrl;
+  String? _savedConsentAppId;
+  String? _savedConsentAppApiKey;
+  static const _defaultConsentServiceUrl =
+      'https://consent-service-dev.synheart.io';
+  static const _defaultConsentAppId = const String.fromEnvironment(
+      'SYNHEART_CONSENT_APP_ID',
+      defaultValue: '');
+  static const _defaultConsentAppApiKey = const String.fromEnvironment(
+      'SYNHEART_CONSENT_APP_API_KEY',
+      defaultValue: '');
+
   // On-demand collection state
   List<WearSample> _recentWearSamples = [];
   List<BehaviorEvent> _recentBehaviorEvents = [];
@@ -50,9 +68,43 @@ class SynheartProvider extends ChangeNotifier {
   bool _isGameActive = false;
   double? _latestGameHR;
 
+  // Watch session state
+  WatchStatus? _watchStatus;
+  bool _isWatchSessionActive = false;
+  String? _activeWatchSessionId;
+  SessionMode _selectedSessionMode = SessionMode.focus;
+  int _sessionDurationSec = 300;
+  int? _countdownSeconds;
+  Timer? _countdownTimer;
+  double? _liveWatchHR;
+  double? _liveWatchRMSSD;
+  double? _liveWatchSDNN;
+  int _watchFrameCount = 0;
+  int _watchElapsedSec = 0;
+  SessionSummary? _lastWatchSummary;
+  StreamSubscription<SessionEvent>? _watchSessionSubscription;
+  bool _watchStopRequested = false;
+
   // Stream subscriptions for raw data
   StreamSubscription<WearSample>? _wearSampleSubscription;
   StreamSubscription<BehaviorEvent>? _behaviorEventSubscription;
+
+  /// Batch ingest runtime used for main session (flush every 5s; End session = flush + SRM persist).
+  // SynheartBatchRuntime? _batchRuntime;
+  // StreamSubscription<WearSample>? _batchWearSubscription;
+  // StreamSubscription<BehaviorEvent>? _batchBehaviorSubscription;
+  // int? _lastBatchPushedTsMs;
+
+  /// Main session progress: start time and timer for elapsed display.
+  DateTime? _sessionStartTime;
+  int _sessionElapsedSec = 0;
+  Timer? _sessionProgressTimer;
+
+  /// Throttle: avoid calling notifyListeners() on every wear sample / behavior event
+  /// (causes scroll jank when the whole home screen rebuilds).
+  bool _pendingNotify = false;
+  Timer? _notifyThrottleTimer;
+  static const _notifyThrottleMs = 500;
 
   // Getters
   bool get isInitialized => _isInitialized;
@@ -62,14 +114,72 @@ class SynheartProvider extends ChangeNotifier {
   bool get hasError => _errorMessage != null;
 
   bool get cloudSyncEnabled => _cloudSyncEnabled;
-  bool get emotionEnabled => _emotionEnabled;
-  bool get focusEnabled => _focusEnabled;
 
-  HumanStateVector? get latestHSV => _latestHSV;
-  EmotionState? get latestEmotion => _latestEmotion;
-  FocusState? get latestFocus => _latestFocus;
-  BehaviorState? get latestBehavior => _latestBehavior;
-  HSIAxes? get latestAxes => _latestAxes;
+  /// Number of HSI snapshots pending cloud upload (0 if cloud not configured).
+  int get uploadQueueLength => Synheart.uploadQueueLength;
+  /// Batch id from the last successful cloud ingest; null if none yet.
+  String? get lastUploadBatchId => Synheart.lastUploadBatchId;
+  /// Time of the last successful cloud ingest; null if none yet.
+  DateTime? get lastUploadAt => Synheart.lastUploadAt;
+  /// Last upload error message; null when last attempt succeeded or no attempt yet.
+  String? get lastUploadError => Synheart.lastUploadError;
+  /// Time of the last upload attempt (success or failure); null if no attempt yet.
+  DateTime? get lastUploadAttemptAt => Synheart.lastUploadAttemptAt;
+
+  /// Whether runtime uses batch ingest on stop (true) or realtime (false). Persisted.
+  bool get batchIngestOnStop => _batchIngestOnStop;
+
+  /// Saved consent service URL (from local storage). Empty if not set.
+  String get savedConsentServiceUrl => _savedConsentServiceUrl ?? '';
+
+  /// Saved consent app ID (from local storage). Empty if not set.
+  String get savedConsentAppId => _savedConsentAppId ?? '';
+
+  /// Saved consent app API key (from local storage). Empty if not set.
+  String get savedConsentAppApiKey => _savedConsentAppApiKey ?? '';
+
+  /// Whether the main data-collection session is running (Session SDK + modules).
+  bool get isSessionRunning =>
+      _isInitialized && Synheart.isSessionRunning;
+
+  /// Elapsed seconds since the main session started; 0 when not running.
+  int get sessionElapsedSec => _sessionElapsedSec;
+
+  String? get latestHSI => _latestHSI;
+  /// Backward-compatible alias for UI screens
+  String? get latestHSV => _latestHSI;
+
+  /// Parsed valence, arousal, focus, capacity from latest HSI (axes.affect / axes.engagement).
+  /// null if no HSI or parse error; values may be null per axis.
+  Map<String, double?>? get latestLiveAxes {
+    final json = _latestHSI;
+    if (json == null || json.isEmpty) return null;
+    try {
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      final axes = map['axes'] as Map<String, dynamic>?;
+      if (axes == null) return null;
+      double? valence, arousal, focus, capacity;
+      final affect = axes['affect'] as List<dynamic>?;
+      if (affect != null) {
+        for (final r in affect) {
+          final m = r as Map<String, dynamic>;
+          if (m['name'] == 'valence') valence = (m['value'] as num?)?.toDouble();
+          if (m['name'] == 'arousal') arousal = (m['value'] as num?)?.toDouble();
+        }
+      }
+      final engagement = axes['engagement'] as List<dynamic>?;
+      if (engagement != null) {
+        for (final r in engagement) {
+          final m = r as Map<String, dynamic>;
+          if (m['name'] == 'focus') focus = (m['value'] as num?)?.toDouble();
+          if (m['name'] == 'capacity') capacity = (m['value'] as num?)?.toDouble();
+        }
+      }
+      return {'valence': valence, 'arousal': arousal, 'focus': focus, 'capacity': capacity};
+    } catch (_) {
+      return null;
+    }
+  }
 
   ConsentStatus get consentStatus => _consentStatus;
   ConsentToken? get currentToken => _currentToken;
@@ -87,6 +197,35 @@ class SynheartProvider extends ChangeNotifier {
   Map<String, dynamic>? get queriedFeatures => _queriedFeatures;
   bool get isGameActive => _isGameActive;
   double? get latestGameHR => _latestGameHR;
+
+  // Watch session getters
+  WatchStatus? get watchStatus => _watchStatus;
+  bool get isWatchSessionActive => _isWatchSessionActive;
+  String? get activeWatchSessionId => _activeWatchSessionId;
+  SessionMode get selectedSessionMode => _selectedSessionMode;
+  int get sessionDurationSec => _sessionDurationSec;
+  int? get countdownSeconds => _countdownSeconds;
+  bool get isCountingDown => _countdownSeconds != null;
+  double? get liveWatchHR => _liveWatchHR;
+  double? get liveWatchRMSSD => _liveWatchRMSSD;
+  double? get liveWatchSDNN => _liveWatchSDNN;
+  int get watchFrameCount => _watchFrameCount;
+  int get watchElapsedSec => _watchElapsedSec;
+  SessionSummary? get lastWatchSummary => _lastWatchSummary;
+  bool get isWatchStopRequested => _watchStopRequested;
+
+  /// Runtime diagnostics from the native synheart-runtime bridge.
+  Map<String, dynamic> get runtimeDiagnostics {
+    if (!_isInitialized) {
+      return {
+        'isAvailable': false,
+        'version': null,
+        'frameCount': 0,
+        'lastQuality': null,
+      };
+    }
+    return Synheart.runtimeDiagnostics();
+  }
 
   /// Get current consent status map
   Map<String, bool> get consentStatusMap {
@@ -106,7 +245,7 @@ class SynheartProvider extends ChangeNotifier {
     return ConsentSnapshot(
       biosignals: statusMap['biosignals'] ?? false,
       behavior: statusMap['behavior'] ?? false,
-      motion: statusMap['motion'] ?? false,
+      phoneContext: statusMap['phoneContext'] ?? false,
       cloudUpload: statusMap['cloudUpload'] ?? false,
       syni: statusMap['syni'] ?? false,
       timestamp: DateTime.now(),
@@ -116,7 +255,6 @@ class SynheartProvider extends ChangeNotifier {
   /// Initialize SDK
   Future<void> initialize({
     required String userId,
-    String? appKey,
     SynheartConfig? config,
   }) async {
     if (_isInitialized || _isInitializing) {
@@ -128,41 +266,59 @@ class SynheartProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Load persisted runtime mode preference
+      final prefs = await SharedPreferences.getInstance();
+      _batchIngestOnStop = prefs.getBool(_keyBatchIngestOnStop) ?? false;
+
+      // Load persisted consent credentials (for display and for building config)
+      _savedConsentServiceUrl = prefs.getString(_keyConsentServiceUrl);
+      _savedConsentAppId = prefs.getString(_keyConsentAppId);
+      _savedConsentAppApiKey = prefs.getString(_keyConsentAppApiKey);
+
+      final consentServiceUrl =
+          _savedConsentServiceUrl?.trim().isNotEmpty == true
+              ? _savedConsentServiceUrl!.trim()
+              : _defaultConsentServiceUrl;
+      final consentAppId = _savedConsentAppId?.trim().isNotEmpty == true
+          ? _savedConsentAppId!.trim()
+          : _defaultConsentAppId;
+      final consentAppApiKey = _savedConsentAppApiKey?.trim().isNotEmpty == true
+          ? _savedConsentAppApiKey!.trim()
+          : _defaultConsentAppApiKey;
+
       // Create config with ConsentConfig and CloudConfig if not provided
       // NOTE: To use consent service features, you must provide your own appId and appApiKey.
       // See EXAMPLE_APP_SETUP.md for instructions on how to obtain these credentials.
       final finalConfig =
           config ??
           SynheartConfig(
+            allowUnsignedCapabilities: true,
             wearConfig: WearConfig(),
             phoneConfig: PhoneConfig(),
             behaviorConfig: BehaviorConfig(),
-            // // ConsentConfig now defaults to dev consent service URL
-            // // To enable consent service features, provide your own appId and appApiKey:
-            // consentConfig: ConsentConfig(
-            //   appId: 'app-123',
-            //   appApiKey: 'synheart_sk_live_3lzNKf-4kSqOzX5L6qQatecmI614brZGJqo6NO3Q5Tw',
-            //   platform: 'flutter',
-            //   userId: userId,
-            //   region: 'US',
-            // ),
-            // // CloudConfig is optional - only needed for cloud sync features
-            // // To enable cloud sync, provide your own credentials:
-            // cloudConfig: CloudConfig(
-            //   baseUrl: 'https://api.synheart.com',  // Or your custom API endpoint
-            //   tenantId: 'your-tenant-id',           // Your tenant identifier (kept for backward compatibility)
-            //   hmacSecret: 'your-hmac-secret',        // HMAC secret for request signing
-            //   subjectId: userId,                     // Pseudonymous user identifier (becomes user_id in payload)
-            //   instanceId: 'unique-instance-id',      // Unique instance identifier
-            //   apiKey: 'your-api-key',
-            // ),
+            batchIngestOnStop: _batchIngestOnStop,
+            consentConfig: ConsentConfig(
+              consentServiceUrl: consentServiceUrl,
+              appId: consentAppId,
+              appApiKey: consentAppApiKey,
+              platform: 'flutter',
+              userId: userId,
+              region: 'US',
+            ),
+            cloudConfig: CloudConfig(
+              tenantId: 'YOUR_TENANT_ID',
+              hmacSecret: 'YOUR_HMAC_SECRET',
+              subjectId: userId,
+              instanceId: 'flutter-example-$userId',
+              apiKey: 'YOUR_API_KEY',
+              orgId: 'YOUR_ORG_ID',
+            ),
           );
 
       sdkConfig = finalConfig;
 
       await Synheart.initialize(
         userId: userId,
-        appKey: appKey ?? 'mock_app_key',
         config: finalConfig,
         autoStart: false, // Don't start automatically for demo
       );
@@ -172,8 +328,11 @@ class SynheartProvider extends ChangeNotifier {
       _isInitializing = false;
       _errorMessage = null;
 
-      // Start listening to HSV updates
-      _startHSVListening();
+      // Persist userId so we can auto-initialize on next app launch (initialize once)
+      await prefs.setString(_keyUserId, userId);
+
+      // Start listening to HSI updates
+      _startHSIListening();
 
       // Start listening to raw data streams
       _startRawDataListening();
@@ -193,13 +352,25 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
-  /// Start listening to HSV updates
-  void _startHSVListening() {
-    _hsvSubscription?.cancel();
-    _hsvSubscription = Synheart.onHSVUpdate.listen((hsv) {
-      _latestHSV = hsv;
-      _latestBehavior = hsv.behavior;
-      _latestAxes = hsv.meta.axes;
+  /// If a userId was previously saved, initializes the SDK automatically so the app
+  /// is ready without the user tapping "Initialize" again (initialize once across restarts).
+  /// Call once on app start (e.g. from HomeScreen.initState).
+  Future<void> restoreAndInitializeIfNeeded() async {
+    if (_isInitialized || _isInitializing) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final savedUserId = prefs.getString(_keyUserId);
+    if (savedUserId == null || savedUserId.trim().isEmpty) return;
+
+    await initialize(userId: savedUserId.trim());
+  }
+
+  void _startHSIListening() {
+    _hsiSubscription?.cancel();
+    _hsiSubscription = Synheart.onHSIUpdate.listen((hsiJson) {
+      _latestHSI = hsiJson;
+      // Print full HSI 1.1 JSON to terminal for inspection
+      debugPrint(hsiJson);
       notifyListeners();
     });
   }
@@ -219,7 +390,7 @@ class SynheartProvider extends ChangeNotifier {
         if (_isGameActive && sample.hr != null) {
           _latestGameHR = sample.hr;
         }
-        notifyListeners();
+        _throttledNotify();
       });
     } catch (e) {
       // Stream not available yet (module not started)
@@ -234,15 +405,28 @@ class SynheartProvider extends ChangeNotifier {
         if (_recentBehaviorEvents.length > 100) {
           _recentBehaviorEvents.removeAt(0);
         }
-        notifyListeners();
+        _throttledNotify();
       });
     } catch (e) {
       // Stream not available yet (module not started)
     }
   }
 
+  /// Notify at most every [_notifyThrottleMs] ms for high-frequency stream updates.
+  void _throttledNotify() {
+    _pendingNotify = true;
+    _notifyThrottleTimer?.cancel();
+    _notifyThrottleTimer = Timer(const Duration(milliseconds: _notifyThrottleMs), () {
+      _notifyThrottleTimer = null;
+      if (_pendingNotify) {
+        _pendingNotify = false;
+        notifyListeners();
+      }
+    });
+  }
+
   /// Enable cloud sync (requires consent)
-  Future<void> enableCloudSync() async {
+  void enableCloudSync() {
     if (!_isInitialized) {
       throw StateError('SDK must be initialized first');
     }
@@ -254,7 +438,7 @@ class SynheartProvider extends ChangeNotifier {
         throw StateError('Consent token required. Please grant consent first.');
       }
 
-      await Synheart.enableCloud();
+      Synheart.activate(SynheartFeature.cloud);
       _cloudSyncEnabled = true;
       _errorMessage = null;
       notifyListeners();
@@ -266,13 +450,13 @@ class SynheartProvider extends ChangeNotifier {
   }
 
   /// Disable cloud sync
-  Future<void> disableCloudSync() async {
+  void disableCloudSync() {
     if (!_cloudSyncEnabled) {
       return;
     }
 
     try {
-      await Synheart.disableCloud();
+      Synheart.deactivate(SynheartFeature.cloud);
       _cloudSyncEnabled = false;
       _errorMessage = null;
       notifyListeners();
@@ -281,110 +465,6 @@ class SynheartProvider extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
-  }
-
-  /// Enable emotion module
-  Future<void> enableEmotion() async {
-    if (!_isInitialized) {
-      throw StateError('SDK must be initialized first');
-    }
-
-    if (_emotionEnabled) {
-      return;
-    }
-
-    try {
-      await Synheart.enableEmotion();
-      _emotionEnabled = true;
-      _startEmotionListening();
-      _errorMessage = null;
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to enable emotion: $e';
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// Disable emotion module
-  Future<void> disableEmotion() async {
-    if (!_emotionEnabled) {
-      return;
-    }
-
-    try {
-      _emotionSubscription?.cancel();
-      _emotionSubscription = null;
-      _emotionEnabled = false;
-      _latestEmotion = null;
-      _errorMessage = null;
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to disable emotion: $e';
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// Start listening to emotion updates
-  void _startEmotionListening() {
-    _emotionSubscription?.cancel();
-    _emotionSubscription = Synheart.onEmotionUpdate.listen((emotion) {
-      _latestEmotion = emotion;
-      notifyListeners();
-    });
-  }
-
-  /// Enable focus module
-  Future<void> enableFocus() async {
-    if (!_isInitialized) {
-      throw StateError('SDK must be initialized first');
-    }
-
-    if (_focusEnabled) {
-      return;
-    }
-
-    try {
-      await Synheart.enableFocus();
-      _focusEnabled = true;
-      _startFocusListening();
-      _errorMessage = null;
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to enable focus: $e';
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// Disable focus module
-  Future<void> disableFocus() async {
-    if (!_focusEnabled) {
-      return;
-    }
-
-    try {
-      _focusSubscription?.cancel();
-      _focusSubscription = null;
-      _focusEnabled = false;
-      _latestFocus = null;
-      _errorMessage = null;
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to disable focus: $e';
-      notifyListeners();
-      rethrow;
-    }
-  }
-
-  /// Start listening to focus updates
-  void _startFocusListening() {
-    _focusSubscription?.cancel();
-    _focusSubscription = Synheart.onFocusUpdate.listen((focus) {
-      _latestFocus = focus;
-      notifyListeners();
-    });
   }
 
   /// Check consent status
@@ -424,7 +504,7 @@ class SynheartProvider extends ChangeNotifier {
   Future<void> grantConsent({
     required bool biosignals,
     required bool behavior,
-    required bool motion,
+    required bool phoneContext,
     required bool cloudUpload,
     String? profileId,
   }) async {
@@ -432,7 +512,7 @@ class SynheartProvider extends ChangeNotifier {
       await Synheart.grantConsent(
         biosignals: biosignals,
         behavior: behavior,
-        motion: motion,
+        phoneContext: phoneContext,
         cloudUpload: cloudUpload,
         profileId: profileId,
       );
@@ -448,16 +528,55 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
-  /// Fetch available consent profiles
+  /// Fetch available consent profiles (only when ConsentConfig with appId/appApiKey is provided).
+  /// When not configured, leaves profiles empty; local consent toggles still work.
   Future<void> fetchConsentProfiles() async {
+    if (sdkConfig?.consentConfig?.isConfigured != true) {
+      return;
+    }
     try {
       _availableProfiles = await Synheart.getAvailableConsentProfiles();
+      _errorMessage = null;
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Failed to fetch profiles: $e';
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Load persisted consent credentials from local storage into memory.
+  /// Call from Settings screen so displayed values stay in sync.
+  Future<void> loadConsentCredentialsFromStorage() async {
+    final prefs = await SharedPreferences.getInstance();
+    _savedConsentServiceUrl = prefs.getString(_keyConsentServiceUrl);
+    _savedConsentAppId = prefs.getString(_keyConsentAppId);
+    _savedConsentAppApiKey = prefs.getString(_keyConsentAppApiKey);
+    notifyListeners();
+  }
+
+  /// Save consent API credentials to local storage.
+  /// Used on next SDK initialize. Empty strings clear the saved value (defaults will be used).
+  Future<void> saveConsentCredentials({
+    required String consentServiceUrl,
+    required String appId,
+    required String appApiKey,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _keyConsentServiceUrl,
+      consentServiceUrl.trim(),
+    );
+    await prefs.setString(_keyConsentAppId, appId.trim());
+    await prefs.setString(_keyConsentAppApiKey, appApiKey.trim());
+    _savedConsentServiceUrl = consentServiceUrl.trim().isEmpty
+        ? null
+        : consentServiceUrl.trim();
+    _savedConsentAppId =
+        appId.trim().isEmpty ? null : appId.trim();
+    _savedConsentAppApiKey =
+        appApiKey.trim().isEmpty ? null : appApiKey.trim();
+    notifyListeners();
   }
 
   /// Request consent with selected profile
@@ -512,6 +631,78 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
+  /// Start the main data-collection session (Session SDK + all modules).
+  /// [durationSec] if set, session ends after that many seconds; if null, runs until [stopSession].
+  Future<void> startSession({int? durationSec}) async {
+    if (!_isInitialized) {
+      throw StateError('SDK must be initialized first');
+    }
+    try {
+      await Synheart.startSession(durationSec: durationSec);
+      _sessionStartTime = DateTime.now();
+      _sessionElapsedSec = 0;
+      _sessionProgressTimer?.cancel();
+      _sessionProgressTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!Synheart.isSessionRunning) {
+          _sessionProgressTimer?.cancel();
+          _sessionProgressTimer = null;
+          _sessionStartTime = null;
+          _sessionElapsedSec = 0;
+          notifyListeners();
+          return;
+        }
+        if (_sessionStartTime != null) {
+          _sessionElapsedSec =
+              DateTime.now().difference(_sessionStartTime!).inSeconds;
+          notifyListeners();
+        }
+      });
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to start session: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  // --- Batch ingest path (commented out — has bug; revisit later) ---
+  // Future<void> startSession({int? durationSec}) async {
+  //   if (!_isInitialized) { throw StateError('SDK must be initialized first'); }
+  //   try {
+  //     final uid = _userId ?? 'user_${DateTime.now().millisecondsSinceEpoch}';
+  //     final sessId = 'sess_${DateTime.now().millisecondsSinceEpoch}';
+  //     if (_batchRuntime == null || !_batchRuntime!.isAvailable) {
+  //       _batchRuntime = SynheartBatchRuntime(...);
+  //       await _batchRuntime!.initialize();
+  //       _batchRuntime!.onHsi = (hsi, hsv) { _latestHSI = jsonEncode(hsi); notifyListeners(); };
+  //     }
+  //     await Synheart.startWearCollection();
+  //     await Synheart.startBehaviorCollection();
+  //     _batchWearSubscription = Synheart.wearSampleStream.listen(_pushWearToBatch);
+  //     _batchBehaviorSubscription = Synheart.behaviorEventStream.listen(_pushBehaviorToBatch);
+  //     _batchRuntime!.start(flushIntervalSeconds: 5);
+  //     _sessionStartTime = DateTime.now(); ...
+  //   }
+  // }
+  // void _pushWearToBatch(WearSample sample) { ... }
+  // void _pushBehaviorToBatch(BehaviorEvent event) { ... }
+
+  /// Stop the main data-collection session (keeps SDK initialized).
+  Future<void> stopSession() async {
+    if (!_isInitialized) return;
+    _sessionProgressTimer?.cancel();
+    _sessionProgressTimer = null;
+    _sessionStartTime = null;
+    _sessionElapsedSec = 0;
+    try {
+      await Synheart.stopSession();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to stop session: $e';
+      notifyListeners();
+    }
+  }
+
   /// Stop SDK
   Future<void> stop() async {
     if (!_isInitialized) {
@@ -520,12 +711,8 @@ class SynheartProvider extends ChangeNotifier {
 
     try {
       // Cancel subscriptions first
-      await _hsvSubscription?.cancel();
-      _hsvSubscription = null;
-      await _emotionSubscription?.cancel();
-      _emotionSubscription = null;
-      await _focusSubscription?.cancel();
-      _focusSubscription = null;
+      await _hsiSubscription?.cancel();
+      _hsiSubscription = null;
 
       // Dispose the SDK to allow re-initialization
       // This fully cleans up and resets the configuration state
@@ -533,16 +720,10 @@ class SynheartProvider extends ChangeNotifier {
 
       // Reset state
       _isInitialized = false;
-      _emotionEnabled = false;
-      _focusEnabled = false;
       _cloudSyncEnabled = false;
 
       // Clear cached data
-      _latestHSV = null;
-      _latestEmotion = null;
-      _latestFocus = null;
-      _latestBehavior = null;
-      _latestAxes = null;
+      _latestHSI = null;
 
       _errorMessage = null;
       notifyListeners();
@@ -555,6 +736,21 @@ class SynheartProvider extends ChangeNotifier {
   /// Clear error
   void clearError() {
     _errorMessage = null;
+    notifyListeners();
+  }
+
+  /// Set runtime mode: true = batch ingest when session stops, false = realtime HSI every ~10s.
+  /// Persists preference; applies to the next session start. Safe to call when initialized.
+  Future<void> setBatchIngestOnStop(bool value) async {
+    if (_batchIngestOnStop == value) return;
+    _batchIngestOnStop = value;
+    if (_isInitialized) {
+      Synheart.setBatchIngestOnStop(value);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyBatchIngestOnStop, value);
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -664,77 +860,18 @@ class SynheartProvider extends ChangeNotifier {
   }
 
   Future<void> queryWearFeatures() async {
-    final window = _selectedWindow ?? WindowType.window30s;
-    try {
-      final features = await Synheart.getWearFeatures(window);
-      if (features != null) {
-        _queriedFeatures = {
-          'hrAverage': features.hrAverage,
-          'hrMin': features.hrMin,
-          'hrMax': features.hrMax,
-          'hrvRmssd': features.hrvRmssd,
-          'hrvSdnn': features.hrvSdnn,
-          'pnn50': features.pnn50,
-          'meanRrMs': features.meanRrMs,
-          'motionIndex': features.motionIndex,
-          'respRate': features.respRate,
-        };
-      } else {
-        _queriedFeatures = {'error': 'No features available'};
-      }
+      _queriedFeatures = {'info': 'Feature queries removed — use RuntimeBridge'};
       notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to query wear features: $e';
-      notifyListeners();
-    }
   }
 
   Future<void> queryBehaviorFeatures() async {
-    final window = _selectedWindow ?? WindowType.window30s;
-    try {
-      final features = await Synheart.getBehaviorFeatures(window);
-      if (features != null) {
-        _queriedFeatures = {
-          'tapRateNorm': features.tapRateNorm,
-          'keystrokeRateNorm': features.keystrokeRateNorm,
-          'scrollVelocityNorm': features.scrollVelocityNorm,
-          'idleRatio': features.idleRatio,
-          'switchRateNorm': features.switchRateNorm,
-          'burstiness': features.burstiness,
-          'sessionFragmentation': features.sessionFragmentation,
-          'notificationLoad': features.notificationLoad,
-          'distractionScore': features.distractionScore,
-          'focusHint': features.focusHint,
-        };
-      } else {
-        _queriedFeatures = {'error': 'No features available'};
-      }
+      _queriedFeatures = {'info': 'Feature queries removed — use RuntimeBridge'};
       notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to query behavior features: $e';
-      notifyListeners();
-    }
   }
 
   Future<void> queryPhoneFeatures() async {
-    final window = _selectedWindow ?? WindowType.window30s;
-    try {
-      final features = await Synheart.getPhoneFeatures(window);
-      if (features != null) {
-        _queriedFeatures = {
-          'motionLevel': features.motionLevel,
-          'appSwitchRate': features.appSwitchRate,
-          'screenOnRatio': features.screenOnRatio,
-          'notificationRate': features.notificationRate,
-        };
-      } else {
-        _queriedFeatures = {'error': 'No features available'};
-      }
+      _queriedFeatures = {'info': 'Feature queries removed — use RuntimeBridge'};
       notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Failed to query phone features: $e';
-      notifyListeners();
-    }
   }
 
   void clearWearSamples() {
@@ -774,15 +911,185 @@ class SynheartProvider extends ChangeNotifier {
     }
   }
 
+  // ── Watch Session Methods ──────────────────────────────────────────────
+
+  /// Check watch connectivity status.
+  Future<void> checkWatchStatus() async {
+    try {
+      _watchStatus = await Synheart.getWatchStatus();
+      notifyListeners();
+    } catch (e) {
+      // debugPrint('Failed to check watch status: $e');
+    }
+  }
+
+  /// Update the selected session mode.
+  void setSessionMode(SessionMode mode) {
+    _selectedSessionMode = mode;
+    notifyListeners();
+  }
+
+  /// Update the session duration (in seconds).
+  void setSessionDuration(int durationSec) {
+    _sessionDurationSec = durationSec;
+    notifyListeners();
+  }
+
+  /// Start a watch session with a 3-second countdown.
+  void startWatchSessionWithCountdown() {
+    if (_isWatchSessionActive || _countdownSeconds != null) return;
+
+    _countdownSeconds = 3;
+    _lastWatchSummary = null;
+    notifyListeners();
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _countdownSeconds = _countdownSeconds! - 1;
+      notifyListeners();
+
+      if (_countdownSeconds! <= 0) {
+        timer.cancel();
+        _countdownTimer = null;
+        _countdownSeconds = null;
+        _startWatchSession();
+      }
+    });
+  }
+
+  /// Cancel the countdown before it reaches zero.
+  void cancelCountdown() {
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    _countdownSeconds = null;
+    notifyListeners();
+  }
+
+  void _startWatchSession() {
+    try {
+      final config = SessionConfig(
+        mode: _selectedSessionMode,
+        durationSec: _sessionDurationSec,
+        profile: const ComputeProfile(windowSec: 60, emitIntervalSec: 5),
+      );
+
+      final stream = Synheart.startWatchSession(config);
+      _activeWatchSessionId = config.sessionId;
+      _isWatchSessionActive = true;
+      _liveWatchHR = null;
+      _liveWatchRMSSD = null;
+      _liveWatchSDNN = null;
+      _watchFrameCount = 0;
+      _watchElapsedSec = 0;
+      notifyListeners();
+
+      _watchSessionSubscription = stream.listen(
+        _handleWatchSessionEvent,
+        onError: (Object error) {
+          _errorMessage = 'Watch session error: $error';
+          _resetWatchSession();
+          notifyListeners();
+        },
+        onDone: () {
+          if (_isWatchSessionActive) {
+            _resetWatchSession();
+            notifyListeners();
+          }
+        },
+      );
+    } catch (e) {
+      _errorMessage = 'Failed to start watch session: $e';
+      _resetWatchSession();
+      notifyListeners();
+    }
+  }
+
+  void _handleWatchSessionEvent(SessionEvent event) {
+    switch (event) {
+      case SessionStarted():
+        // debugPrint('Watch session started: ${event.sessionId}');
+      case SessionFrame():
+        final frame = event as SessionFrame;
+        _watchFrameCount = frame.seq;
+        final metrics = frame.metrics;
+        final hr = (metrics['hr_mean_bpm'] as num?)?.toDouble();
+        final rmssd = (metrics['rmssd_ms'] as num?)?.toDouble();
+        final sdnn = (metrics['sdnn_ms'] as num?)?.toDouble() ??
+            (metrics['hr_sdnn_ms'] as num?)?.toDouble();
+        // debugPrint(
+        //   'WatchSession frame seq=${frame.seq} hr=$hr rmssd=$rmssd sdnn=$sdnn',
+        // );
+        // HR: accept first value or any positive (don't overwrite real HR with 0 from local frames)
+        if (hr != null && (hr > 0 || _liveWatchHR == null)) _liveWatchHR = hr;
+        // RMSSD/SDNN: accept any value including 0 so we show "0.0 ms" instead of "--"
+        if (rmssd != null) _liveWatchRMSSD = rmssd;
+        if (sdnn != null) _liveWatchSDNN = sdnn;
+        final emitInterval =
+            (metrics['emit_interval_sec'] as num?)?.toInt() ?? 5;
+        _watchElapsedSec = frame.seq * emitInterval;
+        notifyListeners();
+      case SessionSummary():
+        // Prefer summary with real HR (watch) over zeroed (local); always take the one with higher hr_mean_bpm
+        final hrSummary = (event.metrics['hr_mean_bpm'] as num?)?.toDouble();
+        final currentHr = _lastWatchSummary != null
+            ? (_lastWatchSummary!.metrics['hr_mean_bpm'] as num?)?.toDouble()
+            : null;
+        final useThis = _lastWatchSummary == null ||
+            (hrSummary != null && (currentHr == null || hrSummary > currentHr));
+        if (useThis) _lastWatchSummary = event;
+        _resetWatchSession();
+        notifyListeners();
+      case SessionError():
+        _errorMessage = 'Watch: ${event.message}';
+        _resetWatchSession();
+        notifyListeners();
+      default:
+        break;
+    }
+  }
+
+  /// Stop the active watch session.
+  Future<void> stopWatchSession() async {
+    if (!_isWatchSessionActive) return;
+    _watchStopRequested = true;
+    notifyListeners();
+    try {
+      await Synheart.stopWatchSession();
+    } catch (e) {
+      _errorMessage = 'Failed to stop watch session: $e';
+      _watchStopRequested = false;
+      _resetWatchSession();
+      notifyListeners();
+    }
+  }
+
+  void _resetWatchSession() {
+    _watchSessionSubscription?.cancel();
+    _watchSessionSubscription = null;
+    _isWatchSessionActive = false;
+    _activeWatchSessionId = null;
+    _watchStopRequested = false;
+  }
+
+  /// Dismiss the last watch summary.
+  void clearWatchSummary() {
+    _lastWatchSummary = null;
+    notifyListeners();
+  }
+
+  // ── End Watch Session Methods ─────────────────────────────────────────
+
   @override
   void dispose() {
-    _hsvSubscription?.cancel();
-    _emotionSubscription?.cancel();
-    _focusSubscription?.cancel();
+    _notifyThrottleTimer?.cancel();
+    _hsiSubscription?.cancel();
     _wearSampleSubscription?.cancel();
     _behaviorEventSubscription?.cancel();
-    // Only dispose SDK if it's still initialized
-    // (if stop() was called, it already disposed the SDK)
+    // _batchWearSubscription?.cancel();
+    // _batchBehaviorSubscription?.cancel();
+    // _batchRuntime?.dispose();
+    // _batchRuntime = null;
+    _watchSessionSubscription?.cancel();
+    _countdownTimer?.cancel();
     if (_isInitialized) {
       Synheart.dispose();
     }

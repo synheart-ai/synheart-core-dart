@@ -1,10 +1,10 @@
 # Synheart Core SDK - Dart/Flutter
 
-[![Version](https://img.shields.io/badge/version-0.0.2-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/synheart-ai/synheart-core-dart)
 [![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.32.0-blue.svg)](https://flutter.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
-**Synheart Core SDK** is the single, unified integration point for developers who want to collect HSI-compatible data, process human state on-device, generate focus/emotion signals, and integrate with Syni.
+**Synheart Core SDK** is the single, unified integration point for developers who want to collect HSI-compatible data, process human state on-device, and integrate with Syni. Human state inference is computed by the on-device synheart-runtime engine.
 
 > **📦 SDK Implementations**: This is the Flutter/Dart implementation. For documentation and other platforms, see the repositories below.
 
@@ -26,108 +26,213 @@ The Synheart Core SDK consolidates all Synheart signal channels into one SDK:
 - **Wear Module** → Biosignals (HR, HRV, sleep, motion)
 - **Phone Module** → Motion + context signals
 - **Behavior Module** → Digital interaction patterns
-- **HSI Runtime** → Signal fusion + state computation
+- **HSI Runtime** → Signal fusion + state computation (via synheart-runtime Rust engine)
 - **Consent Module** → User permission management
 - **Cloud Connector** → Secure HSI snapshot uploads
-- **Syni Hooks** → LLM conditioning
 
 **Key principle:**
 > One SDK, many modules, unified human-state model
+
+## Features
+
+- **Modular signal collection** — Wear (biosignals), Phone (motion/context), Behavior (interaction patterns)
+- **On-device state computation** — synheart-runtime (Rust) fuses signals into HSV (6-head inference: emotion, focus, capacity, recovery, strain, sleep)
+- **HSI 1.1 export** — Cross-platform canonical JSON format mapping HSV to domain axes
+- **Direct HSV access** — Query raw inference results via `RuntimeBridge.lastHsv()` for diagnostics
+- **Consent-first architecture** — All data collection respects explicit user consent; revocation stops modules immediately
+- **Capability-gated features** — Server-signed tokens control which SDK features are available (core/extended/research)
+- **On-demand collection** — Granular start/stop control per module, custom collection intervals
+- **Raw data streams** — Direct access to wear samples and behavior events
+- **SRM baseline persistence** — Self-Reference Model snapshots automatically saved to encrypted storage and restored on startup, preserving learned baselines across app restarts
+- **Device authentication** — Hardware-backed ECDSA signing via synheart-auth (Secure Enclave / Android Keystore)
+- **Secure cloud upload** — Device-signed or HMAC-signed HSI snapshot uploads with offline queue
+- **Reactive streams** — RxDart-based real-time updates
 
 ## Architecture
 
 ### Core Principle
 
-> **HSV represents human state.**
+> **All inference is computed by synheart-runtime (Rust).**
 >
-> **Interpretation is downstream and optional.**
+> **SDKs coordinate data collection and distribution.**
 
 The Core SDK strictly separates:
-- **Representation (HSV)** - Human State Vector: state axes, indices, embeddings
-- **Interpretation (Focus, Emotion)** - Optional, explicit modules
-- **Application logic** - Your app
+- **Computation** — synheart-runtime (Rust) computes HSV
+- **Collection** — Core SDK modules (Wear, Phone, Behavior, Consent, Capability)
+- **Distribution** — HSI JSON export, cloud upload, raw HSV diagnostics
 
 ### HSV vs HSI
 
-- **HSV (Human State Vector)**: An internal, time-scoped, multi-dimensional representation that encodes estimates of human physiological, cognitive, and behavioral state for local computation and inference
-  - Language-agnostic model (same across Dart, Kotlin, Swift)
-  - Implemented in Dart classes for this SDK
-  - Fast, type-safe on-device processing
+- **HSV (Human State Vector)**: Internal runtime representation
+  - Computed by synheart-runtime (Rust engine)
+  - 6 heads: emotion, focus, capacity, recovery, strain, sleep
+  - Per-head: value, confidence, inference metadata
+  - Accessed via `RuntimeBridge.lastHsv()` for diagnostics
+  - NOT part of public SDK API (internal use only)
 
-- **HSI 1.0 (Human State Interface)**: Cross-platform JSON wire format
-  - Platform-agnostic canonical format
+- **HSI 1.1 (Human State Interface)**: Cross-platform JSON wire format
+  - Reorganizes HSV into domain axes (physiological, engagement, behavior, context)
+  - Primary output format (`onHSIUpdate` stream)
   - For external systems and cross-platform communication
+  - HMAC-signed upload to platform
 
-The SDK uses a hybrid approach: HSV for local computation, HSI 1.0 for external integration.
+The SDK uses clean separation: **runtime computes HSV**, **SDK exports HSI**, **consumers parse HSI**.
 
 ### Core Modules
 
-1. **Capabilities Module** - Feature gating (core/extended/research)
-2. **Consent Module** - User permission management
-3. **Wear Module** - Biosignal collection from wearables
-4. **Phone Module** - Device motion and context signals
-5. **Behavior Module** - User-device interaction patterns
-6. **HSI Runtime** - Signal fusion and HSV state representation
-7. **Cloud Connector** - Secure HSV snapshot uploads
-
-### Optional Interpretation Modules
-
-- **Synheart Focus** - Focus/engagement estimation (optional, explicit enable)
-- **Synheart Emotion** - Affect modeling (optional, explicit enable)
+1. **Device Auth** - Hardware-backed ECDSA device identity (via synheart-auth)
+2. **Capabilities Module** - Feature gating via server-signed tokens (core/extended/research)
+3. **Consent Module** - 3-layer consent enforcement (platform/app/user), token issuance
+4. **Wear Module** - Biosignal collection (HR, HRV, sleep, motion)
+5. **Phone Module** - Device motion and context signals
+6. **Behavior Module** - Consent-gated interaction patterns with runtime push
+7. **Runtime Module** - FFI bridge to synheart-runtime (HSV computation & HSI export)
+8. **SRM Module** - Self-Reference Model baselines (persistent snapshots)
+9. **Cloud Connector** - Device-signed HSI uploads with HSI 1.1 schema validation
 
 ### Data Flow
 
 ```
-Wear, Phone, Behavior Modules
+SynheartAuth (device registration + ECDSA signing)
     ↓
-HSI Runtime (Fusion Engine)
+DeviceAuthProvider → RemoteCapabilityTokenFetcher
+    ↓ (fetches capability token, gates features)
     ↓
-HSV (Human State Vector)
+Wear, Phone, Behavior Modules (raw signals)
+    ↓ (consent & capability gated)
     ↓
-Optional: Focus Module → Focus Estimates
-Optional: Emotion Module → Emotion Estimates
+RuntimeModule → RuntimeBridge (dart:ffi)
     ↓
-Optional: Export to HSI 1.0 (external format)
+synheart-runtime (Rust C ABI)
+  ├─ Signal processing
+  ├─ Feature extraction
+  ├─ HSV computation (6 heads)
+  └─ Flux mapping → HSI 1.1
+    ↓
+HSI JSON Output
+  ├─ onHSIUpdate stream (main output)
+  ├─ HsiSchemaTransformer (validates against hsi-1.1.schema.json)
+  ├─ lastQuality() (confidence metrics)
+  └─ Cloud upload (device-signed, consent-gated)
 ```
+
+## Installation
+
+Add `synheart_core` to your `pubspec.yaml`:
+
+```yaml
+dependencies:
+  synheart_core: ^0.0.2
+```
+
+Then run:
+
+```bash
+flutter pub get
+```
+
+## Endpoint Configuration (No Hardcoded URLs)
+
+This SDK supports endpoint injection via `--dart-define` / `--dart-define-from-file`.
+To avoid committing real endpoints:
+
+1. Copy `env/synheart.endpoints.example.json` to a local file such as
+   `env/synheart.endpoints.local.json` (gitignored).
+2. Put your real endpoint URLs in the local file.
+3. Run your app with:
+
+```bash
+flutter run --dart-define-from-file=env/synheart.endpoints.local.json
+```
+
+**Example file shape** (`env/synheart.endpoints.example.json` — placeholders only; do not commit secrets):
+
+```json
+{
+  "SYNHEART_CLOUD_BASE_URL": "https://your-cloud.example.com",
+  "SYNHEART_CONSENT_BASE_URL": "https://your-consent.example.com",
+  "SYNHEART_PLATFORM_INGEST_BASE_URL": "https://your-platform.example.com",
+  "SYNHEART_AUTH_BASE_URL": "https://your-auth.example.com"
+}
+```
+
+| Define key | Used for |
+|------------|----------|
+| `SYNHEART_CLOUD_BASE_URL` | HSI cloud ingest (`ApiEndpoints.defaultCloudBaseUrl`) |
+| `SYNHEART_CONSENT_BASE_URL` | Consent service API (`ApiEndpoints.defaultConsentBaseUrl`) |
+| `SYNHEART_PLATFORM_INGEST_BASE_URL` | Platform session/metadata ingest |
+| `SYNHEART_AUTH_BASE_URL` | Auth/account API (exchange, refresh, account delete) |
+
+Values are read at compile time via `String.fromEnvironment` in `lib/src/config/api_endpoints.dart`.
 
 ## Usage
 
-### Basic Usage
+### Basic Usage (Production)
 
-The Core SDK provides HSV (Human State Vector) as the core state representation, with optional interpretation modules for Focus and Emotion:
+The Core SDK automatically handles device registration, capability token fetching, and request signing when `DeviceAuthConfig` is provided:
 
 ```dart
 import 'package:synheart_core/synheart_core.dart';
 
-// Initialize the Core SDK
+// Initialize with device authentication (production)
 await Synheart.initialize(
   userId: 'anon_user_123',
   config: SynheartConfig(
+    appId: 'com.myapp',
+    subjectId: 'anon_user_123',
+    deviceAuthConfig: DeviceAuthConfig(
+      authBaseUrl: 'https://auth.synheart.ai',
+    ),
+    cloudConfig: CloudConfig(
+      tenantId: 'my-tenant',
+      subjectId: 'anon_user_123',
+      instanceId: 'instance-uuid',
+      // No hmacSecret needed — DeviceAuthProvider is injected automatically
+    ),
+    consentConfig: ConsentConfig(
+      appId: 'com.myapp',
+      appApiKey: 'your-consent-api-key',
+    ),
     wearConfig: WearConfig(),
-    phoneConfig: PhoneConfig(),
+    behaviorConfig: BehaviorConfig(),
+  ),
+);
+```
+
+### Basic Usage (Development)
+
+For development without a device auth server, use `allowUnsignedCapabilities`:
+
+```dart
+await Synheart.initialize(
+  userId: 'anon_user_123',
+  config: SynheartConfig(
+    appId: 'com.myapp',
+    subjectId: 'anon_user_123',
+    allowUnsignedCapabilities: true,  // Dev mode — no token needed
+    wearConfig: WearConfig(),
     behaviorConfig: BehaviorConfig(),
   ),
 );
 
-// Subscribe to HSV updates (core state representation)
-Synheart.onHSVUpdate.listen((hsv) {
-  print('Arousal Index: ${hsv.meta.axes.affect.arousalIndex}');
-  print('Engagement Stability: ${hsv.meta.axes.engagement.engagementStability}');
+// Subscribe to HSI updates (core state representation — raw JSON from synheart-runtime)
+Synheart.onHSIUpdate.listen((hsiJson) {
+  print('HSI JSON: $hsiJson');
 });
 
-// Optional: Enable interpretation modules
-await Synheart.enableFocus();
+// Optional: Enable interpretation modules (activate API preferred)
+Synheart.activate(SynheartFeature.focus);
 Synheart.onFocusUpdate.listen((focus) {
   print('Focus Score: ${focus.estimate.score}');
 });
 
-await Synheart.enableEmotion();
+Synheart.activate(SynheartFeature.emotion);
 Synheart.onEmotionUpdate.listen((emotion) {
   print('Stress Index: ${emotion.stressIndex}');
 });
 
 // Optional: Enable cloud sync (requires consent)
-await Synheart.enableCloud();
+Synheart.activate(SynheartFeature.cloud);
 ```
 
 ### On-Demand Data Collection
@@ -136,25 +241,27 @@ The SDK supports granular control over when data collection starts and stops, al
 
 #### Manual Initialization
 
-By default, `initialize()` automatically starts all data collection modules. To control when collection starts:
+By default, `initialize()` does not start data collection (`autoStart: false`). To control when collection starts:
 
 ```dart
 // Initialize without auto-starting collection
 await Synheart.initialize(
   userId: 'anon_user_123',
-  autoStart: false, // Don't start collection automatically
+  autoStart: false,
   config: SynheartConfig(
+    appId: 'com.myapp',
+    subjectId: 'anon_user_123',
+    allowUnsignedCapabilities: true,  // or use deviceAuthConfig in production
     wearConfig: WearConfig(),
-    phoneConfig: PhoneConfig(),
     behaviorConfig: BehaviorConfig(),
   ),
 );
 
 // Start collection when needed (e.g., when game starts)
-await Synheart.startDataCollection();
+await Synheart.startSession();
 
 // Stop collection when done (e.g., when game ends)
-await Synheart.stopDataCollection();
+await Synheart.stopSession();
 ```
 
 #### Module-Level Control
@@ -231,41 +338,12 @@ print('Focus Hint: ${results.focusHint}');
 print('Interaction Intensity: ${results.interactionIntensity}');
 ```
 
-#### On-Demand Feature Queries
-
-Query aggregated features for specific time windows without subscribing to streams:
-
-```dart
-// Get wear features for last 30 seconds
-final wearFeatures = await Synheart.getWearFeatures(WindowType.window30s);
-if (wearFeatures != null) {
-  print('Average HR: ${wearFeatures.hrAverage} BPM');
-  print('HRV RMSSD: ${wearFeatures.hrvRmssd} ms');
-  print('Motion Index: ${wearFeatures.motionIndex}');
-}
-
-// Get behavior features for last 5 minutes
-final behaviorFeatures = await Synheart.getBehaviorFeatures(WindowType.window5m);
-if (behaviorFeatures != null) {
-  print('Tap Rate: ${behaviorFeatures.tapRateNorm}');
-  print('Focus Hint: ${behaviorFeatures.focusHint}');
-  print('Distraction Score: ${behaviorFeatures.distractionScore}');
-}
-
-// Get phone features for last hour
-final phoneFeatures = await Synheart.getPhoneFeatures(WindowType.window1h);
-if (phoneFeatures != null) {
-  print('Motion Level: ${phoneFeatures.motionLevel}');
-  print('Screen On Ratio: ${phoneFeatures.screenOnRatio}');
-}
-```
-
 #### Use Cases
 
 **Game App Example:**
 ```dart
 // Initialize without auto-start
-await Synheart.initialize(userId: 'user', autoStart: false);
+await Synheart.initialize(userId: 'user', config: SynheartConfig(allowUnsignedCapabilities: true), autoStart: false);
 
 // When game starts
 await Synheart.startWearCollection(interval: Duration(seconds: 1));
@@ -294,39 +372,106 @@ if (results.focusHint > 0.7) {
 }
 ```
 
-### HSI 1.0 Export
+### HSI 1.1 Export
 
-The SDK supports exporting HSV to the canonical HSI 1.0 format for external interoperability:
+The SDK supports exporting HSV to the canonical HSI 1.1 format for external interoperability:
 
 ```dart
 import 'package:synheart_core/synheart_core.dart';
 import 'dart:convert';
 
-// Subscribe to HSV updates
-Synheart.onHSVUpdate.listen((hsv) {
-  // Convert HSV to HSI 1.0 canonical format
-  final hsi10 = hsv.toHSI10(
-    producerName: 'My App',
-    producerVersion: '1.0.0',
-    instanceId: 'instance-123',
-  );
-
-  // Serialize to JSON
-  final json = hsi10.toJson();
-  final jsonString = JsonEncoder.withIndent('  ').convert(json);
-
+// Subscribe to HSI updates (raw JSON string from synheart-runtime)
+Synheart.onHSIUpdate.listen((hsiJson) {
+  // hsiJson is already a canonical HSI 1.x JSON string
   // Send to external system, validate against schema, etc.
-  print(jsonString);
+  print(hsiJson);
 });
 ```
 
 The SDK uses a hybrid architecture:
 - **HSV (Human State Vector)**: Language-agnostic model implemented in Dart classes
-- **HSI 1.0 (Human State Interface)**: Cross-platform JSON format for interoperability
+- **HSI 1.1 (Human State Interface)**: Cross-platform JSON format for interoperability
 
 **Note**: All Synheart SDKs (Dart, Kotlin, Swift) implement the same HSV model, ensuring consistent state representation across platforms.
 
 See the [hsi_export_example.dart](example/hsi_export_example.dart) for a complete example.
+
+## Batch Ingest Mode
+
+By default, the runtime module streams wear and behavior data to the native engine in real-time, producing HSI frames as windows complete. **Batch ingest mode** buffers all events during a session and runs a single `ingestBatch` call on stop, producing all HSI frames at once.
+
+This is useful for:
+- Offline-first apps that collect data without connectivity
+- Background recording where real-time HSI isn't needed
+- Reducing CPU usage during active sessions
+
+### Configuration
+
+```dart
+final synheart = await Synheart.initialize(
+  config: SynheartConfig(
+    appId: 'your_app_id',
+    apiKey: 'your_api_key',
+    subjectId: 'sub_user_123',
+    batchIngestOnStop: true, // Enable batch mode
+  ),
+);
+```
+
+### Runtime Toggle
+
+Batch mode can be toggled between sessions:
+
+```dart
+synheart.setBatchIngestOnStop(true);  // Next session uses batch
+synheart.setBatchIngestOnStop(false); // Back to streaming
+```
+
+## Platform Ingestion
+
+The SDK can send structured session and metadata payloads to the Synheart platform API, independent of the HSI cloud connector.
+
+### Auto-Ingest
+
+Enable automatic ingestion when sessions end:
+
+```dart
+final synheart = await Synheart.initialize(
+  config: SynheartConfig(
+    appId: 'your_app_id',
+    apiKey: 'your_api_key',
+    subjectId: 'sub_user_123',
+    platformIngestConfig: PlatformIngestConfig(
+      apiKey: 'your_platform_api_key',
+      autoIngest: true,
+    ),
+  ),
+);
+```
+
+### Manual Ingestion
+
+```dart
+// Ingest current session data
+await synheart.ingestSession();
+
+// Ingest app/user metadata
+await synheart.ingestMetadata();
+```
+
+### Standalone Client
+
+For custom integrations, use `PlatformPayloadBuilder` and `PlatformIngestClient` directly:
+
+```dart
+final payload = PlatformPayloadBuilder.buildSession(
+  sessionId: 'sess_123',
+  // ... other params
+);
+
+final client = synheart.platformIngestClient;
+final response = await client?.ingestSession(payload);
+```
 
 ### Consent Management
 
@@ -416,6 +561,67 @@ await Synheart.revokeConsent();
 - Raw data streams (`wearSampleStream`, `behaviorEventStream`) only emit data when consent is granted
 - All module start methods respect consent - they won't start if consent is denied
 - `syni` consent is always `false` (not user-configurable)
+
+## Error Handling
+
+The SDK uses Dart exceptions. Most methods throw `StateError` for precondition failures:
+
+```dart
+try {
+  await Synheart.initialize(
+    userId: 'user_123',
+    config: SynheartConfig(allowUnsignedCapabilities: true),
+  );
+  await Synheart.startSession();
+} on StateError catch (e) {
+  if (e.message.contains('already configured')) {
+    print('SDK already initialized');
+  } else if (e.message.contains('Capability token')) {
+    print('Provide a valid token or set allowUnsignedCapabilities: true');
+  } else {
+    print('Error: ${e.message}');
+  }
+}
+```
+
+### Common Exceptions
+
+| Exception | When |
+|-----------|------|
+| `StateError('Synheart already configured')` | `initialize()` called twice |
+| `StateError('Capability token and secret are required...')` | No token/deviceAuthConfig and `allowUnsignedCapabilities` is false |
+| `StateError('Device registration failed...')` | Device attestation failed and `allowUnsignedCapabilities` is false |
+| `ArgumentError('... is not configured')` | Base URL still set to placeholder `example.invalid` |
+| `StateError('Synheart must be initialized...')` | Method called before `initialize()` |
+| `StateError('cloudUpload consent required')` | Cloud operation without consent |
+
+## API Reference
+
+### Synheart (Main Entry Point)
+
+| Method | Description |
+|--------|-------------|
+| `initialize(userId, config, appKey, autoStart)` | Initialize the SDK |
+| `startSession()` / `stopSession()` | Start/stop data collection |
+| `startWearCollection()` / `stopWearCollection()` | Control wear module |
+| `startBehaviorCollection()` / `stopBehaviorCollection()` | Control behavior module |
+| `startPhoneCollection()` / `stopPhoneCollection()` | Control phone module |
+| `activate(feature)` / `deactivate(feature)` | Enable/disable features (focus, emotion, cloud, etc.) |
+| `grantConsent(...)` | Grant consent for data types |
+| `revokeConsent()` / `revokeConsentType(type)` | Revoke consent |
+| `uploadHsiNow()` | Force-upload queued HSI snapshots |
+| `checkNotificationListenerEnabled()` | Check notification access for behavior metrics |
+| `dispose()` | Release all resources |
+
+### Streams
+
+| Stream | Type | Description |
+|--------|------|-------------|
+| `onHSIUpdate` | `Stream<String>` | HSI JSON frames from synheart-runtime |
+| `onEmotionUpdate` | `Stream<EmotionState>` | Emotion estimates |
+| `onFocusUpdate` | `Stream<FocusState>` | Focus estimates |
+| `wearSampleStream` | `Stream<WearSample>` | Raw wear samples |
+| `behaviorEventStream` | `Stream<BehaviorEvent>` | Raw behavior events |
 
 ## Prerequisites
 
@@ -524,10 +730,117 @@ The example app (`example/`) includes all required configurations. You can copy 
 
 - All processing is **on-device** by default
 - No raw biosignals leave the device without explicit consent
-- **Consent is enforced at every level** - collection, caching, and streaming all respect consent
-- Cloud sync uses **aggregated HSV** only
+- **Consent is enforced at every level** — collection, caching, streaming, and local HSI delivery all respect consent
+- **HSI stream is consent-gated** — `onHSIUpdate` only emits frames when `biosignals` consent is granted
+- Cloud sync uses **aggregated HSI** only
 - HSI is strictly **non-medical**; no diagnoses or clinical labels
 - **On-demand collection** allows apps to minimize data collection to only when needed
+
+## Testing
+
+### Running Tests
+
+```bash
+flutter test
+```
+
+### Testing with Mock Providers
+
+The SDK ships with `MockWearSourceHandler` and mock collectors for testing without hardware:
+
+```dart
+// Initialize with default capabilities (no real token needed)
+await Synheart.initialize(
+  userId: 'test_user',
+  config: SynheartConfig(allowUnsignedCapabilities: true),
+  autoStart: false,
+);
+
+// Start session — mock data flows through all streams
+await Synheart.startSession();
+
+// Subscribe and verify
+Synheart.onHSIUpdate.listen((hsiJson) {
+  // Validate HSI JSON from synheart-runtime
+  print('HSI: $hsiJson');
+});
+```
+
+## Local Development with `synheart local`
+
+For offline SDK development and testing, use the **Synheart CLI** local platform server. It replicates the cloud consent and ingest APIs locally, so you can develop without a network connection or production credentials.
+
+### Setup
+
+1. Install the [Synheart CLI](https://github.com/synheart-ai/synheart-cli):
+
+```bash
+git clone https://github.com/synheart-ai/synheart-cli
+cd synheart-cli
+make build && make install
+```
+
+2. Start the local platform:
+
+```bash
+synheart local
+```
+
+This starts an HTTP server on `localhost:8083` with mock consent profiles, token issuance, and ingest endpoints.
+
+### Connecting your app
+
+Point your Flutter app at the local server using `--dart-define`:
+
+```bash
+flutter run --dart-define=SYNHEART_ENV=local
+```
+
+Or specify a custom URL:
+
+```bash
+flutter run \
+  --dart-define=SYNHEART_ENV=local \
+  --dart-define=SYNHEART_LOCAL_URL=http://192.168.1.100:8083
+```
+
+### Available endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/apps/{id}/consent-profiles` | Fetch consent profiles |
+| `POST` | `/api/v1/sdk/consent-token` | Issue consent token |
+| `POST` | `/api/v1/sdk/consent-revoke` | Revoke consent |
+| `POST` | `/v1/hsi/ingest` | Ingest HSI snapshots |
+| `POST` | `/v1/platform/session/ingest` | Ingest session data |
+| `POST` | `/v1/platform/metadata/ingest` | Ingest metadata |
+| `GET` | `/status` | Server status and stats |
+
+### Default credentials
+
+The `synheart local` server provides default API keys and HMAC secrets for development. Run `synheart local --help` to see defaults. Use `allowUnsignedCapabilities: true` in your SDK config to skip device attestation locally.
+
+### Testing consent flow
+
+```dart
+// In local mode, consent profiles are served from data/profiles.json
+// 3 presets are included: Personal Wellness, Research (Full), Biosignals + Cloud
+
+final profiles = await Synheart.getAvailableConsentProfiles();
+// Returns the 3 preset profiles from the local server
+
+await Synheart.grantConsent(
+  biosignals: true,
+  behavior: true,
+  motion: true,
+  cloudUpload: true,
+  profileId: profiles.first.id,
+);
+```
+
+### Testing platform ingest
+
+Ingested payloads are persisted as JSON files in the local server's data directory (`{data-dir}/ingested/`), making it easy to inspect what your app is sending.
 
 ## 📚 Documentation
 
@@ -539,8 +852,7 @@ For complete documentation, see the [main Synheart Core repository](https://gith
 
 ### Dart-Specific Documentation
 
-- **[ARCHITECTURE](doc/ARCHITECTURE.md)** - Dart implementation architecture
-- **[HSV Technical Spec](doc/hsv-tech-spec.md)** - HSV data structure details
+- **[ARCHITECTURE](docs/ARCHITECTURE.md)** - Dart implementation architecture
 
 ## 👥 Contributing
 
@@ -553,31 +865,46 @@ We welcome contributions! Here's how to get started:
 
 ## 📋 Module Overview
 
-The Synheart Core SDK consists of 7 core modules:
+The Synheart Core SDK consists of 9 core modules:
 
-1. **Capabilities Module** - Feature gating (core/extended/research)
-2. **Consent Module** - User permission management
-3. **Wear Module** - Biosignal collection from wearables
-4. **Phone Module** - Device motion and context signals
-5. **Behavior Module** - User-device interaction patterns
-6. **HSI Runtime** - Signal fusion and state computation
-7. **Cloud Connector** - Secure HSI snapshot uploads
+1. **Device Auth** - Hardware-backed ECDSA device identity (via synheart-auth)
+2. **Capabilities Module** - Server-signed feature gating (core/extended/research)
+3. **Consent Module** - 3-layer consent enforcement + token issuance
+4. **Wear Module** - Biosignal collection from wearables
+5. **Phone Module** - Device motion and context signals
+6. **Behavior Module** - Consent-gated interaction patterns
+7. **HSI Runtime** - Signal fusion and state computation
+8. **Cloud Connector** - Device-signed HSI snapshot uploads
+9. **Platform Ingest** - Session and metadata ingestion
 
-See [ARCHITECTURE](doc/ARCHITECTURE.md) for detailed implementation specifications.
+See [ARCHITECTURE](docs/ARCHITECTURE.md) for detailed implementation specifications.
 
 ## 🔒 Privacy & Security
 
 - All processing is **on-device** by default
-- No raw biosignals leave the device without explicit consent
-- Cloud sync uses **aggregated HSV** only
+- No raw biosignals leave the device (unconditionally denied by consent service)
+- **Device authentication** — ECDSA P-256 keys in hardware enclave, never exportable
+- **3-layer consent** — Platform, app, and user consent must all allow before any upload
+- Cloud sync uses **aggregated HSI** only
 - HSI is strictly **non-medical**; no diagnoses or clinical labels
-- Zero raw data policy enforced throughout
+
+## Related Projects
+
+| Repository | Platform | Description |
+|------------|----------|-------------|
+| [synheart-core](https://github.com/synheart-ai/synheart-core) | Spec | Source of truth for documentation and API design |
+| [synheart-core-dart](https://github.com/synheart-ai/synheart-core-dart) | Flutter/Dart | This repository |
+| [synheart-core-kotlin](https://github.com/synheart-ai/synheart-core-kotlin) | Android/Kotlin | Android SDK implementation |
+| [synheart-core-swift](https://github.com/synheart-ai/synheart-core-swift) | iOS/Swift | iOS SDK implementation |
+| [synheart-auth-dart](https://github.com/synheart-ai/synheart-auth-dart) | Flutter/Dart | Device authentication (ECDSA) |
+| [synheart-wear-dart](https://github.com/synheart-ai/synheart-wear-dart) | Flutter/Dart | Wearable signal collection |
+| [synheart-behavior-dart](https://github.com/synheart-ai/synheart-behavior-dart) | Flutter/Dart | Behavior event capture |
 
 ## 📄 License
 
 Apache 2.0 License - see [LICENSE](LICENSE) for details.
 
-Copyright 2025 Synheart AI Inc.
+Copyright 2025-2026 Synheart AI Inc.
 
 ## 👤 Author
 

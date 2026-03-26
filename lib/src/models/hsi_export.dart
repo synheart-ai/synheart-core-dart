@@ -1,54 +1,22 @@
-import 'package:json_annotation/json_annotation.dart';
-import 'hsv.dart';
-
-part 'hsi_export.g.dart';
-
-/// HSI 1.0 Canonical Payload
+/// HSI 1.1 Canonical Payload
 ///
-/// HSI (Human State Interface) 1.0 is the canonical JSON format for external
+/// HSI (Human State Interface) 1.1 is the canonical JSON format for external
 /// interoperability across systems and platforms.
 ///
-/// This is distinct from HSV (Human State Vector), which is the internal
-/// Dart representation optimized for on-device processing.
-///
-/// See: https://github.com/synheart-ai/hsi/schema/hsi-1.0.schema.json
-@JsonSerializable(explicitToJson: true)
-class HSI10Payload {
-  /// HSI version (always "1.0")
-  @JsonKey(name: 'hsi_version')
+/// See: https://github.com/synheart-ai/hsi/schema/hsi-1.1.schema.json
+class HSI11Payload {
   final String hsiVersion;
-
-  /// Event-time: when the human state was observed
-  @JsonKey(name: 'observed_at_utc')
   final String observedAtUtc;
-
-  /// Processing-time: when this payload was produced
-  @JsonKey(name: 'computed_at_utc')
   final String computedAtUtc;
-
-  /// Producer identity
-  final HSI10Producer producer;
-
-  /// Window identifiers
-  @JsonKey(name: 'window_ids')
+  final HSI11Producer producer;
   final List<String> windowIds;
-
-  /// Window definitions
-  final Map<String, HSI10Window> windows;
-
-  /// Axis readings (optional)
-  final HSI10Axes? axes;
-
-  /// Embeddings (optional)
-  final List<HSI10Embedding>? embeddings;
-
-  /// Privacy assertions
-  final HSI10Privacy privacy;
-
-  /// Additional metadata (optional)
+  final Map<String, HSI11Window> windows;
+  final HSI11Axes? axes;
+  final List<HSI11Embedding>? embeddings;
+  final HSI11Privacy privacy;
   final Map<String, dynamic>? meta;
 
-  HSI10Payload({
+  HSI11Payload({
     required this.hsiVersion,
     required this.observedAtUtc,
     required this.computedAtUtc,
@@ -61,430 +29,263 @@ class HSI10Payload {
     this.meta,
   });
 
-  factory HSI10Payload.fromJson(Map<String, dynamic> json) =>
-      _$HSI10PayloadFromJson(json);
+  factory HSI11Payload.fromJson(Map<String, dynamic> json) => HSI11Payload(
+        hsiVersion: json['hsi_version'] as String,
+        observedAtUtc: json['observed_at_utc'] as String,
+        computedAtUtc: json['computed_at_utc'] as String,
+        producer:
+            HSI11Producer.fromJson(json['producer'] as Map<String, dynamic>),
+        windowIds:
+            (json['window_ids'] as List<dynamic>).cast<String>(),
+        windows: (json['windows'] as Map<String, dynamic>).map(
+          (k, v) =>
+              MapEntry(k, HSI11Window.fromJson(v as Map<String, dynamic>)),
+        ),
+        axes: json['axes'] is Map
+            ? HSI11Axes.fromJson(json['axes'] as Map<String, dynamic>)
+            : null,
+        embeddings: (json['embeddings'] as List<dynamic>?)
+            ?.map(
+                (e) => HSI11Embedding.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        privacy:
+            HSI11Privacy.fromJson(json['privacy'] as Map<String, dynamic>),
+        meta: json['meta'] as Map<String, dynamic>?,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI10PayloadToJson(this);
+  Map<String, dynamic> toJson() => {
+        'hsi_version': hsiVersion,
+        'observed_at_utc': observedAtUtc,
+        'computed_at_utc': computedAtUtc,
+        'producer': producer.toJson(),
+        'window_ids': windowIds,
+        'windows': windows.map((k, v) => MapEntry(k, v.toJson())),
+        if (axes != null) 'axes': axes!.toJson(),
+        if (embeddings != null)
+          'embeddings': embeddings!.map((e) => e.toJson()).toList(),
+        'privacy': privacy.toJson(),
+        if (meta != null) 'meta': meta,
+      };
 }
 
-/// Producer metadata
-@JsonSerializable()
-class HSI10Producer {
+class HSI11Producer {
   final String name;
   final String version;
-
-  @JsonKey(name: 'instance_id')
   final String instanceId;
 
-  HSI10Producer({
+  HSI11Producer({
     required this.name,
     required this.version,
     required this.instanceId,
   });
 
-  factory HSI10Producer.fromJson(Map<String, dynamic> json) =>
-      _$HSI10ProducerFromJson(json);
+  factory HSI11Producer.fromJson(Map<String, dynamic> json) => HSI11Producer(
+        name: json['name'] as String,
+        version: json['version'] as String,
+        instanceId: json['instance_id'] as String,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI10ProducerToJson(this);
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'version': version,
+        'instance_id': instanceId,
+      };
 }
 
-/// Time window definition
-@JsonSerializable()
-class HSI10Window {
+class HSI11Window {
   final String start;
   final String end;
   final String? label;
 
-  HSI10Window({required this.start, required this.end, this.label});
+  HSI11Window({required this.start, required this.end, this.label});
 
-  factory HSI10Window.fromJson(Map<String, dynamic> json) =>
-      _$HSI10WindowFromJson(json);
+  factory HSI11Window.fromJson(Map<String, dynamic> json) => HSI11Window(
+        start: json['start'] as String,
+        end: json['end'] as String,
+        label: json['label'] as String?,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI10WindowToJson(this);
+  Map<String, dynamic> toJson() => {
+        'start': start,
+        'end': end,
+        if (label != null) 'label': label,
+      };
 }
 
-/// Axes container
-@JsonSerializable(explicitToJson: true)
-class HSI10Axes {
-  final HSI10Domain? affect;
-  final HSI10Domain? behavior;
+class HSI11Axes {
+  final HSI11Domain? physiological;
+  final HSI11Domain? engagement;
+  final HSI11Domain? behavior;
+  final HSI11Domain? context;
 
-  HSI10Axes({this.affect, this.behavior});
+  HSI11Axes({this.physiological, this.engagement, this.behavior, this.context});
 
-  factory HSI10Axes.fromJson(Map<String, dynamic> json) =>
-      _$HSI10AxesFromJson(json);
+  factory HSI11Axes.fromJson(Map<String, dynamic> json) => HSI11Axes(
+        physiological: json['physiological'] is Map
+            ? HSI11Domain.fromJson(
+                json['physiological'] as Map<String, dynamic>)
+            : null,
+        engagement: json['engagement'] is Map
+            ? HSI11Domain.fromJson(
+                json['engagement'] as Map<String, dynamic>)
+            : null,
+        behavior: json['behavior'] is Map
+            ? HSI11Domain.fromJson(json['behavior'] as Map<String, dynamic>)
+            : null,
+        context: json['context'] is Map
+            ? HSI11Domain.fromJson(json['context'] as Map<String, dynamic>)
+            : null,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI10AxesToJson(this);
+  Map<String, dynamic> toJson() => {
+        if (physiological != null) 'physiological': physiological!.toJson(),
+        if (engagement != null) 'engagement': engagement!.toJson(),
+        if (behavior != null) 'behavior': behavior!.toJson(),
+        if (context != null) 'context': context!.toJson(),
+      };
 }
 
-/// Domain containing axis readings
-@JsonSerializable(explicitToJson: true)
-class HSI10Domain {
-  final List<HSI10Reading> readings;
+class HSI11Domain {
+  final List<HSI11Reading> readings;
 
-  HSI10Domain({required this.readings});
+  HSI11Domain({required this.readings});
 
-  factory HSI10Domain.fromJson(Map<String, dynamic> json) =>
-      _$HSI10DomainFromJson(json);
+  factory HSI11Domain.fromJson(Map<String, dynamic> json) => HSI11Domain(
+        readings: (json['readings'] as List<dynamic>)
+            .map((e) => HSI11Reading.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
 
-  Map<String, dynamic> toJson() => _$HSI10DomainToJson(this);
+  Map<String, dynamic> toJson() => {
+        'readings': readings.map((e) => e.toJson()).toList(),
+      };
 }
 
-/// Individual axis reading
-@JsonSerializable()
-class HSI10Reading {
+class HSI11Reading {
   final String axis;
   final double score;
   final double confidence;
-
-  @JsonKey(name: 'window_id')
   final String windowId;
-
   final String? direction;
+  final String? unit;
+  final List<String>? evidenceSourceIds;
   final String? notes;
 
-  HSI10Reading({
+  HSI11Reading({
     required this.axis,
     required this.score,
     required this.confidence,
     required this.windowId,
     this.direction,
+    this.unit,
+    this.evidenceSourceIds,
     this.notes,
   });
 
-  factory HSI10Reading.fromJson(Map<String, dynamic> json) =>
-      _$HSI10ReadingFromJson(json);
+  factory HSI11Reading.fromJson(Map<String, dynamic> json) => HSI11Reading(
+        axis: json['axis'] as String,
+        score: (json['score'] as num).toDouble(),
+        confidence: (json['confidence'] as num).toDouble(),
+        windowId: json['window_id'] as String,
+        direction: json['direction'] as String?,
+        unit: json['unit'] as String?,
+        evidenceSourceIds: (json['evidence_source_ids'] as List<dynamic>?)
+            ?.cast<String>(),
+        notes: json['notes'] as String?,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI10ReadingToJson(this);
+  Map<String, dynamic> toJson() => {
+        'axis': axis,
+        'score': score,
+        'confidence': confidence,
+        'window_id': windowId,
+        if (direction != null) 'direction': direction,
+        if (unit != null) 'unit': unit,
+        if (evidenceSourceIds != null)
+          'evidence_source_ids': evidenceSourceIds,
+        if (notes != null) 'notes': notes,
+      };
 }
 
-/// Embedding vector
-@JsonSerializable()
-class HSI10Embedding {
+class HSI11Embedding {
   final List<double> vector;
   final int dimension;
   final String encoding;
   final double confidence;
-
-  @JsonKey(name: 'window_id')
   final String windowId;
-
+  final String? vectorHash;
   final String? model;
   final String? notes;
 
-  HSI10Embedding({
+  HSI11Embedding({
     required this.vector,
     required this.dimension,
     required this.encoding,
     required this.confidence,
     required this.windowId,
+    this.vectorHash,
     this.model,
     this.notes,
   });
 
-  factory HSI10Embedding.fromJson(Map<String, dynamic> json) =>
-      _$HSI10EmbeddingFromJson(json);
+  factory HSI11Embedding.fromJson(Map<String, dynamic> json) =>
+      HSI11Embedding(
+        vector: (json['vector'] as List<dynamic>)
+            .map((e) => (e as num).toDouble())
+            .toList(),
+        dimension: json['dimension'] as int,
+        encoding: json['encoding'] as String,
+        confidence: (json['confidence'] as num).toDouble(),
+        windowId: json['window_id'] as String,
+        vectorHash: json['vector_hash'] as String?,
+        model: json['model'] as String?,
+        notes: json['notes'] as String?,
+      );
 
-  Map<String, dynamic> toJson() => _$HSI10EmbeddingToJson(this);
+  Map<String, dynamic> toJson() => {
+        'vector': vector,
+        'dimension': dimension,
+        'encoding': encoding,
+        'confidence': confidence,
+        'window_id': windowId,
+        if (vectorHash != null) 'vector_hash': vectorHash,
+        if (model != null) 'model': model,
+        if (notes != null) 'notes': notes,
+      };
 }
 
-/// Privacy assertions
-@JsonSerializable()
-class HSI10Privacy {
-  @JsonKey(name: 'contains_pii')
+class HSI11Privacy {
   final bool containsPii;
-
-  @JsonKey(name: 'raw_biosignals_allowed')
   final bool rawBiosignalsAllowed;
-
-  @JsonKey(name: 'derived_metrics_allowed')
   final bool derivedMetricsAllowed;
-
+  final bool embeddingAllowed;
+  final String consent;
   final String? notes;
 
-  HSI10Privacy({
+  HSI11Privacy({
     required this.containsPii,
     required this.rawBiosignalsAllowed,
     required this.derivedMetricsAllowed,
+    this.embeddingAllowed = false,
+    this.consent = 'explicit',
     this.notes,
   });
 
-  factory HSI10Privacy.fromJson(Map<String, dynamic> json) =>
-      _$HSI10PrivacyFromJson(json);
-
-  Map<String, dynamic> toJson() => _$HSI10PrivacyToJson(this);
-}
-
-/// Extension to convert HSV (Human State Vector) to HSI 1.0 format
-extension HSI10Export on HumanStateVector {
-  /// Convert HSV to HSI 1.0 canonical JSON payload
-  ///
-  /// This converts the internal HSV representation (fast, type-safe Dart classes)
-  /// to the external HSI 1.0 format (JSON for cross-system interoperability).
-  HSI10Payload toHSI10({
-    String? producerName,
-    String? producerVersion,
-    String? instanceId,
-  }) {
-    final now = DateTime.now().toUtc();
-    final observedTime = DateTime.fromMillisecondsSinceEpoch(timestamp).toUtc();
-    const windowId = 'w1';
-
-    // Create window based on embedding window type
-    final windowDuration = _getWindowDuration(meta.embedding.windowType);
-    final windowStart = observedTime.subtract(windowDuration);
-
-    return HSI10Payload(
-      hsiVersion: '1.0',
-      observedAtUtc: observedTime.toIso8601String(),
-      computedAtUtc: now.toIso8601String(),
-      producer: HSI10Producer(
-        name: producerName ?? 'Synheart Core SDK',
-        version: producerVersion ?? version,
-        instanceId: instanceId ?? meta.sessionId,
-      ),
-      windowIds: [windowId],
-      windows: {
-        windowId: HSI10Window(
-          start: windowStart.toIso8601String(),
-          end: observedTime.toIso8601String(),
-          label: '${meta.embedding.windowType}_window',
-        ),
-      },
-      axes: _convertAxes(windowId),
-      embeddings: [_convertEmbedding(windowId)],
-      privacy: HSI10Privacy(
-        containsPii: false,
-        rawBiosignalsAllowed: false,
-        derivedMetricsAllowed: true,
-        notes: 'Synheart Core SDK: privacy-first, on-device processing only',
-      ),
-      meta: {
-        'sdk': 'synheart_core',
-        'platform': meta.device.platform,
-        'sampling_rate_hz': meta.samplingRateHz,
-      },
-    );
-  }
-
-  /// Convert HSV axes to HSI 1.0 axes format
-  HSI10Axes? _convertAxes(String windowId) {
-    final affectReadings = <HSI10Reading>[];
-    final behaviorReadings = <HSI10Reading>[];
-
-    // Convert Affect Axis
-    if (meta.axes.affect.arousalIndex != null) {
-      affectReadings.add(
-        HSI10Reading(
-          axis: 'arousal',
-          score: meta.axes.affect.arousalIndex!,
-          confidence:
-              0.8, // Default confidence (internal doesn't track per-axis confidence)
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
+  factory HSI11Privacy.fromJson(Map<String, dynamic> json) => HSI11Privacy(
+        containsPii: json['contains_pii'] as bool,
+        rawBiosignalsAllowed: json['raw_biosignals_allowed'] as bool,
+        derivedMetricsAllowed: json['derived_metrics_allowed'] as bool,
+        embeddingAllowed: json['embedding_allowed'] as bool? ?? false,
+        consent: json['consent'] as String? ?? 'explicit',
+        notes: json['notes'] as String?,
       );
-    }
 
-    if (meta.axes.affect.valenceStability != null) {
-      affectReadings.add(
-        HSI10Reading(
-          axis: 'valence_stability',
-          score: meta.axes.affect.valenceStability!,
-          confidence: 0.8,
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    // Convert Engagement Axis to behavior domain
-    if (meta.axes.engagement.engagementStability != null) {
-      behaviorReadings.add(
-        HSI10Reading(
-          axis: 'engagement_stability',
-          score: meta.axes.engagement.engagementStability!,
-          confidence: 0.8,
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    if (meta.axes.engagement.interactionCadence != null) {
-      behaviorReadings.add(
-        HSI10Reading(
-          axis: 'interaction_cadence',
-          score: meta.axes.engagement.interactionCadence!,
-          confidence: 0.8,
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    // Convert Activity Axis to behavior domain
-    if (meta.axes.activity.motionIndex != null) {
-      behaviorReadings.add(
-        HSI10Reading(
-          axis: 'motion',
-          score: meta.axes.activity.motionIndex!,
-          confidence: 0.8,
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    // Convert Context Axis to behavior domain
-    if (meta.axes.context.screenActiveRatio != null) {
-      behaviorReadings.add(
-        HSI10Reading(
-          axis: 'screen_active_ratio',
-          score: meta.axes.context.screenActiveRatio!,
-          confidence: 0.8,
-          windowId: windowId,
-          direction: 'higher_is_more',
-        ),
-      );
-    }
-
-    if (affectReadings.isEmpty && behaviorReadings.isEmpty) {
-      return null;
-    }
-
-    return HSI10Axes(
-      affect: affectReadings.isNotEmpty
-          ? HSI10Domain(readings: affectReadings)
-          : null,
-      behavior: behaviorReadings.isNotEmpty
-          ? HSI10Domain(readings: behaviorReadings)
-          : null,
-    );
-  }
-
-  /// Convert HSV embedding to HSI 1.0 embedding format
-  HSI10Embedding _convertEmbedding(String windowId) {
-    return HSI10Embedding(
-      vector: meta.embedding.vector,
-      dimension: meta.embedding.dimension,
-      encoding: 'float64',
-      confidence: 0.85, // Default confidence for embedding
-      windowId: windowId,
-      model: meta.embedding.model,
-      notes: 'HSV state embedding',
-    );
-  }
-
-  /// Get window duration from window type
-  Duration _getWindowDuration(String windowType) {
-    switch (windowType) {
-      case 'micro':
-        return const Duration(seconds: 30);
-      case 'short':
-        return const Duration(minutes: 5);
-      case 'medium':
-        return const Duration(hours: 1);
-      case 'long':
-        return const Duration(hours: 24);
-      default:
-        return const Duration(seconds: 30);
-    }
-  }
-
-  /// Convert FocusState to Python format for snapshot
-  /// Returns a Map matching the Python focus object structure
-  Map<String, dynamic> toFocusSnapshot() {
-    final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      this.timestamp,
-    ).toUtc();
-    final timestampStr = timestamp.toIso8601String();
-
-    // Determine focus state based on score
-    String state;
-    if (focus.score >= 0.75) {
-      state = 'deep_focus';
-    } else if (focus.score >= 0.5) {
-      state = 'focused';
-    } else if (focus.score >= 0.25) {
-      state = 'neutral';
-    } else {
-      state = 'distracted';
-    }
-
-    // Determine trend based on cognitive load and distraction
-    String trend;
-    if (focus.cognitiveLoad > 0.6 && focus.distraction < 0.3) {
-      trend = 'increasing';
-    } else if (focus.distraction > 0.6 || focus.cognitiveLoad < 0.3) {
-      trend = 'decreasing';
-    } else {
-      trend = 'stable';
-    }
-
-    // Calculate confidence from clarity
-    final confidence = (focus.clarity * 0.8 + 0.2).clamp(0.0, 1.0);
-
-    return {
-      'timestamp': timestampStr,
-      'state': state,
-      'estimate': {
-        'score': focus.score.clamp(0.0, 1.0),
-        'confidence': confidence,
-      },
-      'trend': trend,
-    };
-  }
-
-  /// Convert EmotionState to Python format for snapshot
-  /// Returns a Map matching the Python emotion object structure
-  Map<String, dynamic> toEmotionSnapshot() {
-    final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      this.timestamp,
-    ).toUtc();
-    final timestampStr = timestamp.toIso8601String();
-
-    // Determine primary emotion based on stress, calm, activation
-    String primaryEmotion;
-    if (emotion.stress > 0.6) {
-      primaryEmotion = 'stressed';
-    } else if (emotion.calm > 0.6) {
-      primaryEmotion = 'calm';
-    } else if (emotion.activation > 0.6) {
-      primaryEmotion = 'excited';
-    } else if (emotion.activation < 0.3) {
-      primaryEmotion = 'tired';
-    } else {
-      primaryEmotion = 'calm'; // Default
-    }
-
-    // Map activation to arousal (0.0-1.0)
-    final arousal = emotion.activation.clamp(0.0, 1.0);
-
-    // Use stress as stress_index
-    final stressIndex = emotion.stress.clamp(0.0, 1.0);
-
-    // Calculate energy level from activation and engagement
-    final energyLevel = ((emotion.activation + emotion.engagement) / 2.0).clamp(
-      0.0,
-      1.0,
-    );
-
-    return {
-      'timestamp': timestampStr,
-      'primary_emotion': primaryEmotion,
-      'valence': emotion.valence.clamp(-1.0, 1.0),
-      'arousal': arousal,
-      'stress_index': stressIndex,
-      'energy_level': energyLevel,
-    };
-  }
-
-  /// Get ISO 8601 timestamp string from HSV timestamp
-  String getTimestampString() {
-    final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      this.timestamp,
-    ).toUtc();
-    return timestamp.toIso8601String();
-  }
+  Map<String, dynamic> toJson() => {
+        'contains_pii': containsPii,
+        'raw_biosignals_allowed': rawBiosignalsAllowed,
+        'derived_metrics_allowed': derivedMetricsAllowed,
+        'embedding_allowed': embeddingAllowed,
+        'consent': consent,
+        if (notes != null) 'notes': notes,
+      };
 }

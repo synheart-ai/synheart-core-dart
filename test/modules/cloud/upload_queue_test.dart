@@ -1,6 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:synheart_core/src/modules/cloud/upload_queue.dart';
-import 'package:synheart_core/synheart_core.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -17,54 +18,41 @@ void main() {
     });
 
     test('enqueues items up to max size', () async {
-      final hsv1 = _createMockHSV(1);
-      final hsv2 = _createMockHSV(2);
-      final hsv3 = _createMockHSV(3);
-
-      await queue.enqueue(hsv1);
-      await queue.enqueue(hsv2);
-      await queue.enqueue(hsv3);
+      await queue.enqueue(_mockHsiJson(1));
+      await queue.enqueue(_mockHsiJson(2));
+      await queue.enqueue(_mockHsiJson(3));
 
       expect(queue.length, equals(3));
       expect(queue.hasItems, isTrue);
     });
 
     test('evicts oldest when exceeding max size (FIFO)', () async {
-      final hsv1 = _createMockHSV(1);
-      final hsv2 = _createMockHSV(2);
-      final hsv3 = _createMockHSV(3);
-      final hsv4 = _createMockHSV(4);
-
-      await queue.enqueue(hsv1);
-      await queue.enqueue(hsv2);
-      await queue.enqueue(hsv3);
-      await queue.enqueue(hsv4); // Should evict hsv1
+      await queue.enqueue(_mockHsiJson(1));
+      await queue.enqueue(_mockHsiJson(2));
+      await queue.enqueue(_mockHsiJson(3));
+      await queue.enqueue(_mockHsiJson(4)); // Should evict item 1
 
       expect(queue.length, equals(3));
 
       final batch = queue.dequeueBatch(3);
-      expect(batch.first.timestamp, equals(2)); // hsv2 should be first now
-      expect(batch.last.timestamp, equals(4)); // hsv4 should be last
+      expect(_extractTs(batch.first), equals(2));
+      expect(_extractTs(batch.last), equals(4));
     });
 
     test('dequeues batch correctly', () async {
-      final hsv1 = _createMockHSV(1);
-      final hsv2 = _createMockHSV(2);
-
-      await queue.enqueue(hsv1);
-      await queue.enqueue(hsv2);
+      await queue.enqueue(_mockHsiJson(1));
+      await queue.enqueue(_mockHsiJson(2));
 
       final batch = queue.dequeueBatch(1);
       expect(batch.length, equals(1));
-      expect(batch.first.timestamp, equals(1));
+      expect(_extractTs(batch.first), equals(1));
 
       // Queue should still have both items until confirmBatch
       expect(queue.length, equals(2));
     });
 
     test('dequeues all items when batch size exceeds queue length', () async {
-      final hsv1 = _createMockHSV(1);
-      await queue.enqueue(hsv1);
+      await queue.enqueue(_mockHsiJson(1));
 
       final batch = queue.dequeueBatch(10);
       expect(batch.length, equals(1));
@@ -77,42 +65,33 @@ void main() {
     });
 
     test('confirmBatch removes items from queue', () async {
-      final hsv1 = _createMockHSV(1);
-      final hsv2 = _createMockHSV(2);
-
-      await queue.enqueue(hsv1);
-      await queue.enqueue(hsv2);
+      await queue.enqueue(_mockHsiJson(1));
+      await queue.enqueue(_mockHsiJson(2));
 
       final batch = queue.dequeueBatch(1);
       queue.confirmBatch(batch);
 
       expect(queue.length, equals(1));
 
-      // Next batch should be hsv2
       final nextBatch = queue.dequeueBatch(1);
-      expect(nextBatch.first.timestamp, equals(2));
+      expect(_extractTs(nextBatch.first), equals(2));
     });
 
     test('requeueBatch keeps items in queue', () async {
-      final hsv1 = _createMockHSV(1);
-      await queue.enqueue(hsv1);
+      await queue.enqueue(_mockHsiJson(1));
 
       final batch = queue.dequeueBatch(1);
       await queue.requeueBatch(batch);
 
-      // Items should still be in queue
       expect(queue.length, equals(1));
 
       final nextBatch = queue.dequeueBatch(1);
-      expect(nextBatch.first.timestamp, equals(1));
+      expect(_extractTs(nextBatch.first), equals(1));
     });
 
     test('clear removes all items', () async {
-      final hsv1 = _createMockHSV(1);
-      final hsv2 = _createMockHSV(2);
-
-      await queue.enqueue(hsv1);
-      await queue.enqueue(hsv2);
+      await queue.enqueue(_mockHsiJson(1));
+      await queue.enqueue(_mockHsiJson(2));
 
       await queue.clear();
 
@@ -122,42 +101,14 @@ void main() {
   });
 }
 
-HumanStateVector _createMockHSV(int timestamp) {
-  return HumanStateVector.base(
-    timestamp: timestamp,
-    behavior: BehaviorState(
-      typingCadence: 0.5,
-      typingBurstiness: 0.3,
-      scrollVelocity: 0.4,
-      idleGaps: 2.0,
-      appSwitchRate: 0.1,
-    ),
-    context: ContextState(
-      overload: 0.3,
-      frustration: 0.2,
-      engagement: 0.7,
-      conversation: ConversationContext(
-        avgReplyDelaySec: 5.0,
-        burstiness: 0.4,
-        interruptRate: 0.2,
-      ),
-      deviceState: DeviceStateContext(foreground: true, screenOn: true),
-      userPatterns: UserPatternsContext(
-        morningFocusBias: 0.6,
-        avgSessionMinutes: 45.0,
-        baselineTypingCadence: 0.5,
-      ),
-    ),
-    meta: MetaState(
-      sessionId: 'test',
-      device: DeviceInfo(platform: 'test'),
-      samplingRateHz: 1.0,
-      embedding: StateEmbedding(
-        vector: List.filled(64, 0.0),
-        timestamp: timestamp,
-        windowType: 'micro',
-      ),
-      axes: HSIAxes.empty(),
-    ),
-  );
+String _mockHsiJson(int timestamp) {
+  return jsonEncode({
+    'hsi_version': '1.1',
+    'observed_at_utc': '2024-01-01T00:00:00Z',
+    'timestamp': timestamp,
+  });
+}
+
+int _extractTs(String json) {
+  return (jsonDecode(json) as Map<String, dynamic>)['timestamp'] as int;
 }

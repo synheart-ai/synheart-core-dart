@@ -1,123 +1,102 @@
-import 'package:json_annotation/json_annotation.dart';
-
-part 'hsi_axes.g.dart';
-
 /// HSV State Axes - Core state representation indices
 ///
 /// These axes form the internal HSV (Human State Vector) representation.
-/// They provide interpretation-agnostic numerical representations of
-/// physiological, behavioral, and contextual state dimensions.
-///
 /// All indices are normalized to [0.0, 1.0] range.
 /// Missing signals result in null values (not 0.0).
-///
-/// For external interoperability, HSV can be exported to HSI 1.0 format
-/// using the `toHSI10()` extension method.
 
 /// Affect Axis - Physiological arousal and emotional stability
-@JsonSerializable()
 class AffectAxis {
-  /// Physiological arousal level (0.0 - 1.0)
-  /// Derived from HR, HRV, and motion patterns
   final double? arousalIndex;
-
-  /// Stability of affective state (0.0 - 1.0)
-  /// Higher values indicate more stable affect over time
   final double? valenceStability;
 
   AffectAxis({this.arousalIndex, this.valenceStability});
 
-  factory AffectAxis.fromJson(Map<String, dynamic> json) =>
-      _$AffectAxisFromJson(json);
+  factory AffectAxis.fromJson(Map<String, dynamic> json) => AffectAxis(
+        arousalIndex: (json['arousalIndex'] as num?)?.toDouble(),
+        valenceStability: (json['valenceStability'] as num?)?.toDouble(),
+      );
 
-  Map<String, dynamic> toJson() => _$AffectAxisToJson(this);
+  Map<String, dynamic> toJson() => {
+        if (arousalIndex != null) 'arousalIndex': arousalIndex,
+        if (valenceStability != null) 'valenceStability': valenceStability,
+      };
 
-  factory AffectAxis.empty() =>
-      AffectAxis(arousalIndex: null, valenceStability: null);
+  factory AffectAxis.empty() => AffectAxis();
 }
 
 /// Engagement Axis - Digital interaction patterns
-@JsonSerializable()
 class EngagementAxis {
-  /// Consistency of interaction patterns (0.0 - 1.0)
-  /// Higher values indicate more stable engagement
   final double? engagementStability;
-
-  /// Rhythm of digital interactions (0.0 - 1.0)
-  /// Higher values indicate faster, more consistent interaction cadence
   final double? interactionCadence;
 
   EngagementAxis({this.engagementStability, this.interactionCadence});
 
-  factory EngagementAxis.fromJson(Map<String, dynamic> json) =>
-      _$EngagementAxisFromJson(json);
+  factory EngagementAxis.fromJson(Map<String, dynamic> json) => EngagementAxis(
+        engagementStability:
+            (json['engagementStability'] as num?)?.toDouble(),
+        interactionCadence:
+            (json['interactionCadence'] as num?)?.toDouble(),
+      );
 
-  Map<String, dynamic> toJson() => _$EngagementAxisToJson(this);
+  Map<String, dynamic> toJson() => {
+        if (engagementStability != null)
+          'engagementStability': engagementStability,
+        if (interactionCadence != null)
+          'interactionCadence': interactionCadence,
+      };
 
-  factory EngagementAxis.empty() =>
-      EngagementAxis(engagementStability: null, interactionCadence: null);
+  factory EngagementAxis.empty() => EngagementAxis();
 }
 
 /// Activity Axis - Physical activity and motion
-@JsonSerializable()
 class ActivityAxis {
-  /// Physical activity level (0.0 - 1.0)
-  /// Derived from accelerometer and gyroscope data
   final double? motionIndex;
-
-  /// Postural stability (0.0 - 1.0)
-  /// Higher values indicate more stable posture/position
   final double? postureStability;
 
   ActivityAxis({this.motionIndex, this.postureStability});
 
-  factory ActivityAxis.fromJson(Map<String, dynamic> json) =>
-      _$ActivityAxisFromJson(json);
+  factory ActivityAxis.fromJson(Map<String, dynamic> json) => ActivityAxis(
+        motionIndex: (json['motionIndex'] as num?)?.toDouble(),
+        postureStability: (json['postureStability'] as num?)?.toDouble(),
+      );
 
-  Map<String, dynamic> toJson() => _$ActivityAxisToJson(this);
+  Map<String, dynamic> toJson() => {
+        if (motionIndex != null) 'motionIndex': motionIndex,
+        if (postureStability != null) 'postureStability': postureStability,
+      };
 
-  factory ActivityAxis.empty() =>
-      ActivityAxis(motionIndex: null, postureStability: null);
+  factory ActivityAxis.empty() => ActivityAxis();
 }
 
 /// Context Axis - Environmental and device state
-@JsonSerializable()
 class ContextAxis {
-  /// Screen on/off ratio (0.0 - 1.0)
-  /// Proportion of time screen was active in window
   final double? screenActiveRatio;
-
-  /// App switching frequency (0.0 - 1.0)
-  /// Higher values indicate more fragmented sessions
   final double? sessionFragmentation;
 
   ContextAxis({this.screenActiveRatio, this.sessionFragmentation});
 
-  factory ContextAxis.fromJson(Map<String, dynamic> json) =>
-      _$ContextAxisFromJson(json);
+  factory ContextAxis.fromJson(Map<String, dynamic> json) => ContextAxis(
+        screenActiveRatio:
+            (json['screenActiveRatio'] as num?)?.toDouble(),
+        sessionFragmentation:
+            (json['sessionFragmentation'] as num?)?.toDouble(),
+      );
 
-  Map<String, dynamic> toJson() => _$ContextAxisToJson(this);
+  Map<String, dynamic> toJson() => {
+        if (screenActiveRatio != null) 'screenActiveRatio': screenActiveRatio,
+        if (sessionFragmentation != null)
+          'sessionFragmentation': sessionFragmentation,
+      };
 
-  factory ContextAxis.empty() =>
-      ContextAxis(screenActiveRatio: null, sessionFragmentation: null);
+  factory ContextAxis.empty() => ContextAxis();
 }
 
 /// State Embedding - Dense vector representation of fused multimodal state
-@JsonSerializable()
 class StateEmbedding {
-  /// 64-dimensional dense vector representing fused state
   final List<double> vector;
-
-  /// Dimension (always 64)
   final int dimension;
-
-  /// Model identifier
   final String model;
-
-  /// Timestamp when embedding was computed
   final int timestamp;
-
-  /// Window type this embedding represents
   final String windowType;
 
   StateEmbedding({
@@ -129,13 +108,27 @@ class StateEmbedding {
   });
 
   factory StateEmbedding.fromJson(Map<String, dynamic> json) =>
-      _$StateEmbeddingFromJson(json);
+      StateEmbedding(
+        vector: (json['vector'] as List<dynamic>)
+            .map((e) => (e as num).toDouble())
+            .toList(),
+        dimension: json['dimension'] as int? ?? 64,
+        model: json['model'] as String? ?? 'hsi-fusion-v1',
+        timestamp: json['timestamp'] as int,
+        windowType: json['windowType'] as String,
+      );
 
-  Map<String, dynamic> toJson() => _$StateEmbeddingToJson(this);
+  Map<String, dynamic> toJson() => {
+        'vector': vector,
+        'dimension': dimension,
+        'model': model,
+        'timestamp': timestamp,
+        'windowType': windowType,
+      };
 
   factory StateEmbedding.empty({required int timestamp}) => StateEmbedding(
-    vector: List.filled(64, 0.0),
-    timestamp: timestamp,
-    windowType: 'micro',
-  );
+        vector: List.filled(64, 0.0),
+        timestamp: timestamp,
+        windowType: 'micro',
+      );
 }

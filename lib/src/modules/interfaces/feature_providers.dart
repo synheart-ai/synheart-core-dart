@@ -16,12 +16,6 @@ enum WindowType {
 /// Sleep stage information
 enum SleepStage { awake, light, deep, rem }
 
-/// Wear module feature provider
-abstract class WearFeatureProvider {
-  /// Get biosignal features for a specific window
-  WearWindowFeatures? features(WindowType window);
-}
-
 /// Biosignal features from wearables
 class WearWindowFeatures {
   /// Window duration
@@ -78,12 +72,6 @@ class WearWindowFeatures {
   });
 }
 
-/// Phone module feature provider
-abstract class PhoneFeatureProvider {
-  /// Get phone features for a specific window
-  PhoneWindowFeatures? features(WindowType window);
-}
-
 /// Phone context features
 class PhoneWindowFeatures {
   /// Motion level (0.0 - 1.0)
@@ -104,12 +92,6 @@ class PhoneWindowFeatures {
     required this.screenOnRatio,
     required this.notificationRate,
   });
-}
-
-/// Behavior module feature provider
-abstract class BehaviorFeatureProvider {
-  /// Get behavioral features for a specific window
-  BehaviorWindowFeatures? features(WindowType window);
 }
 
 /// Behavioral interaction features

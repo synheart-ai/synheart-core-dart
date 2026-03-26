@@ -4,14 +4,16 @@ import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
 import '../interfaces/feature_providers.dart';
+import '../interfaces/raw_data_provider.dart';
 import 'phone_collectors.dart';
 import 'phone_cache.dart';
 
 /// Phone Module
 ///
 /// Captures device-level motion and context signals.
-/// Provides window-based features to HSI Runtime.
-class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
+/// RFC-CORE-0007 compliant: no feature computation in Core.
+class PhoneModule extends BaseSynheartModule
+    implements RawPhoneDataProvider {
   @override
   String get moduleId => 'phone';
 
@@ -25,6 +27,8 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
   final ConsentProvider _consent;
 
   final List<StreamSubscription> _subscriptions = [];
+  StreamSubscription<ConsentSnapshot>? _consentSubscription;
+  bool _isStartingCollection = false;
 
   PhoneModule({
     required CapabilityProvider capabilities,
@@ -32,44 +36,13 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
   }) : _capabilities = capabilities,
        _consent = consent;
 
+
+  // MARK: - RawPhoneDataProvider
+
   @override
-  PhoneWindowFeatures? features(WindowType window) {
-    // Check consent
-    if (!_consent.current().motion) {
-      return null; // Return null if consent denied
-    }
-
-    final features = _cache.getFeatures(window);
-    if (features == null) {
-      return null;
-    }
-
-    // Filter based on capability level
-    return _filterByCapability(features);
-  }
-
-  /// Filter features based on capability level
-  PhoneWindowFeatures? _filterByCapability(PhoneWindowFeatures features) {
-    final level = _capabilities.capability(Module.phone);
-
-    switch (level) {
-      case CapabilityLevel.none:
-        return null;
-
-      case CapabilityLevel.core:
-        // Core: Motion and screen only
-        return PhoneWindowFeatures(
-          motionLevel: features.motionLevel,
-          screenOnRatio: features.screenOnRatio,
-          appSwitchRate: 0.0, // No app switching at core level
-          notificationRate: 0.0, // No notifications at core level
-        );
-
-      case CapabilityLevel.extended:
-      case CapabilityLevel.research:
-        // Extended/Research: Full access
-        return features;
-    }
+  List<PhoneDataPoint> rawDataPoints(WindowType window) {
+    if (!_consent.current().phoneContext) return [];
+    return _cache.getDataPoints(window);
   }
 
   @override
@@ -82,72 +55,112 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
   Future<void> onStart() async {
     SynheartLogger.log('[PhoneModule] Starting phone data collection...');
 
-    // Start motion collection
-    await _motionCollector.start();
-    _subscriptions.add(
-      _motionCollector.motionStream.listen(
-        (motion) => _cache.addMotionData(motion),
-        onError: (e, st) => SynheartLogger.log(
-          '[PhoneModule] Motion error: $e',
-          error: e,
-          stackTrace: st,
-        ),
+    // Consent gating policy: no collection at all without consent.
+    // Always observe consent so we can start/stop dynamically.
+    _consentSubscription ??= _consent.observe().listen(
+      (consent) async {
+        if (!consent.phoneContext) {
+          await _stopDataCollection();
+        } else {
+          await _startDataCollectionIfNeeded();
+        }
+      },
+      onError: (e, st) => SynheartLogger.log(
+        '[PhoneModule] Consent observation error: $e',
+        error: e,
+        stackTrace: st,
       ),
     );
 
-    // Start screen state tracking
-    await _screenTracker.start();
-    _subscriptions.add(
-      _screenTracker.screenStream.listen(
-        (state) => _cache.addScreenState(state, DateTime.now()),
-        onError: (e, st) => SynheartLogger.log(
-          '[PhoneModule] Screen state error: $e',
-          error: e,
-          stackTrace: st,
-        ),
-      ),
-    );
-
-    // Start app tracking (if capability allows)
-    if (_capabilities.capability(Module.phone).index >=
-        CapabilityLevel.extended.index) {
-      await _appTracker.start();
-      _subscriptions.add(
-        _appTracker.appSwitchStream.listen(
-          (_) => _cache.addAppSwitch(DateTime.now()),
-          onError: (e, st) => SynheartLogger.log(
-            '[PhoneModule] App tracking error: $e',
-            error: e,
-            stackTrace: st,
-          ),
-        ),
-      );
-    }
-
-    // Start notification tracking (if capability allows)
-    if (_capabilities.capability(Module.phone).index >=
-        CapabilityLevel.extended.index) {
-      await _notificationTracker.start();
-      _subscriptions.add(
-        _notificationTracker.notificationStream.listen(
-          (event) => _cache.addNotification(event),
-          onError: (e, st) => SynheartLogger.log(
-            '[PhoneModule] Notification error: $e',
-            error: e,
-            stackTrace: st,
-          ),
-        ),
-      );
-    }
-
-    SynheartLogger.log(
-      '[PhoneModule] Started ${_subscriptions.length} collectors',
-    );
+    // Start only if consent is granted.
+    await _startDataCollectionIfNeeded();
   }
 
-  @override
-  Future<void> onStop() async {
-    SynheartLogger.log('[PhoneModule] Stopping phone data collection...');
+  Future<void> _startDataCollectionIfNeeded() async {
+    if (_isStartingCollection || _subscriptions.isNotEmpty) return;
+    if (!_consent.current().phoneContext) return;
+    _isStartingCollection = true;
+    try {
+      // Start motion collection
+      await _motionCollector.start();
+      _subscriptions.add(
+        _motionCollector.motionStream.listen(
+          (motion) {
+            if (!_consent.current().phoneContext) return;
+            _cache.addMotionData(motion);
+          },
+          onError: (e, st) => SynheartLogger.log(
+            '[PhoneModule] Motion error: $e',
+            error: e,
+            stackTrace: st,
+          ),
+        ),
+      );
+
+      // Start screen state tracking
+      await _screenTracker.start();
+      _subscriptions.add(
+        _screenTracker.screenStream.listen(
+          (state) {
+            if (!_consent.current().phoneContext) return;
+            _cache.addScreenState(state, DateTime.now());
+          },
+          onError: (e, st) => SynheartLogger.log(
+            '[PhoneModule] Screen state error: $e',
+            error: e,
+            stackTrace: st,
+          ),
+        ),
+      );
+
+      // Start app tracking (if capability allows)
+      if (_capabilities.capability(Module.phone).index >=
+          CapabilityLevel.extended.index) {
+        await _appTracker.start();
+        _subscriptions.add(
+          _appTracker.appSwitchStream.listen(
+            (_) {
+              if (!_consent.current().phoneContext) return;
+              _cache.addAppSwitch(DateTime.now());
+            },
+            onError: (e, st) => SynheartLogger.log(
+              '[PhoneModule] App tracking error: $e',
+              error: e,
+              stackTrace: st,
+            ),
+          ),
+        );
+      }
+
+      // Start notification tracking (if capability allows)
+      if (_capabilities.capability(Module.phone).index >=
+          CapabilityLevel.extended.index) {
+        await _notificationTracker.start();
+        _subscriptions.add(
+          _notificationTracker.notificationStream.listen(
+            (event) {
+              if (!_consent.current().phoneContext) return;
+              _cache.addNotification(event);
+            },
+            onError: (e, st) => SynheartLogger.log(
+              '[PhoneModule] Notification error: $e',
+              error: e,
+              stackTrace: st,
+            ),
+          ),
+        );
+      }
+
+      SynheartLogger.log(
+        '[PhoneModule] Started ${_subscriptions.length} collectors',
+      );
+    } finally {
+      _isStartingCollection = false;
+    }
+  }
+
+  Future<void> _stopDataCollection() async {
+    if (_subscriptions.isEmpty) return;
 
     // Cancel all subscriptions
     for (final sub in _subscriptions) {
@@ -160,6 +173,16 @@ class PhoneModule extends BaseSynheartModule implements PhoneFeatureProvider {
     await _screenTracker.stop();
     await _appTracker.stop();
     await _notificationTracker.stop();
+    SynheartLogger.log('[PhoneModule] Phone collectors stopped');
+  }
+
+  @override
+  Future<void> onStop() async {
+    SynheartLogger.log('[PhoneModule] Stopping phone data collection...');
+
+    await _consentSubscription?.cancel();
+    _consentSubscription = null;
+    await _stopDataCollection();
   }
 
   /// Clear all cached data

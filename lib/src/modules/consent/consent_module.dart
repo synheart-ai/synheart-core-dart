@@ -110,7 +110,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       _currentConsent = stored;
       _consentStream.add(stored);
       SynheartLogger.log(
-        '[ConsentModule] Loaded consent from storage: biosignals=${stored.biosignals}, behavior=${stored.behavior}, motion=${stored.motion}, cloudUpload=${stored.cloudUpload}',
+        '[ConsentModule] Loaded consent from storage: biosignals=${stored.biosignals}, behavior=${stored.behavior}, phoneContext=${stored.phoneContext}, cloudUpload=${stored.cloudUpload}',
       );
     } else {
       // No stored consent, use defaults
@@ -146,7 +146,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       behavior: type == ConsentType.behavior
           ? granted
           : _currentConsent!.behavior,
-      motion: type == ConsentType.motion ? granted : _currentConsent!.motion,
+      phoneContext: type == ConsentType.phoneContext ? granted : _currentConsent!.phoneContext,
       cloudUpload: type == ConsentType.cloudUpload
           ? granted
           : _currentConsent!.cloudUpload,
@@ -173,30 +173,19 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
     ConsentSnapshot oldConsent,
     ConsentSnapshot newConsent,
   ) {
-    if (oldConsent.biosignals != newConsent.biosignals) {
-      SynheartLogger.log(
-        'Consent changed: biosignals ${newConsent.biosignals ? "granted" : "revoked"}',
-      );
-    }
-    if (oldConsent.behavior != newConsent.behavior) {
-      SynheartLogger.log(
-        'Consent changed: behavior ${newConsent.behavior ? "granted" : "revoked"}',
-      );
-    }
-    if (oldConsent.motion != newConsent.motion) {
-      SynheartLogger.log(
-        'Consent changed: motion ${newConsent.motion ? "granted" : "revoked"}',
-      );
-    }
-    if (oldConsent.cloudUpload != newConsent.cloudUpload) {
-      SynheartLogger.log(
-        'Consent changed: cloudUpload ${newConsent.cloudUpload ? "granted" : "revoked"}',
-      );
-    }
-    if (oldConsent.syni != newConsent.syni) {
-      SynheartLogger.log(
-        'Consent changed: syni ${newConsent.syni ? "granted" : "revoked"}',
-      );
+    final fields = {
+      'biosignals': (oldConsent.biosignals, newConsent.biosignals),
+      'behavior': (oldConsent.behavior, newConsent.behavior),
+      'phoneContext': (oldConsent.phoneContext, newConsent.phoneContext),
+      'focusEstimation': (oldConsent.focusEstimation, newConsent.focusEstimation),
+      'emotionEstimation': (oldConsent.emotionEstimation, newConsent.emotionEstimation),
+      'cloudUpload': (oldConsent.cloudUpload, newConsent.cloudUpload),
+      'syni': (oldConsent.syni, newConsent.syni),
+    };
+    for (final e in fields.entries) {
+      if (e.value.$1 != e.value.$2) {
+        SynheartLogger.log('Consent changed: ${e.key} ${e.value.$2 ? "granted" : "revoked"}');
+      }
     }
   }
 
@@ -323,6 +312,41 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       );
       rethrow;
     }
+  }
+
+  /// Request consent token directly by profile id (without fetching profiles first).
+  /// Useful when integrator already knows the consent_profile_id.
+  Future<ConsentToken> requestConsentByProfileId(
+    String profileId, {
+    String? ipAddress,
+    String? userAgent,
+  }) async {
+    if (_apiClient == null || _consentConfig == null) {
+      throw StateError(
+        'Consent service not configured. Provide ConsentConfig with appId and appApiKey.',
+      );
+    }
+
+    final deviceId = _consentConfig!.deviceId ?? await _getOrGenerateDeviceId();
+    final platform = _consentConfig!.platform;
+
+    final token = await _apiClient!.issueToken(
+      deviceId: deviceId,
+      consentProfileId: profileId,
+      platform: platform,
+      userId: _consentConfig!.userId,
+      region: _consentConfig!.region,
+      ipAddress: ipAddress,
+      userAgent: userAgent,
+    );
+
+    await _tokenStorage?.saveToken(token);
+    _currentToken = token;
+    _startTokenRefreshTimer();
+    SynheartLogger.log(
+      '[ConsentModule] Consent token issued directly for profile: $profileId',
+    );
+    return token;
   }
 
   /// Check current consent status
@@ -460,11 +484,13 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
           profile.channels.biosignals.vitals ||
           profile.channels.biosignals.sleep,
       behavior: profile.channels.behavior.enabled,
-      motion:
+      phoneContext:
           profile.channels.phoneContext.motion ||
           profile.channels.phoneContext.screenState,
       cloudUpload: profile.cloudEnabled,
       syni: false, // Not in profile yet
+      focusEstimation: false,
+      emotionEstimation: false,
       timestamp: DateTime.now(),
       explicitlyDenied: false, // User accepted, so not denied
     );
