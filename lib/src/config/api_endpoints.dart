@@ -24,7 +24,7 @@ abstract final class ApiEndpoints {
 
   // ── Cloud Ingest ──────────────────────────────────────────────────
   /// HSI ingest path (v1).
-  static const String ingestPath = '/v1/hsi/ingest';
+  static const String ingestPath = '/ingest/v1/hsi';
 
   // ── Platform Ingest ──────────────────────────────────────────────
   /// Platform ingest base URL.
@@ -44,25 +44,25 @@ abstract final class ApiEndpoints {
   );
 
   static const String platformSessionIngestPath =
-      '/v1/platform/session/ingest';
+      '/platform/v1/session/ingest';
   static const String platformMetadataIngestPath =
-      '/v1/platform/metadata/ingest';
+      '/platform/v1/metadata/ingest';
 
   // ── Device Capabilities ─────────────────────────────────────────
   /// Path for fetching device capability tokens (device-signed).
-  static const String deviceCapabilitiesPath = '/v1/device/capabilities';
+  static const String deviceCapabilitiesPath = '/account/v1/device/capabilities';
 
   // ── Auth / Account ────────────────────────────────────────────────
-  static const String authExchangePath = '/v1/auth/exchange';
-  static const String authRefreshPath = '/v1/auth/refresh';
-  static const String accountDeletePath = '/v1/account/delete';
-  static const String accountDeleteCancelPath = '/v1/account/delete/cancel';
+  static const String authExchangePath = '/auth/v1/exchange';
+  static const String authRefreshPath = '/auth/v1/refresh';
+  static const String accountDeletePath = '/account/v1/delete';
+  static const String accountDeleteCancelPath = '/account/v1/delete/cancel';
 
   // ── Consent Service ───────────────────────────────────────────────
   static String consentProfilesPath(String appId) =>
-      '/api/v1/apps/$appId/consent-profiles';
-  static const String consentTokenPath = '/api/v1/sdk/consent-token';
-  static const String consentRevokePath = '/api/v1/sdk/consent-revoke';
+      '/consent/v1/apps/$appId/consent-profiles';
+  static const String consentTokenPath = '/consent/v1/sdk/consent-token';
+  static const String consentRevokePath = '/consent/v1/sdk/consent-revoke';
 
   /// Throws [ArgumentError] if [url] is still the placeholder value.
   /// Call at module init to fail fast instead of silent 404s at runtime.
