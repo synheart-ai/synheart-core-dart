@@ -81,7 +81,7 @@ class SyncEngine {
     }
 
     final response = await http.post(
-      Uri.parse('$_baseUrl/v1/sync/push'),
+      Uri.parse('$_baseUrl/sync/v1/push'),
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $_accessToken',
@@ -118,7 +118,7 @@ class SyncEngine {
         if (currentCursor != null) 'cursor': currentCursor,
       };
 
-      final uri = Uri.parse('$_baseUrl/v1/sync/pull').replace(queryParameters: queryParams);
+      final uri = Uri.parse('$_baseUrl/sync/v1/pull').replace(queryParameters: queryParams);
       final response = await http.get(
         uri,
         headers: {'Authorization': 'Bearer $_accessToken'},

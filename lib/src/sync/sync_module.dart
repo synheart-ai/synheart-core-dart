@@ -167,7 +167,7 @@ class SyncModule {
     // Try to fetch existing URK bundle from server
     try {
       final getResponse = await http.get(
-        Uri.parse('$_baseUrl/v1/sync/urk-bundle'),
+        Uri.parse('$_baseUrl/sync/v1/urk-bundle'),
         headers: {
           'Authorization': 'Bearer ${_auth.accessToken}',
         },
@@ -201,7 +201,7 @@ class SyncModule {
       );
 
       await http.put(
-        Uri.parse('$_baseUrl/v1/sync/urk-bundle'),
+        Uri.parse('$_baseUrl/sync/v1/urk-bundle'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${_auth.accessToken}',
