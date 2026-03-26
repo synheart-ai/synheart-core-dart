@@ -431,7 +431,7 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
       'protocol_version': '1.0',
       'protocol_id': 'pf_trial_01',
       'parameters': {'difficulty': 'medium'},
-      'app_id': 'com.synheart.example',
+      'app_id': 'ai.synheart.example',
       'device_id': 'device_${userId}',
       'user_id': userId,
     });
