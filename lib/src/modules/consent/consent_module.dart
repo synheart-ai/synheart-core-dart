@@ -53,9 +53,16 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       _apiClient = ConsentAPIClient(
         baseUrl: consentConfig!.consentServiceUrl,
         appId: consentConfig.appId!,
-        appApiKey: consentConfig.appApiKey!,
+        appApiKey: consentConfig.appApiKey,
       );
     }
+  }
+
+  /// Set the device request signer on the internal ConsentAPIClient.
+  /// Called by Synheart entry point once device auth is initialized,
+  /// so that all consent-token requests are signed with device identity.
+  void setDeviceSigner(DeviceRequestSigner signer) {
+    _apiClient?.deviceSigner = signer;
   }
 
   @override
@@ -151,6 +158,15 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
           ? granted
           : _currentConsent!.cloudUpload,
       syni: type == ConsentType.syni ? granted : _currentConsent!.syni,
+      focusEstimation: type == ConsentType.focusEstimation
+          ? granted
+          : _currentConsent!.focusEstimation,
+      emotionEstimation: type == ConsentType.emotionEstimation
+          ? granted
+          : _currentConsent!.emotionEstimation,
+      vendorSync: type == ConsentType.vendorSync
+          ? granted
+          : _currentConsent!.vendorSync,
       timestamp: DateTime.now(),
     );
 
@@ -180,6 +196,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       'focusEstimation': (oldConsent.focusEstimation, newConsent.focusEstimation),
       'emotionEstimation': (oldConsent.emotionEstimation, newConsent.emotionEstimation),
       'cloudUpload': (oldConsent.cloudUpload, newConsent.cloudUpload),
+      'vendorSync': (oldConsent.vendorSync, newConsent.vendorSync),
       'syni': (oldConsent.syni, newConsent.syni),
     };
     for (final e in fields.entries) {
@@ -316,10 +333,18 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
 
   /// Request consent token directly by profile id (without fetching profiles first).
   /// Useful when integrator already knows the consent_profile_id.
+  ///
+  /// [grantedChannels] and [tier] enable granular consent (RFC-CONSENT-GRANULAR-001).
+  /// When null, all profile channels are granted at the local tier (backward compat).
   Future<ConsentToken> requestConsentByProfileId(
     String profileId, {
     String? ipAddress,
     String? userAgent,
+    ConsentChannels? grantedChannels,
+    ConsentTier? tier,
+    bool? cloud,
+    bool? vendorSync,
+    bool research = false,
   }) async {
     if (_apiClient == null || _consentConfig == null) {
       throw StateError(
@@ -338,13 +363,18 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       region: _consentConfig!.region,
       ipAddress: ipAddress,
       userAgent: userAgent,
+      grantedChannels: grantedChannels,
+      tier: tier,
+      cloud: cloud,
+      vendorSync: vendorSync,
+      research: research,
     );
 
     await _tokenStorage?.saveToken(token);
     _currentToken = token;
     _startTokenRefreshTimer();
     SynheartLogger.log(
-      '[ConsentModule] Consent token issued directly for profile: $profileId',
+      '[ConsentModule] Consent token issued directly for profile: $profileId (tier: ${tier?.name ?? "legacy"})',
     );
     return token;
   }
@@ -478,21 +508,35 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
   }
 
   /// Update local consent snapshot from profile
-  Future<void> _updateConsentFromProfile(ConsentProfile profile) async {
+  Future<void> _updateConsentFromProfile(
+    ConsentProfile profile, {
+    ConsentChannels? grantedChannels,
+    ConsentTier? tier,
+  }) async {
+    // Use granted channels if provided, otherwise use all profile channels
+    final effectiveChannels = grantedChannels ?? profile.channels;
+
     final snapshot = ConsentSnapshot(
       biosignals:
-          profile.channels.biosignals.vitals ||
-          profile.channels.biosignals.sleep,
-      behavior: profile.channels.behavior.enabled,
+          effectiveChannels.biosignals.vitals ||
+          effectiveChannels.biosignals.cardioAdvanced ||
+          effectiveChannels.biosignals.neuromuscular ||
+          effectiveChannels.biosignals.wearableMotion ||
+          effectiveChannels.biosignals.sleep,
+      behavior: effectiveChannels.behavior.enabled,
       phoneContext:
-          profile.channels.phoneContext.motion ||
-          profile.channels.phoneContext.screenState,
+          effectiveChannels.phoneContext.deviceMotion ||
+          effectiveChannels.phoneContext.deviceContext ||
+          effectiveChannels.phoneContext.systemState,
       cloudUpload: profile.cloudEnabled,
       syni: false, // Not in profile yet
-      focusEstimation: false,
-      emotionEstimation: false,
+      focusEstimation: effectiveChannels.interpretation.focusEstimation,
+      emotionEstimation: effectiveChannels.interpretation.emotionEstimation,
+      vendorSync: profile.vendorSyncEnabled,
       timestamp: DateTime.now(),
       explicitlyDenied: false, // User accepted, so not denied
+      tier: tier ?? ConsentTier.local,
+      channels: effectiveChannels,
     );
 
     await updateConsent(snapshot);

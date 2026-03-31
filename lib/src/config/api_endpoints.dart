@@ -1,77 +1,87 @@
 /// Central registry of all Synheart API endpoints and default base URLs.
 ///
-/// API paths are constants — they follow the server's versioned routes.
-/// Base URLs have sensible production defaults but can be overridden
-/// via [CloudConfig] / [ConsentConfig].
+/// 3 services behind the API gateway:
+///   api.synheart.ai/auth/v1/...     — auth, device attestation, account
+///   api.synheart.ai/consent/v1/...  — consent profiles, tokens
+///   api.synheart.ai/ingest/v1/...   — HSI, platform/lab, wear, SWIP
+///
+/// Dev gateway: api-dev.synheart.io (same paths)
 abstract final class ApiEndpoints {
-  // ── Base URLs (defaults) ──────────────────────────────────────────
-  /// Cloud ingest base URL.
-  ///
-  /// Configure with `--dart-define SYNHEART_CLOUD_BASE_URL=...`
-  /// or `--dart-define-from-file` to avoid committing real endpoints.
-  static const String defaultCloudBaseUrl = String.fromEnvironment(
-    'SYNHEART_CLOUD_BASE_URL',
-    defaultValue: 'https://example.invalid',
+  // ── Base URL ────────────────────────────────────────────────────────
+  static const String defaultBaseUrl = String.fromEnvironment(
+    'SYNHEART_BASE_URL',
+    defaultValue: 'https://api.synheart.ai',
   );
 
-  /// Consent service base URL.
-  ///
-  /// Configure with `--dart-define SYNHEART_CONSENT_BASE_URL=...`.
-  static const String defaultConsentBaseUrl = String.fromEnvironment(
-    'SYNHEART_CONSENT_BASE_URL',
-    defaultValue: 'https://example.invalid',
+  // ── Gateway prefixes (3 services) ─────────────────────────────────
+  static const String _authGateway = '/auth';
+  static const String _consentGateway = '/consent';
+  static const String _ingestGateway = '/ingest';
+
+  // ── Per-service base URL overrides (optional, for legacy/dev) ─────
+  static const String _authOverride = String.fromEnvironment(
+    'SYNHEART_AUTH_BASE_URL', defaultValue: '',
+  );
+  static const String _consentOverride = String.fromEnvironment(
+    'SYNHEART_CONSENT_BASE_URL', defaultValue: '',
+  );
+  static const String _ingestOverride = String.fromEnvironment(
+    'SYNHEART_INGEST_BASE_URL', defaultValue: '',
   );
 
-  // ── Cloud Ingest ──────────────────────────────────────────────────
-  /// HSI ingest path (v1).
-  static const String ingestPath = '/ingest/v1/hsi';
+  // ── Compile-time const aliases (for default parameter values) ────
+  // These read from dart-defines and are used where a const is required.
+  // For runtime resolution (with fallback to BASE_URL), use the resolved* getters.
+  static const String defaultAuthBaseUrl = _authOverride;
+  static const String defaultConsentBaseUrl = _consentOverride;
+  static const String defaultIngestBaseUrl = _ingestOverride;
+  static const String defaultCloudBaseUrl = _ingestOverride;
+  static const String defaultLabIngestBaseUrl = _ingestOverride;
 
-  // ── Platform Ingest ──────────────────────────────────────────────
-  /// Platform ingest base URL.
-  ///
-  /// Configure with `--dart-define SYNHEART_PLATFORM_INGEST_BASE_URL=...`.
-  static const String defaultPlatformIngestBaseUrl = String.fromEnvironment(
-    'SYNHEART_PLATFORM_INGEST_BASE_URL',
-    defaultValue: 'https://example.invalid',
-  );
+  // ── Resolved base URLs ────────────────────────────────────────────
+  static String _resolve(String override, String gatewayPrefix) {
+    if (override.isNotEmpty) return override;
+    return '$defaultBaseUrl$gatewayPrefix';
+  }
 
-  /// Default auth/account API base URL.
-  ///
-  /// Configure with `--dart-define SYNHEART_AUTH_BASE_URL=...`.
-  static const String defaultAuthBaseUrl = String.fromEnvironment(
-    'SYNHEART_AUTH_BASE_URL',
-    defaultValue: 'https://example.invalid',
-  );
+  /// Auth: api.synheart.ai/auth
+  static String get resolvedAuthBaseUrl =>
+      _resolve(_authOverride, _authGateway);
 
-  static const String platformSessionIngestPath =
-      '/platform/v1/session/ingest';
-  static const String platformMetadataIngestPath =
-      '/platform/v1/metadata/ingest';
+  /// Consent: api.synheart.ai/consent
+  static String get resolvedConsentBaseUrl =>
+      _resolve(_consentOverride, _consentGateway);
 
-  // ── Device Capabilities ─────────────────────────────────────────
-  /// Path for fetching device capability tokens (device-signed).
-  static const String deviceCapabilitiesPath = '/account/v1/device/capabilities';
+  /// Ingest (HSI + platform + wear): api.synheart.ai/ingest
+  static String get resolvedIngestBaseUrl =>
+      _resolve(_ingestOverride, _ingestGateway);
 
-  // ── Auth / Account ────────────────────────────────────────────────
-  static const String authExchangePath = '/auth/v1/exchange';
-  static const String authRefreshPath = '/auth/v1/refresh';
-  static const String accountDeletePath = '/account/v1/delete';
-  static const String accountDeleteCancelPath = '/account/v1/delete/cancel';
+  // Cloud and lab ingest both go to the ingest service
+  static String get resolvedCloudBaseUrl => resolvedIngestBaseUrl;
+  static String get resolvedLabIngestBaseUrl => resolvedIngestBaseUrl;
 
-  // ── Consent Service ───────────────────────────────────────────────
+  // ── Ingest service paths ──────────────────────────────────────────
+  static const String ingestPath = '/v1/hsi/ingest';
+  static const String labSessionIngestPath = '/v1/lab/session/ingest';
+  static const String labMetadataIngestPath = '/v1/lab/metadata/ingest';
+
+  // ── Auth service paths ────────────────────────────────────────────
+  static const String deviceCapabilitiesPath = '/v1/device/capabilities';
+  static const String accountDeletePath = '/v1/delete';
+  static const String accountDeleteCancelPath = '/v1/delete/cancel';
+
+  // ── Consent service paths ─────────────────────────────────────────
   static String consentProfilesPath(String appId) =>
-      '/consent/v1/apps/$appId/consent-profiles';
-  static const String consentTokenPath = '/consent/v1/sdk/consent-token';
-  static const String consentRevokePath = '/consent/v1/sdk/consent-revoke';
+      '/v1/apps/$appId/consent-profiles';
+  static const String consentTokenPath = '/v1/sdk/consent-token';
+  static const String consentRevokePath = '/v1/sdk/consent-revoke';
 
   /// Throws [ArgumentError] if [url] is still the placeholder value.
-  /// Call at module init to fail fast instead of silent 404s at runtime.
   static void assertConfigured(String url, String name) {
-    if (url == 'https://example.invalid' || url.isEmpty) {
+    if (url.isEmpty) {
       throw ArgumentError(
         '$name is not configured. '
-        'Set it via --dart-define or --dart-define-from-file. '
-        'See README for details.',
+        'Set SYNHEART_BASE_URL via --dart-define or --dart-define-from-file.',
       );
     }
   }

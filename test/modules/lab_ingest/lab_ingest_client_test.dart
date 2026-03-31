@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:synheart_core/src/modules/cloud/hmac_signer.dart';
-import 'package:synheart_core/src/modules/platform_ingest/platform_ingest_client.dart';
+import 'package:synheart_core/src/modules/lab_ingest/lab_ingest_client.dart';
 
 void main() {
   late HMACSigner signer;
@@ -14,7 +14,7 @@ void main() {
     signer = HMACSigner(hmacSecret: 'test_secret');
   });
 
-  group('PlatformIngestClient', () {
+  group('LabIngestClient', () {
     test('successful session ingest returns success response', () async {
       final mockClient = MockClient((request) async {
         return http.Response(
@@ -23,7 +23,7 @@ void main() {
         );
       });
 
-      final client = PlatformIngestClient(
+      final client = LabIngestClient(
         baseUrl: baseUrl,
         httpClient: mockClient,
       );
@@ -44,7 +44,7 @@ void main() {
         return http.Response(jsonEncode({'status': 'ok'}), 202);
       });
 
-      final client = PlatformIngestClient(
+      final client = LabIngestClient(
         baseUrl: baseUrl,
         httpClient: mockClient,
       );
@@ -67,7 +67,7 @@ void main() {
         return http.Response(jsonEncode({'status': 'ok'}), 200);
       });
 
-      final client = PlatformIngestClient(
+      final client = LabIngestClient(
         baseUrl: baseUrl,
         httpClient: mockClient,
       );
@@ -95,7 +95,7 @@ void main() {
         return http.Response(jsonEncode({'status': 'ok'}), 200);
       });
 
-      final client = PlatformIngestClient(
+      final client = LabIngestClient(
         baseUrl: baseUrl,
         httpClient: mockClient,
       );
@@ -116,7 +116,7 @@ void main() {
         return http.Response(jsonEncode({'status': 'ok'}), 200);
       });
 
-      final client = PlatformIngestClient(
+      final client = LabIngestClient(
         baseUrl: baseUrl,
         httpClient: mockClient,
       );
@@ -127,7 +127,7 @@ void main() {
         apiKey: apiKey,
       );
 
-      expect(capturedUri?.path, equals('/v1/platform/session/ingest'));
+      expect(capturedUri?.path, equals('/v1/lab/session/ingest'));
     });
 
     test('metadata ingest posts to correct path', () async {
@@ -137,7 +137,7 @@ void main() {
         return http.Response(jsonEncode({'status': 'ok'}), 200);
       });
 
-      final client = PlatformIngestClient(
+      final client = LabIngestClient(
         baseUrl: baseUrl,
         httpClient: mockClient,
       );
@@ -148,7 +148,7 @@ void main() {
         apiKey: apiKey,
       );
 
-      expect(capturedUri?.path, equals('/v1/platform/metadata/ingest'));
+      expect(capturedUri?.path, equals('/v1/lab/metadata/ingest'));
     });
 
     test('4xx returns failure without retrying', () async {
@@ -161,7 +161,7 @@ void main() {
         );
       });
 
-      final client = PlatformIngestClient(
+      final client = LabIngestClient(
         baseUrl: baseUrl,
         httpClient: mockClient,
         maxRetries: 3,
@@ -188,7 +188,7 @@ void main() {
         return http.Response(jsonEncode({'status': 'ok'}), 200);
       });
 
-      final client = PlatformIngestClient(
+      final client = LabIngestClient(
         baseUrl: baseUrl,
         httpClient: mockClient,
         maxRetries: 3,
@@ -211,7 +211,7 @@ void main() {
         throw Exception('Connection refused');
       });
 
-      final client = PlatformIngestClient(
+      final client = LabIngestClient(
         baseUrl: baseUrl,
         httpClient: mockClient,
         maxRetries: 2,
