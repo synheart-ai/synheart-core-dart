@@ -44,8 +44,6 @@ import 'modules/lab_ingest/lab_payload_builder.dart';
 import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
 import 'package:synheart_auth/synheart_auth.dart';
-// AuthModule removed — ConsentModule is the single auth/token path.
-// SyncModule uses ConsentModule's token directly.
 import 'modules/cloud/device_auth_provider.dart';
 import 'modules/capabilities/remote_capability_token_fetcher.dart';
 import 'sync/sync_module.dart';
@@ -850,7 +848,7 @@ class Synheart {
           SynheartLogger.log('[Synheart] session_secret init failed (non-fatal): $e');
         }
 
-        // SyncModule uses ConsentModule's token — no separate AuthModule needed.
+        // Sync uses ConsentModule's token for Bearer auth.
         if (_storageManager != null && _storageManager!.isOpen && _consentModule != null) {
           _syncModule = SyncModule(
             consent: _consentModule!,

@@ -44,9 +44,6 @@ export 'src/crypto/smk.dart';
 export 'src/crypto/artifact_crypto.dart';
 export 'src/crypto/urk.dart';
 
-// Auth removed — ConsentModule is the single auth/token path.
-// See consent module exports above for token management.
-
 // Sync (RFC-CORE-0005)
 export 'src/sync/artifact_envelope.dart';
 export 'src/sync/sync_module.dart';
@@ -100,7 +97,6 @@ export 'src/modules/runtime/runtime_module.dart';
 export 'src/modules/cloud/cloud_connector_module.dart';
 export 'src/modules/cloud/upload_models.dart';
 export 'src/modules/cloud/cloud_exceptions.dart';
-export 'src/modules/cloud/hmac_signer.dart';
 
 // Lab Ingest
 export 'src/modules/lab_ingest/lab_ingest_module.dart';
