@@ -37,10 +37,10 @@ import 'models/hsi_state.dart';
 import 'models/metric_event.dart';
 import 'storage/storage_manager.dart';
 import 'storage/storage_policy.dart';
-import 'config/platform_ingest_config.dart';
-import 'modules/platform_ingest/platform_ingest_module.dart';
-import 'modules/platform_ingest/platform_ingest_client.dart';
-import 'modules/platform_ingest/platform_payload_builder.dart';
+import 'config/lab_ingest_config.dart';
+import 'modules/lab_ingest/lab_ingest_module.dart';
+import 'modules/lab_ingest/lab_ingest_client.dart';
+import 'modules/lab_ingest/lab_payload_builder.dart';
 import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
 import 'package:synheart_auth/synheart_auth.dart';
@@ -107,7 +107,7 @@ class Synheart {
   RuntimeModule? _runtimeModule;
   CloudConnectorModule? _cloudConnector;
   DeviceAuthProvider? _deviceAuthProvider;
-  PlatformIngestModule? _platformIngestModule;
+  LabIngestModule? _labIngestModule;
 
   // Watch session module
   WatchSessionModule? _watchSessionModule;
@@ -713,14 +713,14 @@ class Synheart {
         );
       }
 
-      if (_config?.platformIngestConfig != null) {
-        SynheartLogger.log('[Synheart] Initializing Platform Ingest...');
-        final piCfg = _config!.platformIngestConfig!;
+      if (_config?.labIngestConfig != null) {
+        SynheartLogger.log('[Synheart] Initializing Lab Ingest...');
+        final piCfg = _config!.labIngestConfig!;
         // If device auth is configured and no custom authProvider was set,
         // use the DeviceAuthProvider automatically.
         final effectivePiConfig =
             (piCfg.authProvider == null && _deviceAuthProvider != null)
-                ? PlatformIngestConfig(
+                ? LabIngestConfig(
                     baseUrl: piCfg.baseUrl,
                     apiKey: piCfg.apiKey,
                     hmacSecret: piCfg.hmacSecret,
@@ -730,12 +730,12 @@ class Synheart {
                     autoIngest: piCfg.autoIngest,
                   )
                 : piCfg;
-        _platformIngestModule = PlatformIngestModule(
+        _labIngestModule = LabIngestModule(
           consentModule: _consentModule!,
           config: effectivePiConfig,
         );
         _moduleManager.registerModule(
-          _platformIngestModule!,
+          _labIngestModule!,
           dependsOn: ['consent'],
         );
       }
@@ -1235,44 +1235,44 @@ class Synheart {
     return shared._enqueueHsiSnapshots(hsiJsons);
   }
 
-  // ── Platform Ingest API ──────────────────────────────────────────
+  // ── Lab Ingest API ──────────────────────────────────────────
 
-  /// Ingest a session payload via the platform ingestion service.
-  /// Requires `behavior` consent. Returns a [PlatformIngestResponse].
-  static Future<PlatformIngestResponse> ingestSession(
+  /// Ingest a session payload via the lab ingestion service.
+  /// Requires `behavior` consent. Returns a [LabIngestResponse].
+  static Future<LabIngestResponse> ingestSession(
     Map<String, dynamic> payload,
   ) async {
-    final mod = shared._platformIngestModule;
+    final mod = shared._labIngestModule;
     if (mod == null) {
-      return const PlatformIngestResponse(
+      return const LabIngestResponse(
         success: false,
         statusCode: 0,
-        errorMessage: 'PlatformIngestModule not configured',
+        errorMessage: 'LabIngestModule not configured',
       );
     }
     return mod.ingestSession(payload);
   }
 
-  /// Ingest a metadata payload via the platform ingestion service.
-  /// Requires `biosignals` consent. Returns a [PlatformIngestResponse].
-  static Future<PlatformIngestResponse> ingestMetadata(
+  /// Ingest a metadata payload via the lab ingestion service.
+  /// Requires `biosignals` consent. Returns a [LabIngestResponse].
+  static Future<LabIngestResponse> ingestMetadata(
     Map<String, dynamic> payload,
   ) async {
-    final mod = shared._platformIngestModule;
+    final mod = shared._labIngestModule;
     if (mod == null) {
-      return const PlatformIngestResponse(
+      return const LabIngestResponse(
         success: false,
         statusCode: 0,
-        errorMessage: 'PlatformIngestModule not configured',
+        errorMessage: 'LabIngestModule not configured',
       );
     }
     return mod.ingestMetadata(payload);
   }
 
-  /// The underlying [PlatformIngestClient] for standalone/background usage.
-  /// Returns null if [PlatformIngestConfig] was not provided at init time.
-  static PlatformIngestClient? get platformIngestClient =>
-      shared._platformIngestModule?.client;
+  /// The underlying [LabIngestClient] for standalone/background usage.
+  /// Returns null if [LabIngestConfig] was not provided at init time.
+  static LabIngestClient? get labIngestClient =>
+      shared._labIngestModule?.client;
 
   Future<void> _uploadHsiNow() async {
     final cloud = _cloudConnector;
@@ -1294,7 +1294,7 @@ class Synheart {
     final phoneDataPoints =
         _phoneModule?.rawDataPoints(WindowType.window1h) ?? [];
 
-    final payload = PlatformPayloadBuilder.buildSession(
+    final payload = LabPayloadBuilder.buildSession(
       sessionId: session.sessionId,
       deviceId: _config?.deviceId ?? '',
       appId: _config?.appId ?? '',
@@ -1307,7 +1307,7 @@ class Synheart {
       phoneDataPoints: phoneDataPoints,
     );
 
-    await _platformIngestModule!.ingestSession(payload);
+    await _labIngestModule!.ingestSession(payload);
   }
 
   /// Check if user has granted a specific consent
@@ -1729,13 +1729,13 @@ class Synheart {
 
     // Auto-ingest platform session data (before nulling session handle)
     if (_currentSessionHandle != null &&
-        _platformIngestModule != null &&
-        _config?.platformIngestConfig?.autoIngest == true) {
+        _labIngestModule != null &&
+        _config?.labIngestConfig?.autoIngest == true) {
       try {
         await _autoIngestSession(_currentSessionHandle!);
-        SynheartLogger.log('[Synheart] Platform session auto-ingested');
+        SynheartLogger.log('[Synheart] Lab session auto-ingested');
       } catch (e) {
-        SynheartLogger.log('[Synheart] Platform auto-ingest failed: $e');
+        SynheartLogger.log('[Synheart] Lab auto-ingest failed: $e');
       }
     }
 
@@ -2230,7 +2230,7 @@ class Synheart {
   /// Grant consent for specific modules
   ///
   /// This should be called after the user has made their consent choices in the UI.
-  /// If CloudConfig or PlatformIngestConfig is provided, this will also issue
+  /// If CloudConfig or LabIngestConfig is provided, this will also issue
   /// a consent token from the consent service.
   ///
   /// Example:
@@ -2349,7 +2349,7 @@ class Synheart {
 
     // If cloud or platform-ingest is configured and cloudUpload is true, issue token.
     if ((_config?.cloudConfig != null ||
-            _config?.platformIngestConfig != null) &&
+            _config?.labIngestConfig != null) &&
         cloudUpload &&
         profileId != null) {
       try {

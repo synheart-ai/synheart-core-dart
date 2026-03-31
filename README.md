@@ -427,7 +427,7 @@ synheart.setBatchIngestOnStop(true);  // Next session uses batch
 synheart.setBatchIngestOnStop(false); // Back to streaming
 ```
 
-## Platform Ingestion
+## Lab Ingestion
 
 The SDK can send structured session and metadata payloads to the Synheart platform API, independent of the HSI cloud connector.
 
@@ -441,7 +441,7 @@ final synheart = await Synheart.initialize(
     appId: 'your_app_id',
     apiKey: 'your_api_key',
     subjectId: 'sub_user_123',
-    platformIngestConfig: PlatformIngestConfig(
+    labIngestConfig: LabIngestConfig(
       apiKey: 'your_platform_api_key',
       autoIngest: true,
     ),
@@ -461,15 +461,15 @@ await synheart.ingestMetadata();
 
 ### Standalone Client
 
-For custom integrations, use `PlatformPayloadBuilder` and `PlatformIngestClient` directly:
+For custom integrations, use `LabPayloadBuilder` and `LabIngestClient` directly:
 
 ```dart
-final payload = PlatformPayloadBuilder.buildSession(
+final payload = LabPayloadBuilder.buildSession(
   sessionId: 'sess_123',
   // ... other params
 );
 
-final client = synheart.platformIngestClient;
+final client = synheart.labIngestClient;
 final response = await client?.ingestSession(payload);
 ```
 
@@ -838,7 +838,7 @@ await Synheart.grantConsent(
 );
 ```
 
-### Testing platform ingest
+### Testing lab ingest
 
 Ingested payloads are persisted as JSON files in the local server's data directory (`{data-dir}/ingested/`), making it easy to inspect what your app is sending.
 
@@ -875,7 +875,7 @@ The Synheart Core SDK consists of 9 core modules:
 6. **Behavior Module** - Consent-gated interaction patterns
 7. **HSI Runtime** - Signal fusion and state computation
 8. **Cloud Connector** - Device-signed HSI snapshot uploads
-9. **Platform Ingest** - Session and metadata ingestion
+9. **Lab Ingest** - Session and metadata ingestion
 
 See [ARCHITECTURE](docs/ARCHITECTURE.md) for detailed implementation specifications.
 

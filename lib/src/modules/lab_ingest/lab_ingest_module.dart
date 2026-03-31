@@ -3,43 +3,42 @@ import 'dart:typed_data';
 
 import '../base/synheart_module.dart';
 import '../consent/consent_module.dart';
-import '../cloud/hmac_signer.dart';
+import '../interfaces/auth_provider.dart';
 import '../../config/api_endpoints.dart';
-import '../../config/platform_ingest_config.dart';
-import 'platform_ingest_client.dart';
+import '../../config/lab_ingest_config.dart';
+import 'lab_ingest_client.dart';
 
 /// Module for custom platform session and metadata ingestion.
 ///
-/// Wraps [PlatformIngestClient] with consent gating via [ConsentModule].
+/// Wraps [LabIngestClient] with consent gating via [ConsentModule].
 /// Uploads are on-demand (not streaming), so [onStart]/[onStop] are no-ops.
 ///
-/// When [PlatformIngestConfig.authProvider] is set (e.g., via DeviceAuthProvider),
-/// requests are signed with device credentials instead of HMAC.
-class PlatformIngestModule extends BaseSynheartModule {
+/// Auth model (post security rewrite):
+///   Authorization: Bearer {consentToken}   — standard JWT from ConsentModule
+///   + device signature headers              — defense-in-depth via AuthProvider
+///
+/// HMAC signing removed — device attestation at token issuance replaces it.
+class LabIngestModule extends BaseSynheartModule {
   @override
-  final String moduleId = 'platform_ingest';
+  final String moduleId = 'lab_ingest';
 
   final ConsentModule _consentModule;
-  final PlatformIngestConfig _config;
+  final LabIngestConfig _config;
 
-  HMACSigner? _signer;
-  late final PlatformIngestClient _client;
+  late final LabIngestClient _client;
 
-  PlatformIngestModule({
+  LabIngestModule({
     required ConsentModule consentModule,
-    required PlatformIngestConfig config,
+    required LabIngestConfig config,
   })  : _consentModule = consentModule,
         _config = config;
 
   /// The underlying client — exposed for standalone/background usage.
-  PlatformIngestClient get client => _client;
+  LabIngestClient get client => _client;
 
   @override
   Future<void> onInitialize() async {
-    if (_config.hmacSecret != null) {
-      _signer = HMACSigner(hmacSecret: _config.hmacSecret!);
-    }
-    _client = PlatformIngestClient(
+    _client = LabIngestClient(
       baseUrl: _config.baseUrl,
       timeout: _config.timeout,
       maxRetries: _config.maxRetries,
@@ -48,13 +47,11 @@ class PlatformIngestModule extends BaseSynheartModule {
 
   @override
   Future<void> onStart() async {
-    // On-demand uploads — nothing to start.
+    // On-demand uploads — no background work to start.
   }
 
   @override
-  Future<void> onStop() async {
-    // On-demand uploads — nothing to stop.
-  }
+  Future<void> onStop() async {}
 
   @override
   Future<void> onDispose() async {
@@ -62,12 +59,12 @@ class PlatformIngestModule extends BaseSynheartModule {
   }
 
   /// Ingest a session payload. Requires behavior consent (digital_activity channel).
-  Future<PlatformIngestResponse> ingestSession(
+  Future<LabIngestResponse> ingestSession(
     Map<String, dynamic> payload,
   ) async {
     final consent = _consentModule.current();
     if (!consent.allowsChannel('behavior.digital_activity')) {
-      return const PlatformIngestResponse(
+      return const LabIngestResponse(
         success: false,
         statusCode: 0,
         errorMessage: 'Behavior consent not granted',
@@ -75,37 +72,24 @@ class PlatformIngestModule extends BaseSynheartModule {
     }
 
     final token = _consentModule.getCurrentToken();
-    final authProvider = _config.authProvider;
-
-    if (authProvider != null) {
-      final bodyJson = jsonEncode(payload);
-      final authHeaders = await authProvider.signRequest(
-        method: 'POST',
-        path: ApiEndpoints.platformSessionIngestPath,
-        bodyBytes: Uint8List.fromList(utf8.encode(bodyJson)),
-      );
-      return _client.ingestSession(
-        payload: payload,
-        authHeaders: authHeaders,
-        consentToken: token?.token,
-      );
-    }
+    final deviceHeaders = await _getDeviceHeaders(
+      'POST', ApiEndpoints.labSessionIngestPath, payload,
+    );
 
     return _client.ingestSession(
       payload: payload,
-      signer: _signer,
-      apiKey: _config.apiKey,
       consentToken: token?.token,
+      deviceHeaders: deviceHeaders,
     );
   }
 
   /// Ingest a metadata payload. Requires biosignals consent (vitals channel).
-  Future<PlatformIngestResponse> ingestMetadata(
+  Future<LabIngestResponse> ingestMetadata(
     Map<String, dynamic> payload,
   ) async {
     final consent = _consentModule.current();
     if (!consent.allowsChannel('biosignals.vitals')) {
-      return const PlatformIngestResponse(
+      return const LabIngestResponse(
         success: false,
         statusCode: 0,
         errorMessage: 'Biosignals consent not granted',
@@ -113,27 +97,29 @@ class PlatformIngestModule extends BaseSynheartModule {
     }
 
     final token = _consentModule.getCurrentToken();
-    final authProvider = _config.authProvider;
-
-    if (authProvider != null) {
-      final bodyJson = jsonEncode(payload);
-      final authHeaders = await authProvider.signRequest(
-        method: 'POST',
-        path: ApiEndpoints.platformMetadataIngestPath,
-        bodyBytes: Uint8List.fromList(utf8.encode(bodyJson)),
-      );
-      return _client.ingestMetadata(
-        payload: payload,
-        authHeaders: authHeaders,
-        consentToken: token?.token,
-      );
-    }
+    final deviceHeaders = await _getDeviceHeaders(
+      'POST', ApiEndpoints.labMetadataIngestPath, payload,
+    );
 
     return _client.ingestMetadata(
       payload: payload,
-      signer: _signer,
-      apiKey: _config.apiKey,
       consentToken: token?.token,
+      deviceHeaders: deviceHeaders,
+    );
+  }
+
+  /// Get device signature headers if authProvider is configured.
+  Future<Map<String, String>?> _getDeviceHeaders(
+    String method, String path, Map<String, dynamic> payload,
+  ) async {
+    final authProvider = _config.authProvider;
+    if (authProvider == null) return null;
+
+    final bodyJson = jsonEncode(payload);
+    return await authProvider.signRequest(
+      method: method,
+      path: path,
+      bodyBytes: Uint8List.fromList(utf8.encode(bodyJson)),
     );
   }
 }

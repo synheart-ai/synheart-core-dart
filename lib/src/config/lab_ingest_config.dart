@@ -4,9 +4,9 @@ import '../modules/interfaces/auth_provider.dart';
 /// Configuration for the Platform Ingest module.
 ///
 /// Used to send custom session and metadata payloads to the
-/// Synheart platform ingestion service.
-class PlatformIngestConfig {
-  /// Base URL for the platform ingestion service.
+/// Synheart lab ingestion service.
+class LabIngestConfig {
+  /// Base URL for the lab ingestion service.
   /// Resolved from SYNHEART_BASE_URL + /platform/v1 if not set explicitly.
   final String baseUrl;
 
@@ -32,7 +32,7 @@ class PlatformIngestConfig {
   /// [Synheart.stopSession]. Defaults to false (manual ingestion).
   final bool autoIngest;
 
-  PlatformIngestConfig({
+  LabIngestConfig({
     String? baseUrl,
     this.apiKey,
     this.hmacSecret,
@@ -42,5 +42,5 @@ class PlatformIngestConfig {
     this.autoIngest = false,
   }) : baseUrl = (baseUrl != null && baseUrl.isNotEmpty)
            ? baseUrl
-           : ApiEndpoints.resolvedPlatformIngestBaseUrl;
+           : ApiEndpoints.resolvedLabIngestBaseUrl;
 }

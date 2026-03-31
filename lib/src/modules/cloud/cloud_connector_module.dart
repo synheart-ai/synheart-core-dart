@@ -9,7 +9,7 @@ import '../interfaces/capability_provider.dart';
 import '../consent/consent_module.dart';
 import '../runtime/runtime_module.dart';
 import '../../config/synheart_config.dart';
-import 'hmac_signer.dart';
+// hmac_signer.dart import removed — HMAC replaced by device attestation + Bearer JWT.
 import 'upload_client.dart';
 import 'upload_queue.dart';
 import 'rate_limiter.dart';
@@ -30,7 +30,7 @@ class CloudConnectorModule extends BaseSynheartModule {
   final CloudConfig _config;
 
   // Components
-  HMACSigner? _hmacSigner;
+  // HMACSigner removed — device attestation at token issuance replaces HMAC.
   late final UploadClient _uploadClient;
   late final UploadQueue _uploadQueue;
   late final RateLimiter _rateLimiter;
@@ -92,9 +92,7 @@ class CloudConnectorModule extends BaseSynheartModule {
     SynheartLogger.log('[CloudConnector] Initializing Cloud Connector...');
     ApiEndpoints.assertConfigured(_config.baseUrl, 'CloudConfig.baseUrl');
 
-    if (_config.hmacSecret != null) {
-      _hmacSigner = HMACSigner(hmacSecret: _config.hmacSecret!);
-    }
+    // HMAC signer removed — device attestation at token issuance replaces it.
     _uploadClient = UploadClient(baseUrl: _config.baseUrl);
     _uploadQueue = UploadQueue(
       maxSize: _config.maxQueueSize,
@@ -243,13 +241,11 @@ class CloudConnectorModule extends BaseSynheartModule {
       // Get consent token if available
       final consentToken = _consent.getCurrentToken();
 
-      // Sign and upload
+      // Upload with Bearer token + optional device signing
       final response = await _uploadClient.upload(
         payload: payload,
-        signer: _hmacSigner,
-        apiKey: _config.apiKey,
         consentToken: consentToken,
-        authProvider: _config.authProvider,
+        deviceAuth: _config.authProvider,
       );
 
       // Success - remove from queue

@@ -23,7 +23,7 @@ export 'src/config/synheart_config.dart';
 export 'src/config/synheart_feature.dart';
 export 'src/config/synheart_mode.dart';
 export 'src/config/synheart_errors.dart';
-export 'src/config/platform_ingest_config.dart';
+export 'src/config/lab_ingest_config.dart';
 
 // Artifacts (RFC-CORE-0006 Tier A)
 export 'src/artifacts/artifact_id.dart';
@@ -102,10 +102,10 @@ export 'src/modules/cloud/upload_models.dart';
 export 'src/modules/cloud/cloud_exceptions.dart';
 export 'src/modules/cloud/hmac_signer.dart';
 
-// Platform Ingest
-export 'src/modules/platform_ingest/platform_ingest_module.dart';
-export 'src/modules/platform_ingest/platform_ingest_client.dart';
-export 'src/modules/platform_ingest/platform_payload_builder.dart';
+// Lab Ingest
+export 'src/modules/lab_ingest/lab_ingest_module.dart';
+export 'src/modules/lab_ingest/lab_ingest_client.dart';
+export 'src/modules/lab_ingest/lab_payload_builder.dart';
 
 // Runtime Bridge (FFI to synheart-runtime, includes SRM baseline access)
 export 'src/modules/runtime/runtime_bridge.dart';

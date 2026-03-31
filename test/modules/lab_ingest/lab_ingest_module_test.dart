@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:synheart_core/src/config/api_endpoints.dart';
-import 'package:synheart_core/src/config/platform_ingest_config.dart';
-import 'package:synheart_core/src/modules/platform_ingest/platform_ingest_client.dart';
+import 'package:synheart_core/src/config/lab_ingest_config.dart';
+import 'package:synheart_core/src/modules/lab_ingest/lab_ingest_client.dart';
 
 void main() {
-  group('PlatformIngestModule', () {
+  group('LabIngestModule', () {
     test('ingestSession blocked when behavior consent not granted', () async {
-      const response = PlatformIngestResponse(
+      const response = LabIngestResponse(
         success: false,
         statusCode: 0,
         errorMessage: 'Behavior consent not granted',
@@ -17,7 +17,7 @@ void main() {
     });
 
     test('ingestMetadata blocked when biosignals consent not granted', () async {
-      const response = PlatformIngestResponse(
+      const response = LabIngestResponse(
         success: false,
         statusCode: 0,
         errorMessage: 'Biosignals consent not granted',
@@ -27,8 +27,8 @@ void main() {
       expect(response.errorMessage, contains('Biosignals consent'));
     });
 
-    test('PlatformIngestResponse toString includes error', () {
-      const response = PlatformIngestResponse(
+    test('LabIngestResponse toString includes error', () {
+      const response = LabIngestResponse(
         success: false,
         statusCode: 401,
         errorMessage: 'Unauthorized',
@@ -39,13 +39,13 @@ void main() {
       expect(response.toString(), contains('error=Unauthorized'));
     });
 
-    test('PlatformIngestConfig uses correct defaults', () {
-      const config = PlatformIngestConfig(
+    test('LabIngestConfig uses correct defaults', () {
+      const config = LabIngestConfig(
         apiKey: 'key',
         hmacSecret: 'secret',
       );
 
-      expect(config.baseUrl, equals(ApiEndpoints.defaultPlatformIngestBaseUrl));
+      expect(config.baseUrl, equals(ApiEndpoints.defaultLabIngestBaseUrl));
       expect(config.timeout, equals(const Duration(seconds: 30)));
       expect(config.maxRetries, equals(3));
     });

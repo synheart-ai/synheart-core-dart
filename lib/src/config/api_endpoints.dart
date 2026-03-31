@@ -10,7 +10,7 @@ abstract final class ApiEndpoints {
   // ── Base URL ────────────────────────────────────────────────────────
   static const String defaultBaseUrl = String.fromEnvironment(
     'SYNHEART_BASE_URL',
-    defaultValue: 'https://example.invalid',
+    defaultValue: 'https://api.synheart.ai',
   );
 
   // ── Gateway prefixes (3 services) ─────────────────────────────────
@@ -36,12 +36,11 @@ abstract final class ApiEndpoints {
   static const String defaultConsentBaseUrl = _consentOverride;
   static const String defaultIngestBaseUrl = _ingestOverride;
   static const String defaultCloudBaseUrl = _ingestOverride;
-  static const String defaultPlatformIngestBaseUrl = _ingestOverride;
+  static const String defaultLabIngestBaseUrl = _ingestOverride;
 
   // ── Resolved base URLs ────────────────────────────────────────────
   static String _resolve(String override, String gatewayPrefix) {
     if (override.isNotEmpty) return override;
-    if (defaultBaseUrl == 'https://example.invalid') return '';
     return '$defaultBaseUrl$gatewayPrefix';
   }
 
@@ -57,14 +56,14 @@ abstract final class ApiEndpoints {
   static String get resolvedIngestBaseUrl =>
       _resolve(_ingestOverride, _ingestGateway);
 
-  // Cloud and platform ingest both go to the ingest service
+  // Cloud and lab ingest both go to the ingest service
   static String get resolvedCloudBaseUrl => resolvedIngestBaseUrl;
-  static String get resolvedPlatformIngestBaseUrl => resolvedIngestBaseUrl;
+  static String get resolvedLabIngestBaseUrl => resolvedIngestBaseUrl;
 
   // ── Ingest service paths ──────────────────────────────────────────
   static const String ingestPath = '/v1/hsi/ingest';
-  static const String platformSessionIngestPath = '/v1/platform/session/ingest';
-  static const String platformMetadataIngestPath = '/v1/platform/metadata/ingest';
+  static const String labSessionIngestPath = '/v1/lab/session/ingest';
+  static const String labMetadataIngestPath = '/v1/lab/metadata/ingest';
 
   // ── Auth service paths ────────────────────────────────────────────
   static const String deviceCapabilitiesPath = '/v1/device/capabilities';
@@ -79,7 +78,7 @@ abstract final class ApiEndpoints {
 
   /// Throws [ArgumentError] if [url] is still the placeholder value.
   static void assertConfigured(String url, String name) {
-    if (url == 'https://example.invalid' || url.isEmpty) {
+    if (url.isEmpty) {
       throw ArgumentError(
         '$name is not configured. '
         'Set SYNHEART_BASE_URL via --dart-define or --dart-define-from-file.',
