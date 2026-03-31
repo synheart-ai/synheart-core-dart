@@ -1,4 +1,5 @@
 import 'api_endpoints.dart';
+import '../modules/interfaces/auth_provider.dart';
 
 /// Configuration for the Platform Ingest module.
 ///
@@ -6,13 +7,20 @@ import 'api_endpoints.dart';
 /// Synheart platform ingestion service.
 class PlatformIngestConfig {
   /// Base URL for the platform ingestion service.
+  /// Resolved from SYNHEART_BASE_URL + /platform/v1 if not set explicitly.
   final String baseUrl;
 
   /// API key for authentication (X-API-Key header).
-  final String apiKey;
+  /// Optional when device auth is configured (DeviceAuthProvider signs requests).
+  final String? apiKey;
 
   /// HMAC secret for request signing.
-  final String hmacSecret;
+  /// Optional when device auth is configured (DeviceAuthProvider signs requests).
+  final String? hmacSecret;
+
+  /// Custom auth provider for request signing (e.g., ECDSA device-identity).
+  /// When set, takes precedence over HMAC signing.
+  final AuthProvider? authProvider;
 
   /// HTTP request timeout.
   final Duration timeout;
@@ -24,12 +32,15 @@ class PlatformIngestConfig {
   /// [Synheart.stopSession]. Defaults to false (manual ingestion).
   final bool autoIngest;
 
-  const PlatformIngestConfig({
-    this.baseUrl = ApiEndpoints.defaultPlatformIngestBaseUrl,
-    required this.apiKey,
-    required this.hmacSecret,
+  PlatformIngestConfig({
+    String? baseUrl,
+    this.apiKey,
+    this.hmacSecret,
+    this.authProvider,
     this.timeout = const Duration(seconds: 30),
     this.maxRetries = 3,
     this.autoIngest = false,
-  });
+  }) : baseUrl = (baseUrl != null && baseUrl.isNotEmpty)
+           ? baseUrl
+           : ApiEndpoints.resolvedPlatformIngestBaseUrl;
 }

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../config/api_endpoints.dart';
+import 'dart:math';
+import 'dart:typed_data';
+import 'package:synheart_auth/synheart_auth.dart' as device_auth;
+import '../modules/consent/consent_api_client.dart';
 import 'token_storage.dart';
 
 /// Authentication status (RFC-CORE-0008).
@@ -28,37 +30,43 @@ class AuthStatus {
 class AuthResult {
   final String subjectId;
   final String? accessToken;
-  final String? refreshToken;
   final String? sessionSecret;
   final bool syncReady;
 
   const AuthResult({
     required this.subjectId,
     this.accessToken,
-    this.refreshToken,
     this.sessionSecret,
     required this.syncReady,
   });
 }
 
-/// Manages authentication and token lifecycle (RFC-CORE-0008).
+/// Manages authentication via device attestation + consent token (RFC-CORE-0008).
+///
+/// Flow: synheart-auth.registerDevice() → POST /consent/v1/sdk/consent-token → JWT
+/// No refresh tokens — re-attestation on expiry.
 class AuthModule {
-  static const int _defaultExpirySeconds = 3600;
-
   AuthStatus _status = AuthStatus.unauthenticated;
   String? _accessToken;
   String? _sessionSecret;
-  Timer? _refreshTimer;
+  String? _lastProfileId;
+  Timer? _reattestTimer;
   final TokenStorage _tokenStorage;
-  final String _baseUrl;
   final String _appId;
+  final String _platform;
+  final device_auth.SynheartAuth _auth;
+  final ConsentAPIClient _consentClient;
 
   AuthModule({
     required String appId,
-    String baseUrl = ApiEndpoints.defaultAuthBaseUrl,
+    required device_auth.SynheartAuth auth,
+    required ConsentAPIClient consentClient,
+    String platform = 'mobile',
     TokenStorage? tokenStorage,
   })  : _appId = appId,
-        _baseUrl = baseUrl,
+        _auth = auth,
+        _consentClient = consentClient,
+        _platform = platform,
         _tokenStorage = tokenStorage ?? TokenStorage();
 
   AuthStatus get status => _status;
@@ -85,95 +93,71 @@ class AuthModule {
     );
   }
 
-  /// Token-based auth — exchanges a provider token for Synheart credentials.
+  /// Attestation-based auth — register device, then obtain consent token.
+  ///
+  /// 1. Ensure device is registered via synheart-auth
+  /// 2. Request consent token (server verifies device attestation)
+  /// 3. Store JWT in-memory, extract subject_id from claims
+  /// 4. Generate or load session_secret for URK derivation
+  /// 5. Schedule re-attestation 60s before token expiry
   Future<AuthResult> authenticate({
-    required String provider,
-    required String token,
+    required String consentProfileId,
   }) async {
-    final response = await http.post(
-      Uri.parse('$_baseUrl${ApiEndpoints.authExchangePath}'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'provider': provider,
-        'token': token,
-        'app_id': _appId,
-      }),
+    // Step 1: Ensure device is registered
+    final isRegistered = await _auth.isRegistered(_appId);
+    if (!isRegistered) {
+      await _auth.registerDevice(_appId);
+    }
+
+    // Step 2: Get device ID
+    final deviceId = await _auth.getDeviceId(_appId);
+    if (deviceId == null) {
+      throw AuthError('Device registration succeeded but no device_id returned');
+    }
+
+    // Step 3: Request consent token (signed by device via ConsentAPIClient)
+    final consentToken = await _consentClient.issueToken(
+      deviceId: deviceId,
+      consentProfileId: consentProfileId,
+      platform: _platform,
     );
 
-    if (response.statusCode != 200) {
-      throw AuthError('Authentication failed: ${response.statusCode}');
-    }
+    // Step 4: Store JWT in-memory only
+    _accessToken = consentToken.token;
 
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    final sid = body['subject_id'] as String;
-    final at = body['access_token'] as String;
-    final rt = body['refresh_token'] as String;
-    final ss = body['session_secret'] as String?;
+    // Step 5: Extract subject_id from JWT claims (fallback to device_id)
+    final subjectId = consentToken.claims['sub'] as String? ?? deviceId;
+    await _tokenStorage.saveSubjectId(subjectId);
 
-    _accessToken = at;
-    _sessionSecret = ss;
-
-    await _tokenStorage.saveRefreshToken(rt);
-    await _tokenStorage.saveSubjectId(sid);
-    if (ss != null) {
+    // Step 6: Generate or load session_secret (32 random bytes, locally generated)
+    var ss = await _tokenStorage.loadSessionSecret();
+    if (ss == null) {
+      ss = _generateSessionSecret();
       await _tokenStorage.saveSessionSecret(ss);
     }
+    _sessionSecret = ss;
 
+    // Step 7: Persist consent profile ID for restore
+    _lastProfileId = consentProfileId;
+    await _tokenStorage.saveConsentProfileId(consentProfileId);
+
+    // Step 8: Schedule re-attestation 60s before expiry
+    _scheduleReattestation(consentToken.expiresAt);
+
+    // Step 9: Update status
     _status = AuthStatus(
       authenticated: true,
-      subjectId: sid,
-      provider: provider,
+      subjectId: subjectId,
+      provider: 'device',
       syncReady: false,
     );
 
-    final expiresIn = body.containsKey('expires_in')
-        ? (body['expires_in'] as num).toInt()
-        : _defaultExpirySeconds;
-    _scheduleRefresh(expiresIn);
-
     return AuthResult(
-      subjectId: sid,
-      accessToken: at,
-      refreshToken: rt,
+      subjectId: subjectId,
+      accessToken: _accessToken,
       sessionSecret: ss,
       syncReady: false,
     );
-  }
-
-  /// Refresh the access token using the stored refresh token.
-  Future<void> refreshToken() async {
-    final rt = await _tokenStorage.loadRefreshToken();
-    if (rt == null) {
-      throw AuthError('No refresh token available');
-    }
-
-    final response = await http.post(
-      Uri.parse('$_baseUrl${ApiEndpoints.authRefreshPath}'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'refresh_token': rt}),
-    );
-
-    if (response.statusCode != 200) {
-      _status = AuthStatus(
-        authenticated: false,
-        subjectId: _status.subjectId,
-        provider: _status.provider,
-        syncReady: false,
-      );
-      throw AuthError('ERR_AUTH_EXPIRED');
-    }
-
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    _accessToken = body['access_token'] as String;
-
-    if (body.containsKey('refresh_token')) {
-      await _tokenStorage.saveRefreshToken(body['refresh_token'] as String);
-    }
-
-    final expiresIn = body.containsKey('expires_in')
-        ? (body['expires_in'] as num).toInt()
-        : _defaultExpirySeconds;
-    _scheduleRefresh(expiresIn);
   }
 
   /// Mark sync as ready (called after URK provisioning).
@@ -188,34 +172,43 @@ class AuthModule {
 
   /// Log out — clear tokens and reset state.
   Future<void> logout() async {
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
+    _reattestTimer?.cancel();
+    _reattestTimer = null;
     _accessToken = null;
     _sessionSecret = null;
+    _lastProfileId = null;
     await _tokenStorage.clearAll();
     _status = AuthStatus.unauthenticated;
   }
 
-  /// Restore auth state from stored tokens (call on SDK init).
+  /// Restore auth state from stored credentials (call on SDK init).
+  ///
+  /// If the device is registered and a consent profile is saved,
+  /// requests a fresh consent token (re-attestation).
   Future<bool> restoreSession() async {
     final sid = await _tokenStorage.loadSubjectId();
     if (sid == null) return false;
 
-    final rt = await _tokenStorage.loadRefreshToken();
     final ss = await _tokenStorage.loadSessionSecret();
     _sessionSecret = ss;
 
-    if (rt != null) {
-      _status = AuthStatus(
-        authenticated: true,
-        subjectId: sid,
-        provider: 'restored',
-        syncReady: false,
-      );
+    final profileId = await _tokenStorage.loadConsentProfileId();
+    _lastProfileId = profileId;
+
+    final isRegistered = await _auth.isRegistered(_appId);
+    if (isRegistered && profileId != null) {
       try {
-        await refreshToken();
+        await authenticate(consentProfileId: profileId);
         return true;
       } catch (_) {
+        // Re-attestation failed — offline or server issue.
+        // Keep subject_id for local operations.
+        _status = AuthStatus(
+          authenticated: false,
+          subjectId: sid,
+          provider: 'device',
+          syncReady: false,
+        );
         return false;
       }
     }
@@ -230,29 +223,41 @@ class AuthModule {
     return true;
   }
 
-  /// Schedule a proactive token refresh at 80% of the token lifetime.
-  void _scheduleRefresh(int expiresInSeconds) {
-    _refreshTimer?.cancel();
-    final delaySeconds = (expiresInSeconds * 0.8).round();
-    _refreshTimer = Timer(Duration(seconds: delaySeconds), () async {
-      try {
-        await refreshToken();
-      } catch (e) {
-        // Silent failure — token refresh will be retried on next API call.
+  /// Schedule re-attestation 60 seconds before token expiry.
+  void _scheduleReattestation(DateTime expiresAt) {
+    _reattestTimer?.cancel();
+    final delay = expiresAt.difference(DateTime.now()) - const Duration(seconds: 60);
+    if (delay.isNegative) return;
+    _reattestTimer = Timer(delay, () async {
+      if (_lastProfileId != null) {
+        try {
+          await authenticate(consentProfileId: _lastProfileId!);
+        } catch (_) {
+          // Silent failure — will retry on next API call.
+        }
       }
     });
   }
 
-  /// Dispose resources. Cancel any pending refresh timer.
+  /// Dispose resources. Cancel any pending re-attestation timer.
   void dispose() {
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
+    _reattestTimer?.cancel();
+    _reattestTimer = null;
   }
 
   String _generateUUID() {
-    // Simple UUID v4 — in production, use package:uuid
     final r = DateTime.now().microsecondsSinceEpoch;
     return 'anon_${r.toRadixString(16)}';
+  }
+
+  /// Generate a 32-byte random session secret, base64 encoded.
+  String _generateSessionSecret() {
+    final random = Random.secure();
+    final bytes = Uint8List(32);
+    for (int i = 0; i < 32; i++) {
+      bytes[i] = random.nextInt(256);
+    }
+    return base64Encode(bytes);
   }
 }
 

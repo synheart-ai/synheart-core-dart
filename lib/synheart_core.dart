@@ -44,9 +44,8 @@ export 'src/crypto/smk.dart';
 export 'src/crypto/artifact_crypto.dart';
 export 'src/crypto/urk.dart';
 
-// Auth (RFC-CORE-0008)
-export 'src/auth/auth_module.dart';
-export 'src/auth/token_storage.dart';
+// Auth removed — ConsentModule is the single auth/token path.
+// See consent module exports above for token management.
 
 // Sync (RFC-CORE-0005)
 export 'src/sync/artifact_envelope.dart';

@@ -4,20 +4,41 @@ import '../../config/api_endpoints.dart';
 import '../../core/logger.dart';
 import 'consent_profile.dart';
 import 'consent_token.dart';
+import '../interfaces/consent_provider.dart';
+
+/// Callback type for device request signing (returns signed header map).
+/// Matches DeviceAuthProvider.signRequest signature.
+typedef DeviceRequestSigner = Future<Map<String, String>> Function({
+  required String method,
+  required String path,
+  required List<int> bodyBytes,
+});
 
 /// REST client for consent service API
 class ConsentAPIClient {
   final String baseUrl;
   final String appId;
-  final String appApiKey;
+  final String? appApiKey;
   final http.Client _httpClient;
+
+  /// Optional device signer for adding X-Synheart-* headers to requests.
+  /// When set, consent-token requests will be signed with device identity.
+  /// Mutable to allow late-binding after device auth initialization.
+  DeviceRequestSigner? deviceSigner;
 
   ConsentAPIClient({
     required this.baseUrl,
     required this.appId,
-    required this.appApiKey,
+    this.appApiKey,
+    this.deviceSigner,
     http.Client? httpClient,
   }) : _httpClient = httpClient ?? http.Client();
+
+  Map<String, String> get _headers => {
+        'Content-Type': 'application/json',
+        if (appApiKey != null && appApiKey!.isNotEmpty)
+          'Authorization': 'Bearer $appApiKey',
+      };
 
   /// Fetch available consent profiles for this app
   ///
@@ -41,10 +62,7 @@ class ConsentAPIClient {
       final stopwatch = Stopwatch()..start();
       final response = await _httpClient.get(
         uri,
-        headers: {
-          'Authorization': 'Bearer $appApiKey',
-          'Content-Type': 'application/json',
-        },
+        headers: _headers,
       );
       stopwatch.stop();
 
@@ -123,6 +141,10 @@ class ConsentAPIClient {
   /// Issue SDK token after user consent
   ///
   /// POST /api/v1/sdk/consent-token
+  ///
+  /// When [grantedChannels] is provided, the server computes the intersection
+  /// of the profile channels (ceiling) and granted channels (user floor).
+  /// When null, all profile channels are granted (backward compat).
   Future<ConsentToken> issueToken({
     required String deviceId,
     required String consentProfileId,
@@ -131,6 +153,11 @@ class ConsentAPIClient {
     String? region,
     String? ipAddress,
     String? userAgent,
+    ConsentChannels? grantedChannels,
+    ConsentTier? tier,
+    bool? cloud,
+    bool? vendorSync,
+    bool research = false,
   }) async {
     try {
       final uri = Uri.parse('$baseUrl${ApiEndpoints.consentTokenPath}');
@@ -144,15 +171,31 @@ class ConsentAPIClient {
         if (region != null) 'region': region,
         if (ipAddress != null) 'ip_address': ipAddress,
         if (userAgent != null) 'user_agent': userAgent,
+        if (grantedChannels != null)
+          'granted_channels': grantedChannels.toJson(),
+        if (tier != null) 'consent_tier': tier.name,
+        if (cloud != null) 'cloud': cloud,
+        if (vendorSync != null) 'vendor_sync': vendorSync,
+        if (research) 'research': true,
       };
+
+      final encodedBody = jsonEncode(body);
+      final headers = Map<String, String>.from(_headers);
+
+      // Sign the request with device identity if available
+      if (deviceSigner != null) {
+        final deviceHeaders = await deviceSigner!(
+          method: 'POST',
+          path: ApiEndpoints.consentTokenPath,
+          bodyBytes: utf8.encode(encodedBody),
+        );
+        headers.addAll(deviceHeaders);
+      }
 
       final response = await _httpClient.post(
         uri,
-        headers: {
-          'Authorization': 'Bearer $appApiKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(body),
+        headers: headers,
+        body: encodedBody,
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -248,10 +291,7 @@ class ConsentAPIClient {
 
       final response = await _httpClient.post(
         uri,
-        headers: {
-          'Authorization': 'Bearer $appApiKey',
-          'Content-Type': 'application/json',
-        },
+        headers: _headers,
         body: jsonEncode(body),
       );
 

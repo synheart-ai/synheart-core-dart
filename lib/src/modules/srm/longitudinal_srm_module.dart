@@ -7,6 +7,7 @@ class LongitudinalSrmModule {
     'sleep.summary.recorded': [
       _DimensionExtractor('sleep_need', 'duration_seconds'),
       _DimensionExtractor('sleep_regularity', 'midpoint_time'),
+      _DimensionExtractor('sleep_efficiency', 'efficiency_pct'),
     ],
     'hrv.recorded': [
       _DimensionExtractor('hrv_rmssd', 'rmssd_ms'),
@@ -16,6 +17,14 @@ class LongitudinalSrmModule {
     ],
     'recovery.summary.recorded': [
       _DimensionExtractor('recovery_score', 'score'),
+      _DimensionExtractor('hrv_rmssd', 'hrv_rmssd_ms'),
+      _DimensionExtractor('resting_hr', 'resting_hr_bpm'),
+    ],
+    'workout.summary.recorded': [
+      _DimensionExtractor('strain_score', 'strain_score'),
+    ],
+    'stress.summary.recorded': [
+      _DimensionExtractor('stress_score', 'score'),
     ],
   };
 

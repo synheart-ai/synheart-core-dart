@@ -45,9 +45,10 @@ class PlatformIngestClient {
   /// POST a session payload to `/v1/platform/session/ingest`.
   Future<PlatformIngestResponse> ingestSession({
     required Map<String, dynamic> payload,
-    required HMACSigner signer,
-    required String apiKey,
+    HMACSigner? signer,
+    String? apiKey,
     String? consentToken,
+    Map<String, String>? authHeaders,
   }) {
     return _post(
       path: ApiEndpoints.platformSessionIngestPath,
@@ -55,15 +56,17 @@ class PlatformIngestClient {
       signer: signer,
       apiKey: apiKey,
       consentToken: consentToken,
+      authHeaders: authHeaders,
     );
   }
 
   /// POST a metadata payload to `/v1/platform/metadata/ingest`.
   Future<PlatformIngestResponse> ingestMetadata({
     required Map<String, dynamic> payload,
-    required HMACSigner signer,
-    required String apiKey,
+    HMACSigner? signer,
+    String? apiKey,
     String? consentToken,
+    Map<String, String>? authHeaders,
   }) {
     return _post(
       path: ApiEndpoints.platformMetadataIngestPath,
@@ -71,15 +74,17 @@ class PlatformIngestClient {
       signer: signer,
       apiKey: apiKey,
       consentToken: consentToken,
+      authHeaders: authHeaders,
     );
   }
 
   Future<PlatformIngestResponse> _post({
     required String path,
     required Map<String, dynamic> payload,
-    required HMACSigner signer,
-    required String apiKey,
+    HMACSigner? signer,
+    String? apiKey,
     String? consentToken,
+    Map<String, String>? authHeaders,
   }) async {
     ApiEndpoints.assertConfigured(baseUrl, 'PlatformIngestConfig.baseUrl');
     final bodyJson = jsonEncode(payload);
@@ -91,21 +96,31 @@ class PlatformIngestClient {
       try {
         final uri = Uri.parse('$baseUrl$path');
 
-        final nonce = signer.generateNonce();
-        final timestamp =
-            (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
-        final signature = signer.computeSignature(
-          timestamp: timestamp,
-          bodyJson: bodyJson,
-        );
-
         final headers = <String, String>{
           'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
-          'X-Synheart-Signature': signature,
-          'X-Synheart-Timestamp': timestamp,
-          'X-Synheart-Nonce': nonce,
         };
+
+        if (authHeaders != null) {
+          // Device auth signed headers take precedence
+          headers.addAll(authHeaders);
+        } else {
+          // Legacy HMAC signing
+          if (apiKey != null && apiKey.isNotEmpty) {
+            headers['X-API-Key'] = apiKey;
+          }
+          if (signer != null) {
+            final timestamp =
+                (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+            final nonce = signer.generateNonce();
+            final signature = signer.computeSignature(
+              timestamp: timestamp,
+              bodyJson: bodyJson,
+            );
+            headers['X-Synheart-Signature'] = signature;
+            headers['X-Synheart-Timestamp'] = timestamp;
+            headers['X-Synheart-Nonce'] = nonce;
+          }
+        }
 
         if (consentToken != null && consentToken.isNotEmpty) {
           headers['X-Consent-Token'] = consentToken;

@@ -313,10 +313,7 @@ class CloudConfig {
     this.uploadInterval = const Duration(minutes: 5),
     this.maxRetries = 3,
     this.enableBacklog = true,
-  }) : assert(
-         hmacSecret != null || authProvider != null,
-         'CloudConfig requires either hmacSecret or authProvider',
-       );
+  });
 }
 
 /// Consent service configuration
@@ -342,16 +339,18 @@ class ConsentConfig {
   /// Region code (e.g., 'US', 'EU')
   final String? region;
 
-  const ConsentConfig({
-    this.consentServiceUrl = ApiEndpoints.defaultConsentBaseUrl,
+  ConsentConfig({
+    String? consentServiceUrl,
     this.appId,
     this.appApiKey,
     this.deviceId,
     this.platform = 'flutter',
     this.userId,
     this.region,
-  });
+  }) : consentServiceUrl = (consentServiceUrl != null && consentServiceUrl.isNotEmpty)
+           ? consentServiceUrl
+           : ApiEndpoints.resolvedConsentBaseUrl;
 
   /// Check if consent service is configured
-  bool get isConfigured => appId != null && appApiKey != null;
+  bool get isConfigured => appId != null;
 }

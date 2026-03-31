@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:rxdart/rxdart.dart';
@@ -34,13 +37,15 @@ import 'models/hsi_state.dart';
 import 'models/metric_event.dart';
 import 'storage/storage_manager.dart';
 import 'storage/storage_policy.dart';
+import 'config/platform_ingest_config.dart';
 import 'modules/platform_ingest/platform_ingest_module.dart';
 import 'modules/platform_ingest/platform_ingest_client.dart';
 import 'modules/platform_ingest/platform_payload_builder.dart';
 import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
 import 'package:synheart_auth/synheart_auth.dart';
-import 'auth/auth_module.dart';
+// AuthModule removed — ConsentModule is the single auth/token path.
+// SyncModule uses ConsentModule's token directly.
 import 'modules/cloud/device_auth_provider.dart';
 import 'modules/capabilities/remote_capability_token_fetcher.dart';
 import 'sync/sync_module.dart';
@@ -49,6 +54,8 @@ import 'crypto/urk.dart';
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
 import 'modules/consent/consent_ui.dart';
+import 'modules/wear/wearable_event_processor.dart';
+import 'modules/srm/longitudinal_srm_module.dart';
 import 'modules/session/watch_session_module.dart';
 import 'package:synheart_session/synheart_session.dart';
 
@@ -140,9 +147,9 @@ class Synheart {
   SessionHandle? _currentSessionHandle;
   StreamSubscription? _artifactHsiSubscription;
 
-  // Phase 3: Auth & Sync
-  AuthModule? _authModule;
+  // Phase 3: Sync
   SyncModule? _syncModule;
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   // Pending consent (set before init completes, applied after)
   _PendingConsent? _pendingConsent;
@@ -341,11 +348,11 @@ class Synheart {
     await SMK.delete();
     await URK.delete();
 
-    // Phase 3: Clear auth/sync state
+    // Phase 3: Clear sync state
     shared._syncModule?.dispose();
     shared._syncModule = null;
-    await shared._authModule?.logout();
-    shared._authModule = null;
+    // Clear session_secret
+    try { await shared._secureStorage.delete(key: 'synheart.session_secret'); } catch (_) {}
 
     // Reset Phase 1 fields
     shared._artifactPipeline = null;
@@ -356,15 +363,14 @@ class Synheart {
 
   /// Request account deletion — wipes local data and requests server-side deletion.
   static Future<DeletionRequestResult> requestAccountDeletion() async {
-    // If authenticated, request server-side deletion first
-    final auth = shared._authModule;
-    if (auth != null && auth.isAuthenticated && auth.accessToken != null) {
+    final token = shared._consentModule?.getCurrentToken();
+    if (token != null && token.isValid) {
       try {
         await http.post(
           shared._buildAccountApiUri(ApiEndpoints.accountDeletePath),
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ${auth.accessToken}',
+            'Authorization': 'Bearer ${token.token}',
           },
           body: jsonEncode({'confirmation': 'DELETE_MY_ACCOUNT'}),
         );
@@ -382,11 +388,11 @@ class Synheart {
 
   /// Cancel a pending account deletion request.
   static Future<DeletionRequestResult> cancelAccountDeletion() async {
-    final auth = shared._authModule;
-    if (auth == null || !auth.isAuthenticated || auth.accessToken == null) {
+    final token = shared._consentModule?.getCurrentToken();
+    if (token == null || !token.isValid) {
       return const DeletionRequestResult(
         status: 'error',
-        message: 'Not authenticated',
+        message: 'No valid consent token',
       );
     }
 
@@ -395,7 +401,7 @@ class Synheart {
         shared._buildAccountApiUri(ApiEndpoints.accountDeleteCancelPath),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${auth.accessToken}',
+          'Authorization': 'Bearer ${token.token}',
         },
       );
 
@@ -418,25 +424,12 @@ class Synheart {
     }
   }
 
-  // --- Phase 3: Auth API ---
+  // --- Phase 3: Auth ---
 
-  /// Authenticate with a provider token.
-  static Future<AuthResult> authenticate({
-    required String provider,
-    required String token,
-  }) async {
-    final auth = shared._authModule;
-    if (auth == null) throw StateError('SDK not initialized');
-    return auth.authenticate(provider: provider, token: token);
-  }
-
-  /// Get current auth status.
-  static AuthStatus? getAuthStatus() => shared._authModule?.status;
-
-  /// Log out and clear auth state.
+  /// Log out — revoke consent, dispose sync, clear URK.
   static Future<void> logout() async {
     shared._syncModule?.dispose();
-    await shared._authModule?.logout();
+    try { await shared._consentModule?.revokeConsent(); } catch (_) {}
     await URK.delete();
   }
 
@@ -560,8 +553,13 @@ class Synheart {
       final resolvedConfig = config ?? SynheartConfig.defaults();
 
       if (resolvedConfig.deviceAuthConfig != null) {
-        // ── Device auth path ──────────────────────────────────────
-        await _initDeviceAuth(resolvedConfig);
+        // ── Device auth deferred ──────────────────────────────────
+        // Device attestation and cloud registration are deferred until
+        // cloud consent is granted. For now, load default capabilities.
+        SynheartLogger.log(
+          '[Synheart] Device auth configured — will activate when cloud consent is granted.',
+        );
+        await _capabilityModule!.loadDefaults();
       } else if (resolvedConfig.capabilityToken != null &&
           resolvedConfig.capabilitySecret != null) {
         // ── Static token path (HMAC-verified) ─────────────────────
@@ -584,6 +582,20 @@ class Synheart {
 
       SynheartLogger.log('[Synheart] Initializing consent module...');
       _consentModule = ConsentModule(consentConfig: _config?.consentConfig);
+
+      // Wire device signing into consent module so all consent-token requests
+      // are signed with device identity (X-Synheart-* headers).
+      // Uses lazy binding — resolves _deviceAuthProvider at call time.
+      _consentModule!.setDeviceSigner(
+        ({required String method, required String path, required List<int> bodyBytes}) async {
+          if (_deviceAuthProvider == null) return <String, String>{};
+          return await _deviceAuthProvider!.signRequest(
+            method: method,
+            path: path,
+            bodyBytes: bodyBytes,
+          );
+        },
+      );
 
       _moduleManager.registerModule(_capabilityModule!);
       _moduleManager.registerModule(_consentModule!);
@@ -648,6 +660,16 @@ class Synheart {
         _runtimeModule!,
         dependsOn: ['wear', 'behavior'],
       );
+      // Wire wearable event processor for vendor sync (RAMEN → SRM pipeline)
+      if (_storageManager != null) {
+        _wearModule!.setEventProcessor(WearableEventProcessor(
+          storage: _storageManager!,
+          bridge: bridge,
+          subjectId: runtimeConfig.subjectId,
+          deviceInstallId: runtimeConfig.sessionId,
+        ));
+      }
+
       // Push all behavior events (notification, app_switch, touch, etc.) to the runtime and ensure tick is started
       if (bridge != null) {
         _behaviorModule!.pushBehaviorToRuntime =
@@ -693,9 +715,24 @@ class Synheart {
 
       if (_config?.platformIngestConfig != null) {
         SynheartLogger.log('[Synheart] Initializing Platform Ingest...');
+        final piCfg = _config!.platformIngestConfig!;
+        // If device auth is configured and no custom authProvider was set,
+        // use the DeviceAuthProvider automatically.
+        final effectivePiConfig =
+            (piCfg.authProvider == null && _deviceAuthProvider != null)
+                ? PlatformIngestConfig(
+                    baseUrl: piCfg.baseUrl,
+                    apiKey: piCfg.apiKey,
+                    hmacSecret: piCfg.hmacSecret,
+                    authProvider: _deviceAuthProvider,
+                    timeout: piCfg.timeout,
+                    maxRetries: piCfg.maxRetries,
+                    autoIngest: piCfg.autoIngest,
+                  )
+                : piCfg;
         _platformIngestModule = PlatformIngestModule(
           consentModule: _consentModule!,
-          config: _config!.platformIngestConfig!,
+          config: effectivePiConfig,
         );
         _moduleManager.registerModule(
           _platformIngestModule!,
@@ -786,21 +823,45 @@ class Synheart {
       // Phase 3: Initialize auth and sync modules
       final appId = resolvedConfig.appId;
       if (appId.isNotEmpty) {
-        _authModule = AuthModule(
-          appId: appId,
-          baseUrl: resolvedConfig.sync.baseUrl,
-        );
-        await _authModule!.restoreSession();
+        // Configure synheart-auth for device attestation + signing.
+        // Uses deviceAuthConfig.authBaseUrl if available, otherwise default.
+        final authBaseUrl = resolvedConfig.deviceAuthConfig?.authBaseUrl
+            ?? 'https://auth.synheart.ai';
+        try {
+          await SynheartAuth.instance.configure(authBaseUrl);
+        } catch (e) {
+          SynheartLogger.log('[Synheart] SynheartAuth configure failed (non-fatal): $e');
+        }
 
-        if (_storageManager != null && _storageManager!.isOpen) {
+        // Generate or load session_secret for URK derivation (local, not from server)
+        String? sessionSecret;
+        try {
+          final ss = await _secureStorage.read(key: 'synheart.session_secret');
+          if (ss == null) {
+            final random = Random.secure();
+            final bytes = Uint8List(32);
+            for (int i = 0; i < 32; i++) bytes[i] = random.nextInt(256);
+            sessionSecret = base64Encode(bytes);
+            await _secureStorage.write(key: 'synheart.session_secret', value: sessionSecret);
+          } else {
+            sessionSecret = ss;
+          }
+        } catch (e) {
+          SynheartLogger.log('[Synheart] session_secret init failed (non-fatal): $e');
+        }
+
+        // SyncModule uses ConsentModule's token — no separate AuthModule needed.
+        if (_storageManager != null && _storageManager!.isOpen && _consentModule != null) {
           _syncModule = SyncModule(
-            auth: _authModule!,
+            consent: _consentModule!,
             storage: _storageManager!,
             baseUrl: resolvedConfig.sync.baseUrl,
             smk: _smk,
+            subjectId: resolvedConfig.subjectId,
+            sessionSecret: sessionSecret,
           );
         }
-        SynheartLogger.log('[Synheart] Auth and sync modules initialized');
+        SynheartLogger.log('[Synheart] Sync module initialized');
       }
 
       if (autoStart) {
@@ -829,6 +890,10 @@ class Synheart {
           behavior: pc.behavior,
           phoneContext: pc.phoneContext,
           cloudUpload: pc.cloudUpload,
+          vendorSync: pc.vendorSync,
+          tier: pc.tier,
+          grantedChannels: pc.grantedChannels,
+          research: pc.research,
         );
       }
     } catch (e, stack) {
@@ -1270,6 +1335,8 @@ class Synheart {
         return consent.phoneContext;
       case 'cloudUpload':
         return consent.cloudUpload;
+      case 'vendorSync':
+        return consent.vendorSync;
       default:
         return false;
     }
@@ -2175,19 +2242,52 @@ class Synheart {
   ///   cloudUpload: true,
   /// );
   /// ```
+
+  /// Process a vendor wearable event from RAMEN into the SRM pipeline.
+  ///
+  /// Call this from the wear SDK when a [RamenEvent] arrives.
+  /// The internal WearModule instance (for vendor sync state observation).
+  static WearModule? get wearModule => shared._wearModule;
+
+  /// The event is normalized to a CanonicalWearableEvent, stored in SQLite,
+  /// and pushed to the runtime for longitudinal baseline computation.
+  static Future<void> processVendorEvent({
+    required String provider,
+    required String eventType,
+    required Map<String, dynamic> payload,
+    required String eventId,
+    required int seq,
+  }) async {
+    await shared._wearModule?.processVendorEvent(
+      provider: provider,
+      eventType: eventType,
+      payload: payload,
+      eventId: eventId,
+      seq: seq,
+    );
+  }
+
   static Future<void> grantConsent({
     required bool biosignals,
     required bool behavior,
     required bool phoneContext,
     required bool cloudUpload,
+    bool vendorSync = false,
     String? profileId,
+    ConsentTier? tier,
+    ConsentChannels? grantedChannels,
+    bool research = false,
   }) async {
     return shared._grantConsent(
       biosignals: biosignals,
       behavior: behavior,
       phoneContext: phoneContext,
       cloudUpload: cloudUpload,
+      vendorSync: vendorSync,
       profileId: profileId,
+      tier: tier,
+      grantedChannels: grantedChannels,
+      research: research,
     );
   }
 
@@ -2196,7 +2296,11 @@ class Synheart {
     required bool behavior,
     required bool phoneContext,
     required bool cloudUpload,
+    bool vendorSync = false,
     String? profileId,
+    ConsentTier? tier,
+    ConsentChannels? grantedChannels,
+    bool research = false,
   }) async {
     if (!_isConfigured) {
       // If init is in progress, wait for it then proceed.
@@ -2209,6 +2313,10 @@ class Synheart {
           behavior: behavior,
           phoneContext: phoneContext,
           cloudUpload: cloudUpload,
+          vendorSync: vendorSync,
+          tier: tier,
+          grantedChannels: grantedChannels,
+          research: research,
         );
         SynheartLogger.log(
           '[Synheart] SDK not yet initialized — consent queued and will be applied after init.',
@@ -2221,6 +2329,24 @@ class Synheart {
       throw StateError('Consent module not initialized');
     }
 
+    // If cloud consent is granted and device auth is configured but not yet
+    // initialized, run device attestation now.
+    if (cloudUpload &&
+        _config?.deviceAuthConfig != null &&
+        _deviceAuthProvider == null) {
+      try {
+        SynheartLogger.log('[Synheart] Cloud consent granted — activating device auth...');
+        await _initDeviceAuth(_config!);
+        SynheartLogger.log('[Synheart] Device auth activated successfully.');
+      } catch (e) {
+        SynheartLogger.log(
+          '[Synheart] Device auth activation failed: $e',
+          error: e,
+        );
+        // Continue — cloud uploads will fail but local mode still works
+      }
+    }
+
     // If cloud or platform-ingest is configured and cloudUpload is true, issue token.
     if ((_config?.cloudConfig != null ||
             _config?.platformIngestConfig != null) &&
@@ -2228,9 +2354,15 @@ class Synheart {
         profileId != null) {
       try {
         // Request token directly with known profile id.
-        await _consentModule!.requestConsentByProfileId(profileId);
+        await _consentModule!.requestConsentByProfileId(
+          profileId,
+          grantedChannels: grantedChannels,
+          tier: tier,
+          cloud: cloudUpload,
+          research: research,
+        );
         SynheartLogger.log(
-          '[Synheart] Consent token issued for profile: $profileId',
+          '[Synheart] Consent token issued for profile: $profileId (tier: ${tier?.name ?? "legacy"})',
         );
       } catch (e) {
         SynheartLogger.log(
@@ -2248,10 +2380,13 @@ class Synheart {
       phoneContext: phoneContext,
       cloudUpload: cloudUpload,
       syni: false,
-      focusEstimation: false,
-      emotionEstimation: false,
+      focusEstimation: grantedChannels?.interpretation.focusEstimation ?? false,
+      emotionEstimation: grantedChannels?.interpretation.emotionEstimation ?? false,
+      vendorSync: vendorSync,
       timestamp: DateTime.now(),
       explicitlyDenied: false,
+      tier: tier ?? ConsentTier.local,
+      channels: grantedChannels,
     );
 
     await _consentModule!.updateConsent(snapshot);
@@ -2619,13 +2754,30 @@ class Synheart {
   Future<void> _initDeviceAuth(SynheartConfig resolvedConfig) async {
     final dac = resolvedConfig.deviceAuthConfig!;
     SynheartLogger.log('[Synheart] Configuring device authentication...');
+    SynheartLogger.log(
+      '[Synheart] DeviceAuthConfig: authBaseUrl=${dac.authBaseUrl} '
+      'capabilityBaseUrl=${dac.capabilityBaseUrl ?? "(default=authBaseUrl)"} '
+      'allowUnsignedCapabilities=${resolvedConfig.allowUnsignedCapabilities} '
+      'appId=${resolvedConfig.appId}',
+    );
 
     // 1. Configure SynheartAuth
     await SynheartAuth.instance.configure(dac.authBaseUrl);
 
+    // Optional: surface current registration state before attempting registration.
+    try {
+      final already = await SynheartAuth.instance.isRegistered(resolvedConfig.appId);
+      SynheartLogger.log('[Synheart] Device already registered? $already');
+    } catch (e) {
+      SynheartLogger.log('[Synheart] isRegistered() check failed (non-fatal): $e', error: e);
+    }
+
     // 2. Register device (idempotent — returns alreadyRegistered if done)
     final regResult = await SynheartAuth.instance.registerDevice(
       resolvedConfig.appId,
+    );
+    SynheartLogger.log(
+      '[Synheart] registerDevice result: status=${regResult.status} deviceId=${regResult.deviceId}',
     );
     if (regResult.status == RegistrationStatus.failed) {
       if (resolvedConfig.allowUnsignedCapabilities) {
@@ -2822,11 +2974,19 @@ class _PendingConsent {
   final bool behavior;
   final bool phoneContext;
   final bool cloudUpload;
+  final bool vendorSync;
+  final ConsentTier? tier;
+  final ConsentChannels? grantedChannels;
+  final bool research;
 
   _PendingConsent({
     required this.biosignals,
     required this.behavior,
     required this.phoneContext,
     required this.cloudUpload,
+    this.vendorSync = false,
+    this.tier,
+    this.grantedChannels,
+    this.research = false,
   });
 }
