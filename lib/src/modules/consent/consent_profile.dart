@@ -42,7 +42,8 @@ class ConsentProfile {
       ),
       cloudEnabled:
           json['cloud'] as bool? ?? json['cloudEnabled'] as bool? ?? false,
-      vendorSyncEnabled: json['vendorSyncEnabled'] as bool? ?? false,
+      vendorSyncEnabled:
+          json['vendor_sync'] as bool? ?? json['vendorSyncEnabled'] as bool? ?? false,
       isDefault:
           json['is_default'] as bool? ?? json['isDefault'] as bool? ?? false,
     );
@@ -56,7 +57,7 @@ class ConsentProfile {
       'description': description,
       'channels': channels.toJson(),
       'cloud': cloudEnabled,
-      'vendorSyncEnabled': vendorSyncEnabled,
+      'vendor_sync': vendorSyncEnabled,
       'is_default': isDefault,
     };
   }
@@ -90,7 +91,9 @@ class ConsentChannels {
         json['biosignals'] as Map<String, dynamic>? ?? {},
       ),
       phoneContext: PhoneContextConsent.fromJson(
-        json['phoneContext'] as Map<String, dynamic>? ?? {},
+        json['phone_context'] as Map<String, dynamic>? ??
+            json['phoneContext'] as Map<String, dynamic>? ??
+            {},
       ),
       behavior: BehaviorConsent.fromJson(
         json['behavior'] as Map<String, dynamic>? ?? {},
@@ -120,55 +123,135 @@ class BiosignalsConsent {
   /// Consent for sleep data
   final bool sleep;
 
-  BiosignalsConsent({required this.vitals, required this.sleep});
+  /// Consent for advanced cardiac metrics
+  final bool cardioAdvanced;
+
+  /// Consent for neuromuscular signals
+  final bool neuromuscular;
+
+  /// Consent for wearable motion data
+  final bool wearableMotion;
+
+  BiosignalsConsent({
+    required this.vitals,
+    required this.sleep,
+    this.cardioAdvanced = false,
+    this.neuromuscular = false,
+    this.wearableMotion = false,
+  });
 
   factory BiosignalsConsent.fromJson(Map<String, dynamic> json) {
     return BiosignalsConsent(
       vitals: json['vitals'] as bool? ?? false,
       sleep: json['sleep'] as bool? ?? false,
+      cardioAdvanced: json['cardio_advanced'] as bool? ?? false,
+      neuromuscular: json['neuromuscular'] as bool? ?? false,
+      wearableMotion: json['wearable_motion'] as bool? ?? false,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'vitals': vitals, 'sleep': sleep};
+    return {
+      'vitals': vitals,
+      'sleep': sleep,
+      'cardio_advanced': cardioAdvanced,
+      'neuromuscular': neuromuscular,
+      'wearable_motion': wearableMotion,
+    };
   }
 }
 
 /// Phone context consent configuration
 class PhoneContextConsent {
-  /// Consent for motion data
-  final bool motion;
+  /// Consent for device motion data
+  final bool deviceMotion;
 
-  /// Consent for screen state
-  final bool screenState;
+  /// Consent for device context
+  final bool deviceContext;
 
-  PhoneContextConsent({required this.motion, required this.screenState});
+  /// Consent for system state
+  final bool systemState;
+
+  /// Deprecated: use [deviceMotion] instead.
+  @Deprecated('Use deviceMotion instead')
+  bool get motion => deviceMotion;
+
+  /// Deprecated: use [systemState] instead.
+  @Deprecated('Use systemState instead')
+  bool get screenState => systemState;
+
+  PhoneContextConsent({
+    this.deviceMotion = false,
+    this.deviceContext = false,
+    this.systemState = false,
+  });
 
   factory PhoneContextConsent.fromJson(Map<String, dynamic> json) {
     return PhoneContextConsent(
-      motion: json['motion'] as bool? ?? false,
-      screenState: json['screenState'] as bool? ?? false,
+      deviceMotion: json['device_motion'] as bool? ??
+          json['motion'] as bool? ??
+          false,
+      deviceContext: json['device_context'] as bool? ?? false,
+      systemState: json['system_state'] as bool? ??
+          json['screenState'] as bool? ??
+          json['screen_state'] as bool? ??
+          false,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'motion': motion, 'screenState': screenState};
+    return {
+      'device_motion': deviceMotion,
+      'device_context': deviceContext,
+      'system_state': systemState,
+    };
   }
 }
 
 /// Behavior consent configuration
 class BehaviorConsent {
-  /// Consent for behavior tracking
-  final bool enabled;
+  /// Consent for digital activity tracking
+  final bool digitalActivity;
 
-  BehaviorConsent({required this.enabled});
+  /// Consent for notification pattern analysis
+  final bool notificationPatterns;
+
+  /// Consent for app context collection
+  final bool appContext;
+
+  /// Whether any behavior consent is active.
+  bool get enabled => digitalActivity || notificationPatterns || appContext;
+
+  BehaviorConsent({
+    this.digitalActivity = false,
+    this.notificationPatterns = false,
+    this.appContext = false,
+  });
 
   factory BehaviorConsent.fromJson(Map<String, dynamic> json) {
-    return BehaviorConsent(enabled: json['enabled'] as bool? ?? false);
+    // Backward compat: if old 'enabled' key exists and new keys don't,
+    // map enabled → digitalActivity.
+    final hasNewKeys = json.containsKey('digital_activity') ||
+        json.containsKey('notification_patterns') ||
+        json.containsKey('app_context');
+    final legacyEnabled =
+        !hasNewKeys ? (json['enabled'] as bool? ?? false) : false;
+
+    return BehaviorConsent(
+      digitalActivity:
+          json['digital_activity'] as bool? ?? legacyEnabled,
+      notificationPatterns:
+          json['notification_patterns'] as bool? ?? false,
+      appContext: json['app_context'] as bool? ?? false,
+    );
   }
 
   Map<String, dynamic> toJson() {
-    return {'enabled': enabled};
+    return {
+      'digital_activity': digitalActivity,
+      'notification_patterns': notificationPatterns,
+      'app_context': appContext,
+    };
   }
 }
 

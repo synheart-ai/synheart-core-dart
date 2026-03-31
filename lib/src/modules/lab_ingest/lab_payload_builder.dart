@@ -11,8 +11,8 @@ import '../interfaces/feature_providers.dart';
 ///
 /// Aggregates raw wear samples, behavior events, and phone context
 /// into the structured format expected by the platform ingestion API.
-class PlatformPayloadBuilder {
-  const PlatformPayloadBuilder._();
+class LabPayloadBuilder {
+  const LabPayloadBuilder._();
 
   // ── Metadata payload ──────────────────────────────────────────────
 
