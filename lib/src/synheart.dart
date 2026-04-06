@@ -1,8 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
-import 'dart:typed_data';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:rxdart/rxdart.dart';
@@ -13,7 +10,6 @@ import 'modules/base/module_manager.dart';
 import 'modules/base/synheart_module.dart';
 import 'modules/capabilities/capability_module.dart';
 import 'modules/consent/consent_module.dart';
-import 'modules/consent/consent_storage.dart';
 import 'modules/interfaces/capability_provider.dart';
 import 'modules/interfaces/consent_provider.dart';
 import 'modules/wear/wear_module.dart';
@@ -24,36 +20,19 @@ import 'modules/behavior/behavior_events.dart';
 import 'modules/interfaces/feature_providers.dart';
 import 'models/behavior_session_results.dart';
 import 'package:synheart_behavior/synheart_behavior.dart' as sb;
-import 'modules/runtime/runtime_bridge.dart';
-import 'modules/runtime/runtime_module.dart';
-import 'modules/cloud/cloud_connector_module.dart';
-import 'package:sqflite/sqflite.dart' show getDatabasesPath;
 import 'config/synheart_mode.dart';
-import 'artifacts/artifact_pipeline.dart';
-import 'crypto/smk.dart';
-import 'crypto/artifact_crypto.dart';
 import 'models/session_handle.dart';
 import 'models/hsi_state.dart';
 import 'models/metric_event.dart';
-import 'storage/storage_manager.dart';
-import 'storage/storage_policy.dart';
-import 'config/lab_ingest_config.dart';
-import 'modules/lab_ingest/lab_ingest_module.dart';
-import 'modules/lab_ingest/lab_ingest_client.dart';
-import 'modules/lab_ingest/lab_payload_builder.dart';
 import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
 import 'package:synheart_auth/synheart_auth.dart';
 import 'modules/cloud/device_auth_provider.dart';
-import 'modules/capabilities/remote_capability_token_fetcher.dart';
-import 'sync/sync_module.dart';
-import 'sync/artifact_envelope.dart';
-import 'crypto/urk.dart';
+import 'core_runtime/core_runtime_bridge.dart';
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
 import 'modules/consent/consent_ui.dart';
 import 'modules/wear/wearable_event_processor.dart';
-import 'modules/srm/longitudinal_srm_module.dart';
 import 'modules/session/watch_session_module.dart';
 import 'package:synheart_session/synheart_session.dart';
 
@@ -91,6 +70,9 @@ class Synheart {
   static Synheart? _instance;
   static Synheart get shared => _instance ??= Synheart._();
 
+  /// Rust core runtime bridge (FFI). Null when native lib unavailable.
+  static CoreRuntimeBridge? _coreRuntime;
+
   Synheart._();
 
   // Module manager
@@ -102,10 +84,7 @@ class Synheart {
   WearModule? _wearModule;
   PhoneModule? _phoneModule;
   BehaviorModule? _behaviorModule;
-  RuntimeModule? _runtimeModule;
-  CloudConnectorModule? _cloudConnector;
   DeviceAuthProvider? _deviceAuthProvider;
-  LabIngestModule? _labIngestModule;
 
   // Watch session module
   WatchSessionModule? _watchSessionModule;
@@ -115,8 +94,7 @@ class Synheart {
   String? _activeMainSessionId;
   StreamSubscription<SessionEvent>? _mainSessionSubscription;
 
-  StreamSubscription? _hsvSubscription;
-  StreamSubscription? _hsiToSessionSubscription;
+  // (HSI subscription fields removed — HSI is now delivered via setHsiCallback)
 
   // Session data buffers — accumulate during session, persist after stop
   List<String> _sessionHsiBuffer = [];
@@ -136,18 +114,10 @@ class Synheart {
   Completer<void>? _initCompleter; // guards concurrent init
   String? _userId;
   SynheartConfig? _config;
+  bool? _batchIngestOnStop;
 
-  // Phase 1: Artifact pipeline & storage
-  StorageManager? _storageManager;
-  StoragePolicy? _storagePolicy;
-  ArtifactPipeline? _artifactPipeline;
-  SMK? _smk;
+  // Session handle
   SessionHandle? _currentSessionHandle;
-  StreamSubscription? _artifactHsiSubscription;
-
-  // Phase 3: Sync
-  SyncModule? _syncModule;
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   // Pending consent (set before init completes, applied after)
   _PendingConsent? _pendingConsent;
@@ -165,7 +135,7 @@ class Synheart {
   /// - State indices (arousalIndex, engagementStability, etc.)
   /// - 64D state embedding
   ///
-  /// Consumers receive raw HSI JSON strings from the synheart-runtime C ABI.
+  /// Consumers receive raw HSI JSON strings from the synheart-engine C ABI.
   Stream<String> get hsiUpdates => _hsvStream.stream;
 
   // --- Phase 2: Typed state subscription ---
@@ -196,27 +166,19 @@ class Synheart {
   /// In Personal mode, the call succeeds silently but data is dropped.
   /// In Insight/Research mode, the metric is persisted to SQLite.
   static Future<void> recordMetric(MetricEvent event) async {
-    final handle = shared._currentSessionHandle;
-    if (handle == null) return; // No active session
-    final policy = shared._storagePolicy;
-    if (policy == null || !policy.canIncludeMetrics()) return;
-    try {
-      await shared._storageManager?.insertMetric(handle.sessionId, event);
-    } catch (e) {
-      SynheartLogger.log('[Synheart] recordMetric failed (dropped): $e');
+    if (_coreRuntime != null) {
+      _coreRuntime!.recordMetric(event.toJson());
+      return;
     }
   }
 
   /// Record multiple metric events for the current session.
   static Future<void> recordMetrics(List<MetricEvent> events) async {
-    final handle = shared._currentSessionHandle;
-    if (handle == null) return;
-    final policy = shared._storagePolicy;
-    if (policy == null || !policy.canIncludeMetrics()) return;
-    try {
-      await shared._storageManager?.insertMetrics(handle.sessionId, events);
-    } catch (e) {
-      SynheartLogger.log('[Synheart] recordMetrics failed (dropped): $e');
+    if (_coreRuntime != null) {
+      for (final event in events) {
+        _coreRuntime!.recordMetric(event.toJson());
+      }
+      return;
     }
   }
 
@@ -224,50 +186,33 @@ class Synheart {
 
   /// List stored sessions with optional filters.
   static Future<List<SessionRecord>> listSessions({SessionRange? range}) async {
-    final sm = shared._storageManager;
-    if (sm == null || !sm.isOpen) return [];
-    return sm.listSessions(
-      startMs: range?.startMs,
-      endMs: range?.endMs,
-      mode: range?.mode != null
-          ? SynheartMode.values.firstWhere(
-              (m) => m.name == range!.mode,
-              orElse: () => SynheartMode.personal,
-            )
-          : null,
-    );
+    if (_coreRuntime != null) {
+      final raw = _coreRuntime!.listSessions();
+      if (raw != null) {
+        return raw
+            .cast<Map<String, dynamic>>()
+            .map((m) => SessionRecord.fromMap(m))
+            .toList();
+      }
+    }
+    return [];
   }
 
   /// Get a session summary (decrypted) for the given session.
   static Future<Map<String, dynamic>?> getSessionSummary(
     String sessionId,
   ) async {
-    final sm = shared._storageManager;
-    if (sm == null || !sm.isOpen) return null;
-
-    // Check cache first
-    final cached = await sm.getSummaryJson(sessionId);
-    if (cached != null) {
-      try {
-        return Map<String, dynamic>.from(
-          const JsonDecoder().convert(cached) as Map,
-        );
-      } catch (_) {}
+    if (_coreRuntime != null) {
+      final json = _coreRuntime!.getSessionSummary(sessionId);
+      if (json != null) {
+        try {
+          return Map<String, dynamic>.from(
+            const JsonDecoder().convert(json) as Map,
+          );
+        } catch (_) {}
+      }
     }
-
-    // Find the session_summary artifact, decrypt, parse
-    final smk = shared._smk;
-    if (smk == null) return null;
-    final artifacts = await sm.getArtifactsBySession(
-      sessionId,
-      type: 'session_summary',
-    );
-    if (artifacts.isEmpty) return null;
-    try {
-      return ArtifactCrypto.decrypt(smk, artifacts.first.payload);
-    } catch (_) {
-      return null;
-    }
+    return null;
   }
 
   /// Get decrypted HSI window artifacts for a session.
@@ -275,46 +220,45 @@ class Synheart {
     String sessionId, {
     WindowRange? range,
   }) async {
-    final sm = shared._storageManager;
-    final smk = shared._smk;
-    if (sm == null || !sm.isOpen || smk == null) return [];
-
-    final artifacts = await sm.getArtifactsBySession(
-      sessionId,
-      type: 'hsi_window',
-    );
-
-    final results = <Map<String, dynamic>>[];
-    for (final art in artifacts) {
-      if (range?.startMs != null && art.startMs < range!.startMs!) continue;
-      if (range?.endMs != null && art.endMs > range!.endMs!) continue;
-      try {
-        results.add(await ArtifactCrypto.decrypt(smk, art.payload));
-      } catch (_) {}
-      if (range?.limit != null && results.length >= range!.limit!) break;
+    if (_coreRuntime != null) {
+      final raw = _coreRuntime!.getHsiWindows(
+        sessionId,
+        startMs: range?.startMs ?? 0,
+        endMs: range?.endMs ?? 0,
+        limit: range?.limit ?? 0,
+      );
+      if (raw != null) {
+        return raw.cast<Map<String, dynamic>>();
+      }
     }
-    return results;
+    return [];
   }
 
   // --- Phase 2: Storage & Retention ---
 
   /// Get storage usage statistics.
   static Future<StorageUsage> getStorageUsage() async {
-    final sm = shared._storageManager;
-    if (sm == null || !sm.isOpen) {
-      return const StorageUsage(totalBytes: 0, bySessionBytes: {});
+    if (_coreRuntime != null) {
+      final result = _coreRuntime!.getStorageUsage();
+      if (result != null) {
+        return StorageUsage(
+          totalBytes: result['total_bytes'] as int? ?? 0,
+          bySessionBytes: (result['by_session_bytes'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(k, v as int)) ?? {},
+        );
+      }
     }
-    return sm.getStorageUsage();
+    return const StorageUsage(totalBytes: 0, bySessionBytes: {});
   }
 
   /// Set retention policy. Sessions older than [days] will be cleaned up.
   /// Pass null to disable retention.
   static Future<void> setRetentionDays(int? days) async {
     if (days == null) return;
-    final sm = shared._storageManager;
-    if (sm == null || !sm.isOpen) return;
-    final cutoffMs = DateTime.now().millisecondsSinceEpoch - (days * 86400000);
-    await sm.enforceRetention(cutoffMs);
+    if (_coreRuntime != null) {
+      _coreRuntime!.setRetentionDays(days);
+      return;
+    }
   }
 
   // --- Phase 2: Deletion API ---
@@ -322,45 +266,39 @@ class Synheart {
   /// Delete a session and all its artifacts locally.
   /// Creates tombstones for future sync propagation.
   static Future<void> deleteLocalSession(String sessionId) async {
-    final sm = shared._storageManager;
-    if (sm == null || !sm.isOpen) return;
-    await sm.deleteSession(sessionId, createTombstones: true);
+    if (_coreRuntime != null) {
+      _coreRuntime!.deleteSession(sessionId);
+      return;
+    }
   }
 
   /// Wipe all local data: SQLite, SMK, and reset state.
   static Future<void> wipeLocalData() async {
+    if (_coreRuntime != null) {
+      _coreRuntime!.wipeLocalData();
+      shared._currentSessionHandle = null;
+      shared._isRunning = false;
+      return;
+    }
     // Stop if running
     if (shared._isRunning) {
       await shared._stopDataCollection();
     }
 
-    // Close and wipe storage
-    final sm = shared._storageManager;
-    if (sm != null && sm.isOpen) {
-      await sm.wipeAll();
-      await sm.close();
-    }
-    shared._storageManager = null;
-
-    // Delete SMK and URK
-    await SMK.delete();
-    await URK.delete();
-
-    // Phase 3: Clear sync state
-    shared._syncModule?.dispose();
-    shared._syncModule = null;
-    // Clear session_secret
-    try { await shared._secureStorage.delete(key: 'synheart.session_secret'); } catch (_) {}
-
-    // Reset Phase 1 fields
-    shared._artifactPipeline = null;
-    shared._storagePolicy = null;
-    shared._smk = null;
     shared._currentSessionHandle = null;
   }
 
   /// Request account deletion — wipes local data and requests server-side deletion.
   static Future<DeletionRequestResult> requestAccountDeletion() async {
+    if (_coreRuntime != null) {
+      final ok = _coreRuntime!.requestAccountDeletion();
+      return DeletionRequestResult(
+        status: ok ? 'accepted' : 'error',
+        message: ok
+            ? 'Account deletion requested via core runtime.'
+            : 'Account deletion request failed.',
+      );
+    }
     final token = shared._consentModule?.getCurrentToken();
     if (token != null && token.isValid) {
       try {
@@ -386,6 +324,15 @@ class Synheart {
 
   /// Cancel a pending account deletion request.
   static Future<DeletionRequestResult> cancelAccountDeletion() async {
+    if (_coreRuntime != null) {
+      final ok = _coreRuntime!.cancelAccountDeletion();
+      return DeletionRequestResult(
+        status: ok ? 'cancelled' : 'error',
+        message: ok
+            ? 'Account deletion cancelled via core runtime.'
+            : 'Account deletion cancellation failed.',
+      );
+    }
     final token = shared._consentModule?.getCurrentToken();
     if (token == null || !token.isValid) {
       return const DeletionRequestResult(
@@ -424,34 +371,39 @@ class Synheart {
 
   // --- Phase 3: Auth ---
 
-  /// Log out — revoke consent, dispose sync, clear URK.
+  /// Log out — revoke consent.
   static Future<void> logout() async {
-    shared._syncModule?.dispose();
+    if (_coreRuntime != null) {
+      _coreRuntime!.wipeLocalData();
+    }
     try { await shared._consentModule?.revokeConsent(); } catch (_) {}
-    await URK.delete();
   }
 
   // --- Phase 3: Sync API ---
 
   /// Enable or disable sync.
   static Future<void> setSyncEnabled(bool enabled) async {
-    await shared._syncModule?.setSyncEnabled(enabled);
+    if (_coreRuntime != null) {
+      _coreRuntime!.setSyncEnabled(enabled);
+      return;
+    }
   }
 
   /// Execute a sync cycle (push + pull).
   static Future<SyncResult> syncNow() async {
-    final sync = shared._syncModule;
-    if (sync == null) return const SyncResult();
-    return sync.syncNow();
+    if (_coreRuntime != null) {
+      final result = _coreRuntime!.syncNow();
+      return SyncResult(
+        pushed: result?['pushed'] as int? ?? 0,
+        pulled: result?['pulled'] as int? ?? 0,
+      );
+    }
+    return const SyncResult();
   }
 
   /// Get current sync status.
   static Future<SyncStatus> getSyncStatus() async {
-    final sync = shared._syncModule;
-    if (sync == null) {
-      return const SyncStatus(enabled: false);
-    }
-    return sync.getStatus();
+    return const SyncStatus(enabled: false);
   }
 
   // Activation API (RFC-0005)
@@ -545,6 +497,31 @@ class Synheart {
     _userId = userId;
     _config = config ?? SynheartConfig.defaults();
 
+    // Initialize Rust core runtime bridge (best-effort; null if native lib absent)
+    try {
+      final resolvedCfg = _config!;
+      _coreRuntime = CoreRuntimeBridge.create({
+        'app_id': resolvedCfg.appId,
+        'subject_id': resolvedCfg.subjectId,
+        'mode': resolvedCfg.mode.name,
+        'device_id': resolvedCfg.deviceId ?? '',
+        'app_version': resolvedCfg.appVersion ?? '0.0.0',
+        'platform': 'flutter',
+        'storage': {'enabled': resolvedCfg.storage.enabled},
+        'sync': {
+          'enabled': resolvedCfg.sync.enabled,
+          'base_url': resolvedCfg.sync.baseUrl,
+        },
+        'privacy': {'allow_research': resolvedCfg.privacy.allowResearch},
+      });
+      if (_coreRuntime != null) {
+        SynheartLogger.log('[Synheart] Rust core runtime bridge loaded');
+      }
+    } catch (e) {
+      SynheartLogger.log('[Synheart] Rust core runtime bridge unavailable: $e');
+      _coreRuntime = null;
+    }
+
     try {
       SynheartLogger.log('[Synheart] Initializing capability module...');
       _capabilityModule = CapabilityModule();
@@ -631,111 +608,35 @@ class Synheart {
 
       SynheartLogger.log('[Synheart] Initializing Runtime...');
       final rawId = _userId!;
-      final runtimeConfig = RuntimeConfig(
-        subjectId: rawId.startsWith('sub_') ? rawId : 'sub_$rawId',
-        sessionId: 'sess_${DateTime.now().millisecondsSinceEpoch}',
-      );
-      final bridge = RuntimeBridge.createIfAvailable(runtimeConfig);
-      if (bridge == null) {
+      final runtimeSubjectId = rawId.startsWith('sub_') ? rawId : 'sub_$rawId';
+      final runtimeSessionId = 'sess_${DateTime.now().millisecondsSinceEpoch}';
+
+      if (_coreRuntime == null) {
         SynheartLogger.log(
-          '[Synheart] WARNING: Native runtime (libsynheart_runtime.so) not loaded — '
-          'no HSI will be produced. Ensure .so files exist in example/android/app/src/main/jniLibs/<abi>/ '
+          '[Synheart] WARNING: Native runtime (libsynheart_core_runtime) not loaded — '
+          'no HSI will be produced. Ensure native library is bundled '
           'and do a clean build (flutter clean && flutter run).',
         );
       } else {
         SynheartLogger.log(
-          '[Synheart] Runtime bridge created. isLabAvailable=${bridge.isLabAvailable} '
-          '(Lab requires synheart-runtime built with: cargo build --release --features lab)',
+          '[Synheart] Core runtime bridge loaded. isLabAvailable=${_coreRuntime!.isLabAvailable} '
+          '(Lab requires synheart-engine built with: cargo build --release --features lab)',
         );
       }
-      _runtimeModule = RuntimeModule(
-        runtime: bridge,
-        wearSampleStream: _wearModule!.rawSampleStream,
-        behaviorEventStream: _behaviorModule!.eventStream.events,
-        batchIngestOnStop: _config?.batchIngestOnStop ?? false,
-      );
-      _moduleManager.registerModule(
-        _runtimeModule!,
-        dependsOn: ['wear', 'behavior'],
-      );
-      // Wire wearable event processor for vendor sync (RAMEN → SRM pipeline)
-      if (_storageManager != null) {
-        _wearModule!.setEventProcessor(WearableEventProcessor(
-          storage: _storageManager!,
-          bridge: bridge,
-          subjectId: runtimeConfig.subjectId,
-          deviceInstallId: runtimeConfig.sessionId,
-        ));
-      }
 
-      // Push all behavior events (notification, app_switch, touch, etc.) to the runtime and ensure tick is started
-      if (bridge != null) {
+      // Wire wearable event processor for vendor sync (RAMEN → pipeline)
+      _wearModule!.setEventProcessor(WearableEventProcessor(
+        bridge: _coreRuntime,
+        subjectId: runtimeSubjectId,
+        deviceInstallId: runtimeSessionId,
+      ));
+
+      // Push all behavior events (notification, app_switch, touch, etc.) to the runtime
+      if (_coreRuntime != null) {
         _behaviorModule!.pushBehaviorToRuntime =
             (int tsMs, int eventType, double value) {
-              _runtimeModule?.pushBehaviorAndEnsureTick(tsMs, eventType, value);
+              _coreRuntime?.pushBehavior(tsMs, eventType, value);
             };
-      }
-
-      if (_config?.cloudConfig != null) {
-        SynheartLogger.log('[Synheart] Initializing Cloud Connector...');
-        final cloudCfg = _config!.cloudConfig!;
-        // If device auth is configured and no custom authProvider was set,
-        // use the DeviceAuthProvider automatically.
-        final effectiveCloudConfig =
-            (cloudCfg.authProvider == null && _deviceAuthProvider != null)
-                ? CloudConfig(
-                    tenantId: cloudCfg.tenantId,
-                    authProvider: _deviceAuthProvider,
-                    subjectId: cloudCfg.subjectId,
-                    instanceId: cloudCfg.instanceId,
-                    apiKey: cloudCfg.apiKey,
-                    orgId: cloudCfg.orgId,
-                    baseUrl: cloudCfg.baseUrl,
-                    subjectType: cloudCfg.subjectType,
-                    maxQueueSize: cloudCfg.maxQueueSize,
-                    batchSize: cloudCfg.batchSize,
-                    uploadInterval: cloudCfg.uploadInterval,
-                    maxRetries: cloudCfg.maxRetries,
-                    enableBacklog: cloudCfg.enableBacklog,
-                  )
-                : cloudCfg;
-        _cloudConnector = CloudConnectorModule(
-          capabilities: _capabilityModule!,
-          consent: _consentModule!,
-          hsiRuntime: _runtimeModule!,
-          config: effectiveCloudConfig,
-        );
-        _moduleManager.registerModule(
-          _cloudConnector!,
-          dependsOn: ['capabilities', 'consent', 'runtime'],
-        );
-      }
-
-      if (_config?.labIngestConfig != null) {
-        SynheartLogger.log('[Synheart] Initializing Lab Ingest...');
-        final piCfg = _config!.labIngestConfig!;
-        // If device auth is configured and no custom authProvider was set,
-        // use the DeviceAuthProvider automatically.
-        final effectivePiConfig =
-            (piCfg.authProvider == null && _deviceAuthProvider != null)
-                ? LabIngestConfig(
-                    baseUrl: piCfg.baseUrl,
-                    apiKey: piCfg.apiKey,
-                    hmacSecret: piCfg.hmacSecret,
-                    authProvider: _deviceAuthProvider,
-                    timeout: piCfg.timeout,
-                    maxRetries: piCfg.maxRetries,
-                    autoIngest: piCfg.autoIngest,
-                  )
-                : piCfg;
-        _labIngestModule = LabIngestModule(
-          consentModule: _consentModule!,
-          config: effectivePiConfig,
-        );
-        _moduleManager.registerModule(
-          _labIngestModule!,
-          dependsOn: ['consent'],
-        );
       }
 
       _watchSessionModule = WatchSessionModule();
@@ -748,81 +649,30 @@ class Synheart {
 
       _consentModule!.addListener(_onConsentChanged);
 
-      _hsvSubscription = _runtimeModule!.hsiStream.listen(
-        (hsiJson) {
+      // Wire HSI callback from core runtime → _hsvStream + session engine
+      if (_coreRuntime != null) {
+        _coreRuntime!.setHsiCallback((hsiJson) {
           final consent = _consentModule?.current();
           if (consent == null || !consent.biosignals) return;
           _hsvStream.add(hsiJson);
-        },
-        onError: (e, st) => SynheartLogger.log(
-          '[Synheart] HSI stream error: $e',
-          error: e,
-          stackTrace: st,
-        ),
-      );
 
-      // Bridge HSI metrics from runtime → session engine (HRV is authoritative
-      // from session-runtime; the session SDK no longer computes it locally).
-      _hsiToSessionSubscription = _runtimeModule!.hsiStream.listen(
-        (hsiJson) {
+          // Bridge HSI metrics from runtime → session engine
           final sid = _activeMainSessionId;
           if (sid == null || _mainSession == null) return;
           try {
             final parsed = jsonDecode(hsiJson) as Map<String, dynamic>;
             _mainSession!.ingestHsiMetrics(sid, parsed);
           } catch (_) {}
-        },
-      );
+        });
+      }
 
       _activationManager = ActivationManager();
       _activationManager!.activateFromConfig(resolvedConfig);
 
-      // Phase 1: Initialize storage and artifact pipeline
-      if (resolvedConfig.storage.enabled &&
-          resolvedConfig.appId.isNotEmpty &&
-          resolvedConfig.subjectId.isNotEmpty) {
-        try {
-          _storagePolicy = StoragePolicy.forMode(resolvedConfig.mode);
-          _smk = await SMK.loadOrCreate();
-          _storageManager = StorageManager(
-            basePath: await _getStorageBasePath(),
-          );
-          await _storageManager!.open();
-
-          _artifactPipeline = ArtifactPipeline(
-            storage: _storageManager!,
-            policy: _storagePolicy!,
-            smk: _smk!,
-            subjectId: resolvedConfig.subjectId,
-            appId: resolvedConfig.appId,
-            appVersion: resolvedConfig.appVersion,
-            deviceId: resolvedConfig.deviceId,
-            platform: resolvedConfig.platform,
-          );
-
-          // Wire HSI stream to artifact pipeline
-          _artifactHsiSubscription = _runtimeModule!.hsiStream.listen((
-            hsiJson,
-          ) async {
-            if (_artifactPipeline != null && _currentSessionHandle != null) {
-              final nowMs = DateTime.now().millisecondsSinceEpoch;
-              await _artifactPipeline!.ingestHsiFrame(hsiJson, nowMs);
-            }
-          });
-
-          SynheartLogger.log(
-            '[Synheart] Storage and artifact pipeline initialized',
-          );
-        } catch (e) {
-          SynheartLogger.log('[Synheart] Storage init failed (non-fatal): $e');
-        }
-      }
-
-      // Phase 3: Initialize auth and sync modules
+      // Phase 3: Initialize auth
       final appId = resolvedConfig.appId;
       if (appId.isNotEmpty) {
         // Configure synheart-auth for device attestation + signing.
-        // Uses deviceAuthConfig.authBaseUrl if available, otherwise default.
         final authBaseUrl = resolvedConfig.deviceAuthConfig?.authBaseUrl
             ?? 'https://auth.synheart.ai';
         try {
@@ -830,36 +680,6 @@ class Synheart {
         } catch (e) {
           SynheartLogger.log('[Synheart] SynheartAuth configure failed (non-fatal): $e');
         }
-
-        // Generate or load session_secret for URK derivation (local, not from server)
-        String? sessionSecret;
-        try {
-          final ss = await _secureStorage.read(key: 'synheart.session_secret');
-          if (ss == null) {
-            final random = Random.secure();
-            final bytes = Uint8List(32);
-            for (int i = 0; i < 32; i++) bytes[i] = random.nextInt(256);
-            sessionSecret = base64Encode(bytes);
-            await _secureStorage.write(key: 'synheart.session_secret', value: sessionSecret);
-          } else {
-            sessionSecret = ss;
-          }
-        } catch (e) {
-          SynheartLogger.log('[Synheart] session_secret init failed (non-fatal): $e');
-        }
-
-        // Sync uses ConsentModule's token for Bearer auth.
-        if (_storageManager != null && _storageManager!.isOpen && _consentModule != null) {
-          _syncModule = SyncModule(
-            consent: _consentModule!,
-            storage: _storageManager!,
-            baseUrl: resolvedConfig.sync.baseUrl,
-            smk: _smk,
-            subjectId: resolvedConfig.subjectId,
-            sessionSecret: sessionSecret,
-          );
-        }
-        SynheartLogger.log('[Synheart] Sync module initialized');
       }
 
       if (autoStart) {
@@ -908,7 +728,7 @@ class Synheart {
   /// Start a session — activates permitted modules and begins signal collection.
   ///
   /// Per RFC §5.2: Core must activate permitted modules, route normalized
-  /// signals to synheart-runtime, enable HSV updates, and enable optional HSI export.
+  /// signals to synheart-engine, enable HSV updates, and enable optional HSI export.
   ///
   /// Must be called after initialize(). No data collection occurs until
   /// this method is called (RFC §3.3).
@@ -919,6 +739,18 @@ class Synheart {
   /// [durationSec] if set, the session will end automatically after that many
   /// seconds (Session SDK boundary). If null, session runs until [stopSession].
   static Future<SessionHandle?> startSession({int? durationSec}) async {
+    if (_coreRuntime != null) {
+      final result = _coreRuntime!.startSession();
+      if (result != null) {
+        shared._currentSessionHandle = SessionHandle(
+          sessionId: result['session_id'] as String,
+          startedAtMs: result['started_at_ms'] as int,
+          mode: shared._config?.mode ?? SynheartMode.personal,
+        );
+        shared._isRunning = true;
+        return shared._currentSessionHandle;
+      }
+    }
     await shared._startDataCollection(durationSec: durationSec);
     return shared._currentSessionHandle;
   }
@@ -928,9 +760,15 @@ class Synheart {
 
   /// Stop the current session — halts module streaming and clears ephemeral buffers.
   ///
-  /// Per RFC §5.2: Core must halt module streaming, stop synheart-runtime updates,
+  /// Per RFC §5.2: Core must halt module streaming, stop synheart-engine updates,
   /// clear ephemeral buffers, and prevent further HSI export.
   static Future<void> stopSession() async {
+    if (_coreRuntime != null) {
+      _coreRuntime!.stopSession();
+      shared._currentSessionHandle = null;
+      shared._isRunning = false;
+      return;
+    }
     return shared._stopDataCollection();
   }
 
@@ -1201,22 +1039,19 @@ class Synheart {
   }
 
   /// Number of HSI snapshots pending upload (0 if cloud connector not enabled).
-  static int get uploadQueueLength =>
-      shared._cloudConnector?.uploadQueueLength ?? 0;
+  static int get uploadQueueLength => 0;
 
   /// Batch id from the last successful cloud ingest (null if none yet).
-  static String? get lastUploadBatchId =>
-      shared._cloudConnector?.lastUploadBatchId;
+  static String? get lastUploadBatchId => null;
 
   /// Time of the last successful cloud ingest (null if none yet).
-  static DateTime? get lastUploadAt => shared._cloudConnector?.lastUploadAt;
+  static DateTime? get lastUploadAt => null;
 
   /// Last upload error message (null when last attempt succeeded or no attempt yet).
-  static String? get lastUploadError => shared._cloudConnector?.lastUploadError;
+  static String? get lastUploadError => null;
 
   /// Time of the last upload attempt (success or failure); null if no attempt yet.
-  static DateTime? get lastUploadAttemptAt =>
-      shared._cloudConnector?.lastUploadAttemptAt;
+  static DateTime? get lastUploadAttemptAt => null;
 
   /// Force-upload queued HSI snapshots through Cloud Connector now.
   ///
@@ -1240,15 +1075,11 @@ class Synheart {
   static Future<LabIngestResponse> ingestSession(
     Map<String, dynamic> payload,
   ) async {
-    final mod = shared._labIngestModule;
-    if (mod == null) {
-      return const LabIngestResponse(
-        success: false,
-        statusCode: 0,
-        errorMessage: 'LabIngestModule not configured',
-      );
-    }
-    return mod.ingestSession(payload);
+    return const LabIngestResponse(
+      success: false,
+      statusCode: 0,
+      errorMessage: 'LabIngestModule removed — use core runtime bridge',
+    );
   }
 
   /// Ingest a metadata payload via the lab ingestion service.
@@ -1256,56 +1087,24 @@ class Synheart {
   static Future<LabIngestResponse> ingestMetadata(
     Map<String, dynamic> payload,
   ) async {
-    final mod = shared._labIngestModule;
-    if (mod == null) {
-      return const LabIngestResponse(
-        success: false,
-        statusCode: 0,
-        errorMessage: 'LabIngestModule not configured',
-      );
-    }
-    return mod.ingestMetadata(payload);
+    return const LabIngestResponse(
+      success: false,
+      statusCode: 0,
+      errorMessage: 'LabIngestModule removed — use core runtime bridge',
+    );
   }
 
-  /// The underlying [LabIngestClient] for standalone/background usage.
-  /// Returns null if [LabIngestConfig] was not provided at init time.
-  static LabIngestClient? get labIngestClient =>
-      shared._labIngestModule?.client;
-
   Future<void> _uploadHsiNow() async {
-    final cloud = _cloudConnector;
-    if (cloud == null) return;
-    await cloud.uploadNow();
+    // Cloud connector removed — no-op.
   }
 
   Future<void> _enqueueHsiSnapshots(List<String> hsiJsons) async {
-    final cloud = _cloudConnector;
-    if (cloud == null || hsiJsons.isEmpty) return;
-    await cloud.enqueueSnapshots(hsiJsons);
+    // Cloud connector removed — no-op.
   }
 
   /// Build and ingest a platform session payload from internal SDK data.
   Future<void> _autoIngestSession(SessionHandle session) async {
-    final wearSamples = List<WearSample>.from(_sessionWearBuffer);
-    final behaviorEvents =
-        _behaviorModule?.rawEvents(WindowType.window1h) ?? [];
-    final phoneDataPoints =
-        _phoneModule?.rawDataPoints(WindowType.window1h) ?? [];
-
-    final payload = LabPayloadBuilder.buildSession(
-      sessionId: session.sessionId,
-      deviceId: _config?.deviceId ?? '',
-      appId: _config?.appId ?? '',
-      userId: _config?.subjectId ?? '',
-      startedAtMs: session.startedAtMs,
-      endedAtMs: DateTime.now().millisecondsSinceEpoch,
-      dataOnCloud: _syncModule?.enabled ?? false,
-      wearSamples: wearSamples,
-      behaviorEvents: behaviorEvents,
-      phoneDataPoints: phoneDataPoints,
-    );
-
-    await _labIngestModule!.ingestSession(payload);
+    // No-op: lab ingest module removed.
   }
 
   /// Check if user has granted a specific consent
@@ -1315,6 +1114,9 @@ class Synheart {
   /// bool hasConsent = await Synheart.hasConsent('biosignals');
   /// ```
   static Future<bool> hasConsent(String consentType) async {
+    if (_coreRuntime != null) {
+      return _coreRuntime!.hasConsent(consentType);
+    }
     return shared._hasConsent(consentType);
   }
 
@@ -1347,6 +1149,10 @@ class Synheart {
   /// await Synheart.revokeConsentType('biosignals');
   /// ```
   static Future<void> revokeConsentType(String consentType) async {
+    if (_coreRuntime != null) {
+      _coreRuntime!.revokeConsent(consentType);
+      // Fall through to Dart consent module so UI stays in sync
+    }
     return shared._revokeConsentType(consentType);
   }
 
@@ -1383,83 +1189,78 @@ class Synheart {
   /// Get behavior module for recording events
   BehaviorModule? get behaviorModule => _behaviorModule;
 
-  /// Get runtime module (for diagnostics and direct bridge access)
-  RuntimeModule? get runtimeModule => _runtimeModule;
+  /// Get the core runtime bridge (for diagnostics and direct FFI access).
+  CoreRuntimeBridge? get coreRuntime => _coreRuntime;
 
   /// Whether the runtime uses batch ingest on stop (true) or streaming/realtime (false).
-  /// Can be read and set at runtime; changes apply to the next session start.
+  /// Batch ingest is now managed by the core runtime; this returns the config value.
   static bool get batchIngestOnStop =>
-      shared._runtimeModule?.batchIngestOnStop ?? false;
+      shared._batchIngestOnStop ?? shared._config?.batchIngestOnStop ?? false;
 
   /// Set runtime mode: true = batch ingest when session stops, false = realtime HSI every ~10s.
   /// Applies to the next session start; safe to call when initialized.
   static void setBatchIngestOnStop(bool value) {
-    final rm = shared._runtimeModule;
-    if (rm != null) rm.batchIngestOnStop = value;
+    shared._batchIngestOnStop = value;
   }
 
   /// Push a touch behavior event into the runtime for the given timestamp (ms since epoch).
   /// Use from game screens so taps are reflected in behavioral_metrics in exports/lab.
   /// No-op if runtime or bridge is unavailable.
   static void pushBehaviorTouch(int tsMs) {
-    shared._runtimeModule?.bridge?.pushBehavior(tsMs, 2, 1.0);
+    _coreRuntime?.pushBehavior(tsMs, 2, 1.0);
   }
 
   /// Push a notification-received behavior event into the runtime for the given timestamp (ms since epoch).
   /// Call when the app displays or receives a notification so behavioral_metrics include notification counts.
   /// No-op if runtime or bridge is unavailable.
   static void pushBehaviorNotificationReceived(int tsMs) {
-    shared._runtimeModule?.bridge?.pushBehavior(tsMs, 4, 1.0);
+    _coreRuntime?.pushBehavior(tsMs, 4, 1.0);
   }
 
   /// Push a wear HR event into runtime and optionally synthesize RR.
   /// Use when HR is coming from external/watch channels not wired to WearModule.
   static void pushWearHr(int tsMs, double bpm, {bool synthesizeRr = true}) {
-    shared._runtimeModule?.pushWearHrAndEnsureTick(
-      tsMs,
-      bpm,
-      synthesizeRr: synthesizeRr,
-    );
+    _coreRuntime?.pushHr(tsMs, bpm);
   }
 
-  // ── synheart-runtime SRM API (baselines live in the native Rust engine) ──
+  // ── synheart-engine SRM API (baselines live in the native Rust engine) ──
 
-  /// Baseline summary from the native synheart-runtime.
+  /// Baseline summary from the native synheart-engine.
   ///
   /// Returns a JSON string like `{"total":14,"ready":0,"warming":5,"empty":9}`
   /// or `null` if the native runtime is not linked.
   static String? get runtimeBaselineSummary {
-    return shared._runtimeModule?.bridge?.baselineSummary();
+    return _coreRuntime?.baselinesJson();
   }
 
   /// All native runtime baselines as JSON, or `null`.
   static String? get runtimeBaselinesJson {
-    return shared._runtimeModule?.bridge?.baselinesJson();
+    return _coreRuntime?.baselinesJson();
   }
 
   /// Export the native runtime SRM snapshot as JSON for cross-session persistence.
   static String? exportRuntimeSRMSnapshot() {
-    return shared._runtimeModule?.bridge?.exportSrmSnapshot();
+    return _coreRuntime?.exportSrmSnapshot();
   }
 
   /// Load a native runtime SRM snapshot from JSON.
-  /// Returns 0 on success, non-zero error code on failure.
-  static int? loadRuntimeSRMSnapshot(String json) {
-    return shared._runtimeModule?.bridge?.loadSrmSnapshot(json);
+  /// Returns true on success, false on failure.
+  static bool loadRuntimeSRMSnapshot(String json) {
+    return _coreRuntime?.loadSrmSnapshot(json) ?? false;
   }
 
-  /// The native synheart-runtime version, or `null` if unavailable.
-  static String? get runtimeVersion => RuntimeBridge.version();
+  /// The native synheart-engine version, or `null` if unavailable.
+  static String? get runtimeVersion => CoreRuntimeBridge.version();
 
   // ── synheart-lab session API ──
 
   /// Whether the lab C ABI symbols are available in the loaded native library.
   static bool get isLabAvailable =>
-      shared._runtimeModule?.bridge?.isLabAvailable ?? false;
+      _coreRuntime?.isLabAvailable ?? false;
 
   /// Start a lab session. Returns `null` on success, or an error string.
   static String? labStart(String protocolJson, int startedAtMs) {
-    return shared._runtimeModule?.bridge?.labStart(protocolJson, startedAtMs);
+    return _coreRuntime?.labStart(protocolJson, startedAtMs);
   }
 
   /// Open a window in the active lab session. Returns the window ID.
@@ -1469,29 +1270,26 @@ class Synheart {
     String? label,
     required int startedAtMs,
   }) {
-    return shared._runtimeModule?.bridge?.labOpenWindow(
-      parentId: parentId,
-      windowType: windowType,
-      label: label,
-      startedAtMs: startedAtMs,
+    return _coreRuntime?.labOpenWindow(
+      parentId, windowType, label, startedAtMs,
     );
   }
 
   /// Close a window in the active lab session.
   static void labCloseWindow(String windowId, int endedAtMs) {
-    shared._runtimeModule?.bridge?.labCloseWindow(windowId, endedAtMs);
+    _coreRuntime?.labCloseWindow(windowId, endedAtMs);
   }
 
   /// Set protocol-specific values on a lab window.
   static void labSetWindowValues(String windowId, String valuesJson) {
-    shared._runtimeModule?.bridge?.labSetWindowValues(windowId, valuesJson);
+    _coreRuntime?.labSetWindowValues(windowId, valuesJson);
   }
 
   /// Merge session-level metadata into `session_metadata.extra_data`.
   ///
   /// Returns `null` on success, or an error string.
   static String? labMergeSessionExtraData(String patchJson) {
-    return shared._runtimeModule?.bridge?.labMergeSessionExtraData(patchJson);
+    return _coreRuntime?.labMergeExtraData(patchJson);
   }
 
   /// Set per-window state-data overrides before closing a lab window.
@@ -1502,21 +1300,18 @@ class Synheart {
     String windowId,
     String overridesJson,
   ) {
-    shared._runtimeModule?.bridge?.labSetWindowStateOverrides(
-      windowId,
-      overridesJson,
-    );
+    _coreRuntime?.labSetStateOverrides(windowId, overridesJson);
   }
 
   /// Flush buffered behavior/wear events to the native runtime (batch mode only).
   /// Call before [labFinalize] so the lab payload includes behavior_data.
   static void flushRuntimeBatch() {
-    shared._runtimeModule?.flushBatch();
+    // In core runtime, batching is handled internally; this is a no-op.
   }
 
   /// Finalize the lab session and return the complete payload JSON.
   static String? labFinalize(int endedAtMs) {
-    return shared._runtimeModule?.bridge?.labFinalize(endedAtMs);
+    return _coreRuntime?.labFinalize(endedAtMs);
   }
 
   // Collection status getters
@@ -1538,13 +1333,11 @@ class Synheart {
     _sessionWearSubscription?.cancel();
     _sessionHsiBuffer = [];
     _sessionWearBuffer = [];
-    if (_runtimeModule != null) {
-      _sessionHsiSubscription = _runtimeModule!.hsiStream.listen((hsiJson) {
-        final consent = _consentModule?.current();
-        if (consent == null || !consent.biosignals) return;
-        _sessionHsiBuffer.add(hsiJson);
-      });
-    }
+    // HSI session buffer is filled via the setHsiCallback wired in configure().
+    // The _hsvStream already receives consent-gated HSI; listen to it for session buffering.
+    _sessionHsiSubscription = _hsvStream.stream.listen((hsiJson) {
+      _sessionHsiBuffer.add(hsiJson);
+    });
     if (_wearModule != null) {
       _sessionWearSubscription = _wearModule!.rawSampleStream.listen(
         (sample) => _sessionWearBuffer.add(sample),
@@ -1552,22 +1345,13 @@ class Synheart {
     }
   }
 
-  /// Log runtime (native synheart-runtime) summary to the Flutter terminal.
-  Future<String> _getStorageBasePath() async {
-    // Use sqflite's getDatabasesPath as the base for storage
-    final dbPath = await getDatabasesPath();
-    return dbPath;
-  }
-
   void _logRuntimeSummary() {
-    final bridge = _runtimeModule?.bridge;
-    if (bridge == null) return;
-    final fc = bridge.frameCount();
-    final q = bridge.lastQuality();
-    final wearSamples = _runtimeModule?.wearSampleCount ?? 0;
+    if (_coreRuntime == null) return;
+    final fc = _coreRuntime!.frameCount();
+    final q = _coreRuntime!.lastQuality();
     SynheartLogger.log(
       '[Runtime] Session end: frameCount=$fc lastQuality=$q'
-      '${fc == 0 ? " (no HSI produced — no window completed, wearSamplesReceived=$wearSamples)" : ""}',
+      '${fc == 0 ? " (no HSI produced — no window completed)" : ""}',
     );
   }
 
@@ -1642,25 +1426,8 @@ class Synheart {
 
     _wireSessionBuffers();
 
-    // Phase 1: Create session record and start artifact pipeline
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final mode = _config?.mode ?? SynheartMode.personal;
-    if (_storageManager != null && _storageManager!.isOpen) {
-      await _storageManager!.insertSession(
-        SessionRecord(
-          sessionId: sessionId,
-          subjectId: _config?.subjectId ?? _userId ?? '',
-          mode: mode.name,
-          createdAtUtc: nowMs ~/ 1000,
-          startUtc: nowMs ~/ 1000,
-          appId: _config?.appId ?? '',
-          appVersion: _config?.appVersion ?? '0.0.0',
-          deviceId: _config?.deviceId ?? '',
-          platform: _config?.platform ?? 'flutter',
-        ),
-      );
-      _artifactPipeline?.onSessionStart(sessionId, mode);
-    }
     _currentSessionHandle = SessionHandle(
       sessionId: sessionId,
       startedAtMs: nowMs,
@@ -1700,51 +1467,7 @@ class Synheart {
     await _sessionWearSubscription?.cancel();
     _sessionWearSubscription = null;
 
-    // Phase 1: Finalize session summary artifact + baseline snapshot
-    if (_artifactPipeline != null && _currentSessionHandle != null) {
-      final nowMs = DateTime.now().millisecondsSinceEpoch;
-      try {
-        await _artifactPipeline!.finalizeSession(
-          _currentSessionHandle!.startedAtMs,
-          nowMs,
-        );
-        SynheartLogger.log('[Synheart] Session summary artifact created');
-      } catch (e) {
-        SynheartLogger.log('[Synheart] Session summary creation failed: $e');
-      }
-
-      // Produce baseline snapshot from native runtime SRM export
-      try {
-        final srmJson = _runtimeModule?.bridge?.exportSrmSnapshot();
-        if (srmJson != null) {
-          await _artifactPipeline!.produceBaselineSnapshot(srmJson);
-          SynheartLogger.log('[Synheart] Baseline snapshot artifact created');
-        }
-      } catch (e) {
-        SynheartLogger.log('[Synheart] Baseline snapshot creation failed: $e');
-      }
-    }
-
-    // Auto-ingest platform session data (before nulling session handle)
-    if (_currentSessionHandle != null &&
-        _labIngestModule != null &&
-        _config?.labIngestConfig?.autoIngest == true) {
-      try {
-        await _autoIngestSession(_currentSessionHandle!);
-        SynheartLogger.log('[Synheart] Lab session auto-ingested');
-      } catch (e) {
-        SynheartLogger.log('[Synheart] Lab auto-ingest failed: $e');
-      }
-    }
-
     _currentSessionHandle = null;
-
-    // Auto-sync after session ends
-    if (_syncModule != null && _syncModule!.enabled) {
-      try {
-        await _syncModule!.syncNow();
-      } catch (_) {}
-    }
 
     _isRunning = false;
     _reevaluateAllFeatures();
@@ -2168,15 +1891,13 @@ class Synheart {
       return false;
     }
 
-    // Check if consent was previously stored
+    // Check if consent was previously granted
     if (_consentModule == null) {
       return true; // No consent module means no stored consent
     }
 
-    // Check if consent exists in storage
-    final storage = ConsentStorage();
-    final hasStoredConsent = await storage.exists();
-    return !hasStoredConsent;
+    final consent = _consentModule!.current();
+    return !consent.biosignals && !consent.behavior && !consent.phoneContext;
   }
 
   /// Get consent information for enabled modules
@@ -2276,6 +1997,15 @@ class Synheart {
     ConsentChannels? grantedChannels,
     bool research = false,
   }) async {
+    if (_coreRuntime != null) {
+      if (biosignals) _coreRuntime!.grantConsent('biosignals');
+      if (behavior) _coreRuntime!.grantConsent('behavior');
+      if (phoneContext) _coreRuntime!.grantConsent('phoneContext');
+      if (cloudUpload) _coreRuntime!.grantConsent('cloudUpload');
+      if (vendorSync) _coreRuntime!.grantConsent('vendorSync');
+      if (research) _coreRuntime!.grantConsent('research');
+      // Fall through to Dart consent module so UI and module wiring stays in sync
+    }
     return shared._grantConsent(
       biosignals: biosignals,
       behavior: behavior,
@@ -2473,14 +2203,6 @@ class Synheart {
       await _behaviorModule!.clearCache();
     }
 
-    // Clear upload queue
-    if (_cloudConnector != null) {
-      await _cloudConnector!.clearQueue();
-    }
-
-    // Clear HSI state (if any persisted state exists)
-    // Note: HSI Runtime doesn't persist state, so nothing to clear
-
     SynheartLogger.log('[Synheart] Local data deleted');
   }
 
@@ -2544,13 +2266,7 @@ class Synheart {
 
     SynheartLogger.log('[Synheart] Deleting cloud data...');
 
-    // Clear upload queue
-    if (_cloudConnector != null) {
-      await _cloudConnector!.clearQueue();
-    }
-
     SynheartLogger.log(
-      '[Synheart] Cloud upload queue cleared. Note: Cloud service data deletion requires API call (not implemented yet)',
     );
   }
 
@@ -2586,13 +2302,11 @@ class Synheart {
   /// Useful for debugging and runtime verification screens.
   /// Returns a map with keys: `isAvailable`, `version`, `frameCount`, `lastQuality`.
   static Map<String, dynamic> runtimeDiagnostics() {
-    final runtime = shared._runtimeModule;
-    final bridge = runtime != null ? runtime.bridge : null;
     return {
-      'isAvailable': bridge != null,
-      'version': RuntimeBridge.version(),
-      'frameCount': bridge?.frameCount() ?? 0,
-      'lastQuality': bridge?.lastQuality(),
+      'isAvailable': _coreRuntime != null,
+      'version': CoreRuntimeBridge.version(),
+      'frameCount': _coreRuntime?.frameCount() ?? 0,
+      'lastQuality': _coreRuntime?.lastQuality() ?? 0.0,
     };
   }
 
@@ -2682,31 +2396,14 @@ class Synheart {
           );
         }
       case SynheartFeature.focus:
-        // Focus is computed by synheart-runtime and available via lastHsv()
+        // Focus is computed by synheart-engine and available via lastHsv()
         break;
       case SynheartFeature.emotion:
-        // Emotion is computed by synheart-runtime and available via lastHsv()
+        // Emotion is computed by synheart-engine and available via lastHsv()
         break;
       case SynheartFeature.cloud:
-        if (isOperational &&
-            _cloudConnector != null &&
-            _cloudConnector!.status != ModuleStatus.running) {
-          _cloudConnector?.start().catchError(
-            (e) => SynheartLogger.log(
-              '[Synheart] Error starting cloud: $e',
-              error: e,
-            ),
-          );
-        } else if (!isOperational &&
-            _cloudConnector != null &&
-            _cloudConnector!.status == ModuleStatus.running) {
-          _cloudConnector?.stop().catchError(
-            (e) => SynheartLogger.log(
-              '[Synheart] Error stopping cloud: $e',
-              error: e,
-            ),
-          );
-        }
+        // Cloud connector removed — managed by core runtime bridge.
+        break;
       case SynheartFeature.syni:
         break;
     }
@@ -2793,25 +2490,11 @@ class Synheart {
       '[Synheart] Device registered: ${regResult.deviceId}',
     );
 
-    // 3. Fetch capability token from server (device-signed request)
     try {
-      final fetcher = RemoteCapabilityTokenFetcher(
-        appId: resolvedConfig.appId,
-        baseUrl: dac.resolvedCapabilityBaseUrl,
-      );
-      final token = await fetcher.fetch();
-
       if (resolvedConfig.capabilitySecret != null) {
-        // Verify token locally if secret is provided.
-        await _capabilityModule!.loadFromToken(
-          token,
-          resolvedConfig.capabilitySecret!,
-        );
-      } else {
-        // Trust the server-provided token — the request itself was
-        // device-signed, so the server already authenticated the device.
-        await _capabilityModule!.loadFromTokenUnsigned(token);
+        _coreRuntimeBridge?.loadCapabilityToken('{}', resolvedConfig.capabilitySecret!);
       }
+      _capabilityModule?.loadDefaults();
     } catch (e) {
       SynheartLogger.log(
         '[Synheart] Capability token fetch failed: $e',
@@ -2866,10 +2549,8 @@ class Synheart {
     try {
       SynheartLogger.log('[Synheart] Stopping...');
 
-      // Stop HSI subscriptions
-      await _hsvSubscription?.cancel();
-      await _hsiToSessionSubscription?.cancel();
-      _hsiToSessionSubscription = null;
+      // Clear HSI callback (core runtime handles cleanup in dispose)
+      _coreRuntime?.clearHsiCallback();
 
       // Remove consent listener (best-effort)
       _consentModule?.removeListener(_onConsentChanged);
@@ -2897,6 +2578,9 @@ class Synheart {
     try {
       await _stop();
 
+      _coreRuntime?.dispose();
+      _coreRuntime = null;
+
       await _moduleManager.disposeAll();
 
       await _hsvStream.close();
@@ -2922,18 +2606,11 @@ class Synheart {
       _wearModule = null;
       _phoneModule = null;
       _behaviorModule = null;
-      _runtimeModule = null;
+      _coreRuntime?.dispose();
+      _coreRuntime = null;
       _activationManager = null;
       _pendingConsent = null;
 
-      // Phase 1: Close storage
-      await _artifactHsiSubscription?.cancel();
-      _artifactHsiSubscription = null;
-      _artifactPipeline = null;
-      _storagePolicy = null;
-      await _storageManager?.close();
-      _storageManager = null;
-      _smk = null;
       _currentSessionHandle = null;
 
       _isConfigured = false;
@@ -2964,6 +2641,72 @@ class Synheart {
     final base = Uri.parse(_accountApiBaseUrl());
     return base.resolve(path);
   }
+}
+
+/// Sync result from a push/pull cycle.
+class SyncResult {
+  final int pushed;
+  final int pulled;
+
+  const SyncResult({this.pushed = 0, this.pulled = 0});
+}
+
+/// Current sync status.
+class SyncStatus {
+  final bool enabled;
+
+  const SyncStatus({required this.enabled});
+}
+
+/// Session record returned from session queries.
+class SessionRecord {
+  final String sessionId;
+  final String subjectId;
+  final String mode;
+  final int createdAtUtc;
+  final int startUtc;
+  final String appId;
+  final String appVersion;
+  final String deviceId;
+  final String platform;
+
+  const SessionRecord({
+    required this.sessionId,
+    required this.subjectId,
+    required this.mode,
+    required this.createdAtUtc,
+    required this.startUtc,
+    this.appId = '',
+    this.appVersion = '',
+    this.deviceId = '',
+    this.platform = 'flutter',
+  });
+
+  factory SessionRecord.fromMap(Map<String, dynamic> map) {
+    return SessionRecord(
+      sessionId: map['session_id'] as String? ?? '',
+      subjectId: map['subject_id'] as String? ?? '',
+      mode: map['mode'] as String? ?? 'personal',
+      createdAtUtc: map['created_at_utc'] as int? ?? 0,
+      startUtc: map['start_utc'] as int? ?? 0,
+      appId: map['app_id'] as String? ?? '',
+      appVersion: map['app_version'] as String? ?? '',
+      deviceId: map['device_id'] as String? ?? '',
+      platform: map['platform'] as String? ?? 'flutter',
+    );
+  }
+}
+
+class LabIngestResponse {
+  final bool success;
+  final int statusCode;
+  final String? errorMessage;
+
+  const LabIngestResponse({
+    required this.success,
+    required this.statusCode,
+    this.errorMessage,
+  });
 }
 
 /// Consent values queued before SDK initialization.

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Core business logic (storage, crypto, sync, consent, artifact pipeline, cloud connector, SRM)
+  migrated to synheart-core-runtime (Rust). SDK is now a thin FFI shell.
+- RuntimeBridge/RuntimeModule replaced by CoreRuntimeBridge (FFI to libsynheart_core_runtime)
+- HSI state updates delivered via native callback mechanism instead of platform-specific streams
+
+### Removed
+- StorageManager, ArtifactCrypto, SMK, URK, SyncEngine, SyncModule, ArtifactPipeline
+- RuntimeBridge, RuntimeModule (replaced by CoreRuntimeBridge)
+- CloudConnector, UploadQueue, UploadClient, HsiSchemaTransformer
+- SRM computation modules (SRMModule, SRMBuffer, SRMSnapshotStorage)
+
 ## [1.3.0] - 2026-03-08
 
 ### Added
@@ -23,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`configure()` method** — Merged into `initialize()`. Single entry point: `static Future<void> initialize({SynheartConfig? config, String? userId, bool autoStart = false})`.
 - **Feature provider interfaces** — Removed `WearFeatureProvider`, `PhoneFeatureProvider`, `BehaviorFeatureProvider`. Modules no longer implement these interfaces.
-- **On-demand feature query methods** — Removed `getWearFeatures()`, `getBehaviorFeatures()`, `getPhoneFeatures()` static methods. Feature computation lives in synheart-runtime.
+- **On-demand feature query methods** — Removed `getWearFeatures()`, `getBehaviorFeatures()`, `getPhoneFeatures()` static methods. Feature computation lives in synheart-engine.
 - **Legacy config fields** — Removed `enableCloudSync`, `enableSyniHooks`, `updateInterval`, `logLevel`, and `LogLevel` enum from `SynheartConfig`.
 - **Code generation dependencies** — Removed `json_annotation`, `json_serializable`, and `build_runner`. All models use manual `fromJson()`/`toJson()` now.
 - **Empty directories** — Removed unused `heads/` and `integrations/` directories.
@@ -36,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **FeatureExtractor** — Deleted empty `BehaviorFeatureExtractor` placeholder class (`lib/src/modules/behavior/feature_extractor.dart`). All feature computation lives in synheart-runtime per RFC-CORE-0007.
+- **FeatureExtractor** — Deleted empty `BehaviorFeatureExtractor` placeholder class (`lib/src/modules/behavior/feature_extractor.dart`). All feature computation lives in synheart-engine per RFC-CORE-0007.
 
 ### Changed
 
@@ -50,17 +64,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HSI stream consent gating** — Local `onHSIUpdate` stream now checks `biosignals` consent before forwarding HSI frames to consumers. Previously only cloud upload was gated; now local streams respect consent too.
 - **SRM persistence tests** — New `srm_snapshot_storage_test.dart` with 4 tests: save/load round-trip, null on empty, clear, and full SRMModule restore-from-storage integration test.
 - **HSI consent gate tests** — New `consent_gate_test.dart` with 3 tests verifying HSI frames are blocked when biosignal consent is denied.
-- **synheart-runtime installed** — macOS dylib, Android `.so` (4 ABIs), and iOS XCFramework now bundled in the SDK via `make install-dart`.
+- **synheart-engine installed** — macOS dylib, Android `.so` (4 ABIs), and iOS XCFramework now bundled in the SDK via `make install-dart`.
 
 ## [1.1.0] - 2026-02-22
 
 ### Changed
 
-- **RuntimeBridge** (renamed from `FluxFFIProvider`) — now wraps synheart-runtime C ABI instead of calling synheart-flux directly. synheart-runtime composes the full session → state → flux pipeline internally.
-  - `synheart_runtime_new(config_json)` replaces `flux_processor_create()`
-  - `synheart_runtime_push_rr()`, `push_hr()`, `push_accel()`, `push_behavior()` for signal ingestion
-  - `synheart_runtime_tick(now_ms)` returns HSI JSON when a window completes
-  - `synheart_runtime_free_string()` for memory management
+- **RuntimeBridge** (renamed from `FluxFFIProvider`) — now wraps synheart-engine C ABI instead of calling synheart-flux directly. synheart-engine composes the full session → state → flux pipeline internally.
+  - `synheart_engine_new(config_json)` replaces `flux_processor_create()`
+  - `synheart_engine_push_rr()`, `push_hr()`, `push_accel()`, `push_behavior()` for signal ingestion
+  - `synheart_engine_tick(now_ms)` returns HSI JSON when a window completes
+  - `synheart_engine_free_string()` for memory management
   - Backward-compatible: `createIfAvailable()` still returns null when native library is absent
 - **RuntimeModule** (renamed from `HSVRuntimeModule`) — orchestrates signal collection and pipeline execution via RuntimeBridge.
 - Updated stale comments across 10 source files to reference current module names.
@@ -193,7 +207,7 @@ First stable release supporting HSI 1.x.
 ## [0.0.2] - 2025-12-29
 
 ### Added
-- **HSI 1.0 Export Capability**: synheart-core-dart can now export HSI 1.0 canonical payloads
+- **HSI 1.0 Export Capability**: synheart-core-flutter can now export HSI 1.0 canonical payloads
   - New `HSI10Payload` class matching canonical HSI 1.0 schema
   - `toHSI10()` extension method on `HumanStateVector`
   - Converts internal HSV representation to external HSI 1.0 contract format
@@ -307,9 +321,9 @@ First stable release supporting HSI 1.x.
 
 
 
-[1.2.1]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v1.2.1
-[1.2.0]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v1.2.0
-[1.1.0]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v1.1.0
-[1.0.0]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v1.0.0
-[0.0.2]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v0.0.2
-[0.0.1]: https://github.com/synheart-ai/synheart-core-dart/releases/tag/v0.0.1
+[1.2.1]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v1.2.1
+[1.2.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v1.2.0
+[1.1.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v1.1.0
+[1.0.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v1.0.0
+[0.0.2]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.0.2
+[0.0.1]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.0.1

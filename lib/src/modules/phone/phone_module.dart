@@ -11,7 +11,6 @@ import 'phone_cache.dart';
 /// Phone Module
 ///
 /// Captures device-level motion and context signals.
-/// RFC-CORE-0007 compliant: no feature computation in Core.
 class PhoneModule extends BaseSynheartModule
     implements RawPhoneDataProvider {
   @override
@@ -37,7 +36,6 @@ class PhoneModule extends BaseSynheartModule
        _consent = consent;
 
 
-  // MARK: - RawPhoneDataProvider
 
   @override
   List<PhoneDataPoint> rawDataPoints(WindowType window) {

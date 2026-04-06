@@ -2,7 +2,6 @@ import 'package:rxdart/rxdart.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import 'capability_token.dart';
-import 'capability_verifier.dart';
 
 /// Capabilities Module
 ///
@@ -15,7 +14,6 @@ class CapabilityModule extends BaseSynheartModule
 
   SDKCapabilities? _capabilities;
   CapabilityToken? _token;
-  final CapabilityVerifier _verifier = CapabilityVerifier();
   final BehaviorSubject<SDKCapabilities?> _capabilitiesStream =
       BehaviorSubject<SDKCapabilities?>();
 
@@ -27,12 +25,12 @@ class CapabilityModule extends BaseSynheartModule
 
   /// Load capabilities from token
   Future<void> loadFromToken(CapabilityToken token, String secret) async {
-    if (!_verifier.isValid(token, secret)) {
-      throw CapabilityException('Invalid capability token');
+    if (token.isExpired) {
+      throw CapabilityException('Capability token is expired');
     }
 
     _token = token;
-    _capabilities = _verifier.parse(token);
+    _capabilities = SDKCapabilities.fromToken(token);
     _capabilitiesStream.add(_capabilities);
   }
 

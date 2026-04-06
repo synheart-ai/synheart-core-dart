@@ -23,31 +23,13 @@ export 'src/config/synheart_config.dart';
 export 'src/config/synheart_feature.dart';
 export 'src/config/synheart_mode.dart';
 export 'src/config/synheart_errors.dart';
-export 'src/config/lab_ingest_config.dart';
 
 // Artifacts (RFC-CORE-0006 Tier A)
-export 'src/artifacts/artifact_id.dart';
 export 'src/artifacts/artifact_header.dart';
 export 'src/artifacts/hsi_window.dart';
 export 'src/artifacts/baseline_snapshot.dart';
 export 'src/artifacts/session_summary.dart';
 export 'src/artifacts/tombstone.dart';
-export 'src/artifacts/artifact_pipeline.dart';
-
-// Storage (RFC-CORE-0004)
-// SessionRecord is internal to StorageManager — not part of the public API.
-export 'src/storage/storage_manager.dart' hide SessionRecord;
-export 'src/storage/storage_policy.dart';
-
-// Crypto (RFC-CORE-0004 Section 9, RFC-CORE-0005)
-export 'src/crypto/smk.dart';
-export 'src/crypto/artifact_crypto.dart';
-export 'src/crypto/urk.dart';
-
-// Sync (RFC-CORE-0005)
-export 'src/sync/artifact_envelope.dart';
-export 'src/sync/sync_module.dart';
-export 'src/sync/sync_engine.dart';
 
 // Session model
 export 'src/models/session_handle.dart';
@@ -58,9 +40,6 @@ export 'src/models/metric_event.dart';
 
 // Wearable Events
 export 'src/models/canonical_wearable_event.dart';
-
-// Longitudinal SRM
-export 'src/modules/srm/longitudinal_srm_module.dart';
 
 // Data Models
 export 'src/models/behavior.dart';
@@ -93,18 +72,11 @@ export 'src/modules/wear/wear_source_handler.dart' show WearSample;
 export 'src/modules/phone/phone_module.dart';
 export 'src/modules/behavior/behavior_module.dart';
 export 'src/modules/behavior/behavior_events.dart';
-export 'src/modules/runtime/runtime_module.dart';
-export 'src/modules/cloud/cloud_connector_module.dart';
 export 'src/modules/cloud/upload_models.dart';
 export 'src/modules/cloud/cloud_exceptions.dart';
 
-// Lab Ingest
-export 'src/modules/lab_ingest/lab_ingest_module.dart';
-export 'src/modules/lab_ingest/lab_ingest_client.dart';
-export 'src/modules/lab_ingest/lab_payload_builder.dart';
-
-// Runtime Bridge (FFI to synheart-runtime, includes SRM baseline access)
-export 'src/modules/runtime/runtime_bridge.dart';
+// Core Runtime Bridge (FFI to synheart-core-runtime for HSI, baselines, lab, sync)
+export 'src/core_runtime/core_runtime_bridge.dart';
 
 // Watch Session (adapter around synheart_session for watch relay)
 export 'src/modules/session/watch_session_module.dart';
@@ -112,7 +84,6 @@ export 'src/modules/session/watch_session_module.dart';
 // Device Auth
 export 'src/modules/cloud/device_auth_provider.dart';
 export 'src/modules/capabilities/capability_token_fetcher.dart';
-export 'src/modules/capabilities/remote_capability_token_fetcher.dart';
 
 // Device Auth (re-exported from synheart_auth, hiding name collisions)
 export 'package:synheart_auth/synheart_auth.dart' hide NetworkError;

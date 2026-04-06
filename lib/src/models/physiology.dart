@@ -1,12 +1,12 @@
-/// Physiology domain types aligned with synheart-runtime HSV.
+/// Physiology domain types aligned with synheart-engine HSV.
 ///
 /// These types mirror the `PhysiologyState` and `HsvAxisValue` from
-/// synheart-runtime, providing per-axis score + confidence pairs for all
+/// synheart-engine, providing per-axis score + confidence pairs for all
 /// physiological readings.
 
 /// A single HSV axis reading: optional score with associated confidence.
 ///
-/// Mirrors `HsvAxisValue { score: Option<f32>, confidence: f32 }` from synheart-runtime.
+/// Mirrors `HsvAxisValue { score: Option<f32>, confidence: f32 }` from synheart-engine.
 /// Score is null when the signal is unavailable; confidence reflects
 /// measurement quality independent of the score value.
 class HsvAxisValue {
@@ -41,7 +41,7 @@ class HsvAxisValue {
 /// Physiology domain of the Human State Vector.
 ///
 /// Contains all wearable-derived physiological readings, each paired with
-/// a confidence score. Mirrors `PhysiologyState` from synheart-runtime.
+/// a confidence score. Mirrors `PhysiologyState` from synheart-engine.
 ///
 /// Populated by wearable adapters (WHOOP, Garmin, etc.) via the biosignal
 /// pipeline. Emotion and Focus heads in external SDKs (synheart-emotion,

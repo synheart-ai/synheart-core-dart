@@ -1,9 +1,7 @@
 import 'dart:async';
 import '../../core/logger.dart';
 import '../../models/canonical_wearable_event.dart';
-import '../../storage/storage_manager.dart';
-import '../runtime/runtime_bridge.dart';
-import '../srm/longitudinal_srm_module.dart';
+import '../../core_runtime/core_runtime_bridge.dart';
 
 /// Processes incoming RAMEN vendor events into the SynHeart pipeline:
 ///   RamenEvent payload → CanonicalWearableEvent → SQLite store → SRM push → runtime
@@ -13,23 +11,17 @@ import '../srm/longitudinal_srm_module.dart';
 /// HRV, strain) is normalized, stored immutably, and pushed to the runtime
 /// for baseline computation.
 class WearableEventProcessor {
-  final StorageManager _storage;
-  final RuntimeBridge? _bridge;
-  final LongitudinalSrmModule _srm;
+  final CoreRuntimeBridge? _bridge;
   final String _subjectId;
   final String _deviceInstallId;
 
   WearableEventProcessor({
-    required StorageManager storage,
-    required RuntimeBridge? bridge,
+    required CoreRuntimeBridge? bridge,
     required String subjectId,
     required String deviceInstallId,
-    LongitudinalSrmModule? srm,
-  })  : _storage = storage,
-        _bridge = bridge,
+  })  : _bridge = bridge,
         _subjectId = subjectId,
-        _deviceInstallId = deviceInstallId,
-        _srm = srm ?? LongitudinalSrmModule();
+        _deviceInstallId = deviceInstallId;
 
   /// Process a raw vendor event from RAMEN.
   ///
@@ -103,30 +95,10 @@ class WearableEventProcessor {
       },
     );
 
-    // Store (idempotent — INSERT OR IGNORE on event_id)
-    try {
-      await _storage.insertWearableEvent(event.toMap());
-    } catch (e) {
-      SynheartLogger.log(
-        '[WearableEventProcessor] Storage error: $e',
-        error: e,
-      );
-      // Continue to SRM push even if storage fails — runtime needs the data
-    }
-
-    // Push to longitudinal SRM via runtime bridge
-    try {
-      await _srm.ingestEvent(event, _storage, _bridge);
-      SynheartLogger.log(
-        '[WearableEventProcessor] Processed $provider/${mapping.canonicalType} '
-        '(seq=$seq, confidence=${confidence.toStringAsFixed(2)})',
-      );
-    } catch (e) {
-      SynheartLogger.log(
-        '[WearableEventProcessor] SRM push error: $e',
-        error: e,
-      );
-    }
+    SynheartLogger.log(
+      '[WearableEventProcessor] Processed $provider/${mapping.canonicalType} '
+      '(seq=$seq, confidence=${confidence.toStringAsFixed(2)})',
+    );
 
     return event;
   }

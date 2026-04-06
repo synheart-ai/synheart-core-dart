@@ -16,7 +16,6 @@ import 'wearable_event_processor.dart';
 /// Wear Module
 ///
 /// Collects and buffers raw biosignals from wearables.
-/// RFC-CORE-0007 compliant: no feature computation in Core.
 class WearModule extends BaseSynheartModule
     implements RawWearDataProvider {
   @override
@@ -108,7 +107,6 @@ class WearModule extends BaseSynheartModule
     }
   }
 
-  // MARK: - RawWearDataProvider
 
   @override
   List<WearSample> rawSamples(WindowType window) {

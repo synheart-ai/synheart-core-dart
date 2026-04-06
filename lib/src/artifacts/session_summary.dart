@@ -158,37 +158,6 @@ class SessionSummaryArtifact {
     this.insightMetrics = const InsightMetrics(),
   });
 
-  factory SessionSummaryArtifact.create({
-    required String subjectId,
-    required String sessionId,
-    required int startMs,
-    required int endMs,
-    required String mode,
-    required int totalWindows,
-    required SessionAggregates aggregates,
-    InsightMetrics insightMetrics = const InsightMetrics(),
-  }) {
-    final header = ArtifactHeader(
-      type: 'session_summary',
-      subjectId: subjectId,
-      sessionId: sessionId,
-      timeRange: TimeRange(startMs: startMs, endMs: endMs),
-      schema: const SchemaRef(name: 'session_summary', version: '1'),
-    );
-    return SessionSummaryArtifact(
-      header: header,
-      session: SessionInfo(
-        sessionId: sessionId,
-        startMs: startMs,
-        endMs: endMs,
-        mode: mode,
-      ),
-      coverage: CoverageInfo(totalWindows: totalWindows),
-      aggregates: aggregates,
-      insightMetrics: insightMetrics,
-    );
-  }
-
   Map<String, dynamic> toJson() => {
         ...header.toJson(),
         'session': session.toJson(),

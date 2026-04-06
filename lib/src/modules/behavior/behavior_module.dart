@@ -15,7 +15,6 @@ import 'window_aggregator.dart';
 /// Behavior Module
 ///
 /// Captures user-device interaction patterns using synheart_behavior package.
-/// RFC-CORE-0007 compliant: no feature computation in Core.
 ///
 /// Consent gating policy: no collection at all without consent.
 /// synheart_behavior.initialize() starts native collection, so we only
@@ -71,7 +70,6 @@ class BehaviorModule extends BaseSynheartModule
   /// ```
   sb.SynheartBehavior? get synheartBehavior => _synheartBehavior;
 
-  // MARK: - RawBehaviorDataProvider
 
   @override
   List<BehaviorEvent> rawEvents(WindowType window) {
