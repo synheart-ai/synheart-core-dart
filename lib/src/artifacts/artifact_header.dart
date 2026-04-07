@@ -1,5 +1,3 @@
-import 'artifact_id.dart';
-
 class TimeRange {
   final int startMs;
   final int endMs;
@@ -28,9 +26,6 @@ class SchemaRef {
       );
 }
 
-/// Common header for all Synheart artifacts.
-///
-/// See RFC-CORE-0006 Section 4.
 class ArtifactHeader {
   final String artifactVersion;
   final String type;
@@ -45,22 +40,14 @@ class ArtifactHeader {
   ArtifactHeader({
     this.artifactVersion = '1',
     required this.type,
+    this.artifactId = '',
     required this.subjectId,
     this.sessionId,
     required this.timeRange,
     this.seq,
     required this.schema,
     int? createdAtMs,
-  })  : createdAtMs = createdAtMs ?? DateTime.now().millisecondsSinceEpoch,
-        artifactId = computeArtifactId(
-          type: type,
-          subjectId: subjectId,
-          sessionId: sessionId,
-          startMs: timeRange.startMs,
-          endMs: timeRange.endMs,
-          schemaName: schema.name,
-          schemaVersion: schema.version,
-        );
+  }) : createdAtMs = createdAtMs ?? DateTime.now().millisecondsSinceEpoch;
 
   Map<String, dynamic> toJson() => {
         'artifact_version': artifactVersion,
@@ -77,9 +64,11 @@ class ArtifactHeader {
   factory ArtifactHeader.fromJson(Map<String, dynamic> json) => ArtifactHeader(
         artifactVersion: json['artifact_version'] as String,
         type: json['type'] as String,
+        artifactId: json['artifact_id'] as String? ?? '',
         subjectId: json['subject_id'] as String,
         sessionId: json['session_id'] as String?,
-        timeRange: TimeRange.fromJson(json['time_range'] as Map<String, dynamic>),
+        timeRange:
+            TimeRange.fromJson(json['time_range'] as Map<String, dynamic>),
         seq: json['seq'] as int?,
         schema: SchemaRef.fromJson(json['schema'] as Map<String, dynamic>),
         createdAtMs: json['created_at_ms'] as int,

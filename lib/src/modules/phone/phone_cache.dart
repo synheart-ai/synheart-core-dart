@@ -3,8 +3,7 @@ import 'phone_collectors.dart';
 
 /// Cache for phone raw data points
 ///
-/// RFC-CORE-0007 compliant: buffers raw data only.
-/// Feature computation is delegated to synheart-runtime.
+/// Feature computation is delegated to synheart-engine.
 class PhoneCache {
   final Map<WindowType, List<PhoneDataPoint>> _windowData = {};
 

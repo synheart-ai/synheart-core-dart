@@ -60,7 +60,6 @@ class ConsentToken {
     // API may return either "expires_at" (ISO string) or "expires_in" (seconds)
     DateTime expiresAt;
     if (json['expires_at'] != null) {
-      // RFC format: ISO 8601 timestamp string
       final expiresAtStr = json['expires_at'];
       if (expiresAtStr is! String) {
         throw FormatException(

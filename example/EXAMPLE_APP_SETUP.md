@@ -184,7 +184,7 @@ The example app demonstrates:
 ## Getting Help
 
 - **Documentation**: See the main [Synheart Core SDK README](../README.md)
-- **Issues**: Report issues on [GitHub](https://github.com/synheart-ai/synheart-core-dart/issues)
+- **Issues**: Report issues on [GitHub](https://github.com/synheart-ai/synheart-core-flutter/issues)
 - **Support**: Contact support@synheart.io for assistance
 
 ## Next Steps

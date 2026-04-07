@@ -1,7 +1,6 @@
 import '../modules/capabilities/capability_token.dart';
 import '../modules/interfaces/auth_provider.dart';
 import 'api_endpoints.dart';
-import 'lab_ingest_config.dart';
 import 'synheart_mode.dart';
 import 'synheart_errors.dart';
 
@@ -108,9 +107,6 @@ class SynheartConfig {
   /// Consent service configuration
   final ConsentConfig? consentConfig;
 
-  /// Platform ingestion configuration (custom session/metadata uploads)
-  final LabIngestConfig? labIngestConfig;
-
   /// Device authentication configuration.
   /// When set, enables automatic device registration, capability token
   /// fetching, and device-signed request authentication.
@@ -149,7 +145,6 @@ class SynheartConfig {
     this.behaviorConfig,
     this.cloudConfig,
     this.consentConfig,
-    this.labIngestConfig,
     this.deviceAuthConfig,
     this.capabilityToken,
     this.capabilitySecret,
