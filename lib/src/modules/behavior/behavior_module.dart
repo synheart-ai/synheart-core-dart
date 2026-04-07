@@ -7,7 +7,7 @@ import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
 import '../interfaces/feature_providers.dart';
 import '../interfaces/raw_data_provider.dart';
-import '../runtime/runtime_behavior_code.dart';
+import 'behavior_code.dart';
 import 'behavior_events.dart';
 import 'behavior_event_stream.dart';
 import 'window_aggregator.dart';

@@ -158,3 +158,12 @@ class CapabilityModule extends BaseSynheartModule
     _token = null;
   }
 }
+
+/// Exception thrown when capability token validation fails.
+class CapabilityException implements Exception {
+  final String message;
+  const CapabilityException(this.message);
+
+  @override
+  String toString() => 'CapabilityException: $message';
+}

@@ -196,8 +196,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
     }
 
     // Return empty list — callers should use the bridge directly.
-    SynheartLogger.log(
-    );
+    SynheartLogger.log('[ConsentModule] getAvailableProfiles: returning empty list');
     return [];
   }
 
@@ -223,6 +222,8 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       token: '',
       profileId: profile.id,
       expiresAt: DateTime.now().add(const Duration(hours: 24)),
+      scopes: const [],
+      claims: const {},
     );
     _currentToken = token;
     return token;
@@ -255,6 +256,8 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       token: '',
       profileId: profileId,
       expiresAt: DateTime.now().add(const Duration(hours: 24)),
+      scopes: const [],
+      claims: const {},
     );
     _currentToken = token;
     SynheartLogger.log(

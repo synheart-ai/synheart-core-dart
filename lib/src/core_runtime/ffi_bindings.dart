@@ -234,7 +234,7 @@ class SynheartCoreFFI {
   late final labMergeExtraData = _lib.lookupFunction<_LabMergeExtraDataC, _LabMergeExtraDataDart>('synheart_core_lab_merge_extra_data');
   late final labSetStateOverrides = _lib.lookupFunction<_LabSetStateOverridesC, _LabSetStateOverridesDart>('synheart_core_lab_set_state_overrides');
   late final labFinalize = _lib.lookupFunction<_LabFinalizeC, _LabFinalizeDart>('synheart_core_lab_finalize');
-  late final labAvailable = _lib.lookupFunction<_LabAvailableC, _LabAvailableDart>('synheart_core_lab_available');
+  late final labAvailable = _lib.lookupFunction<_LabAvailableC, _LabAvailableDart>('synheart_core_is_lab_available');
 
   // Version / frame diagnostics
   late final version = _lib.lookupFunction<_VersionC, _VersionDart>('synheart_core_version');

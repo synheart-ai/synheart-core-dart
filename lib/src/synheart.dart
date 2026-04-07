@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:rxdart/rxdart.dart';
@@ -567,7 +568,7 @@ class Synheart {
           return await _deviceAuthProvider!.signRequest(
             method: method,
             path: path,
-            bodyBytes: bodyBytes,
+            bodyBytes: Uint8List.fromList(bodyBytes),
           );
         },
       );
@@ -1219,8 +1220,13 @@ class Synheart {
 
   /// Push a wear HR event into runtime and optionally synthesize RR.
   /// Use when HR is coming from external/watch channels not wired to WearModule.
-  static void pushWearHr(int tsMs, double bpm, {bool synthesizeRr = true}) {
+  static void pushWearHr(int tsMs, double bpm, {bool synthesizeRr = true, double? rrMs}) {
     _coreRuntime?.pushHr(tsMs, bpm);
+    if (rrMs != null) {
+      _coreRuntime?.pushRr(tsMs, rrMs);
+    } else if (synthesizeRr && bpm > 0) {
+      _coreRuntime?.pushRr(tsMs, 60000.0 / bpm);
+    }
   }
 
   // ── synheart-engine SRM API (baselines live in the native Rust engine) ──
@@ -2076,8 +2082,7 @@ class Synheart {
     }
 
     // If cloud or platform-ingest is configured and cloudUpload is true, issue token.
-    if ((_config?.cloudConfig != null ||
-            _config?.labIngestConfig != null) &&
+    if (_config?.cloudConfig != null &&
         cloudUpload &&
         profileId != null) {
       try {
@@ -2266,8 +2271,7 @@ class Synheart {
 
     SynheartLogger.log('[Synheart] Deleting cloud data...');
 
-    SynheartLogger.log(
-    );
+    SynheartLogger.log('[Synheart] Cloud data deletion requested');
   }
 
   /// Revoke consent (clears token and notifies cloud)
@@ -2492,7 +2496,7 @@ class Synheart {
 
     try {
       if (resolvedConfig.capabilitySecret != null) {
-        _coreRuntimeBridge?.loadCapabilityToken('{}', resolvedConfig.capabilitySecret!);
+        _coreRuntime?.loadCapabilityToken('{}', resolvedConfig.capabilitySecret!);
       }
       _capabilityModule?.loadDefaults();
     } catch (e) {
