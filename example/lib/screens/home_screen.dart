@@ -592,7 +592,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     // Wrap with BehaviorGestureDetector if behavior consent is granted
-    // This matches the pattern from synheart-behavior-dart/example
+    // This matches the pattern from synheart-behavior-flutter/example
     return Consumer<SynheartProvider>(
       builder: (context, provider, child) {
         final hasBehaviorConsent =

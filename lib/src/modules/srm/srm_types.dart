@@ -1,7 +1,7 @@
 import 'srm_stratum.dart';
 import 'srm_baseline_status.dart';
 
-/// A candidate window submitted by synheart-runtime for SRM consideration.
+/// A candidate window submitted by synheart-engine for SRM consideration.
 ///
 /// Contains the metrics and metadata needed for quality gating,
 /// outlier rejection, and buffer update (SRM.pdf §4).

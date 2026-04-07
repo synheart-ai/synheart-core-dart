@@ -1,6 +1,6 @@
-/// State quality assessment aligned with synheart-runtime HSV.
+/// State quality assessment aligned with synheart-engine HSV.
 ///
-/// Mirrors `StateQuality` from synheart-runtime — aggregated quality metadata describing
+/// Mirrors `StateQuality` from synheart-engine — aggregated quality metadata describing
 /// the overall reliability of the current Human State Vector.
 
 /// Quality flags that can be raised on the HSV.

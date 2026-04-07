@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Types of behavior events.
 ///
-/// Maps 1:1 to the synheart-runtime C ABI event_type codes:
+/// Maps 1:1 to the synheart-engine C ABI event_type codes:
 ///   0=ScreenOn, 1=ScreenOff, 2=Touch, 3=AppSwitch,
 ///   4=NotificationReceived, 5=Scroll, 6=Swipe, 7=Call
 enum BehaviorEventType {

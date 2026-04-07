@@ -1,16 +1,16 @@
 # Synheart Core SDK - Architecture Guide
 
-**Last Updated**: February 2026
-**Version**: 1.2.1
+**Last Updated**: March 2026
+**Version**: 2.0.0
 
 ---
 
 ## Overview
 
-The Synheart Core SDK (Dart) is a modular, consent-first framework for collecting biosignals, device context, and user behavior, fusing them through synheart-runtime (Rust) to compute human state.
+The Synheart Core SDK (Dart) is a thin FFI shell that delegates all core business logic to `synheart-core-runtime` (Rust) via `CoreRuntimeBridge`. The SDK coordinates platform-specific data collection (wear, phone, behavior) and routes it through the shared Rust core.
 
 **Key Principle**:
-> All inference computation happens in synheart-runtime (Rust C ABI). SDKs coordinate data collection and distribution.
+> All core operations (storage, crypto, sync, consent, artifact pipeline, SRM, signal processing) live in `synheart-core-runtime`. The Dart SDK is a platform integration layer.
 
 ---
 
@@ -23,40 +23,30 @@ The Synheart Core SDK (Dart) is a modular, consent-first framework for collectin
 └──────────────────┬──────────────────────┘
                    │
 ┌──────────────────▼──────────────────────┐
-│      Synheart Core SDK (Dart/FFI)       │
+│      Synheart Core SDK (Dart)           │
+│      Thin FFI shell                     │
 │                                         │
 │  ┌─────────────────────────────────┐   │
-│  │  Gatekeeping Modules            │   │
-│  │  • Capability (feature gating)  │   │
-│  │  • Consent (permissions)        │   │
-│  └──────────────┬──────────────────┘   │
-│                 │                       │
-│  ┌──────────────▼──────────────────┐   │
-│  │  Collection Modules              │   │
+│  │  Platform Collection Modules    │   │
 │  │  • Wear (wearables)             │   │
 │  │  • Phone (motion, context)      │   │
 │  │  • Behavior (interactions)      │   │
 │  └──────────────┬──────────────────┘   │
 │                 │                       │
 │  ┌──────────────▼──────────────────┐   │
-│  │  Runtime Bridge (dart:ffi)      │   │
-│  │  synheart_runtime_push_*()      │   │
-│  │  synheart_runtime_tick()        │   │
-│  └──────────────┬──────────────────┘   │
-│                 │                       │
-│  ┌──────────────▼──────────────────┐   │
-│  │  Distribution Modules            │   │
-│  │  • SRM (baselines)              │   │
-│  │  • Cloud (uploads)              │   │
+│  │  CoreRuntimeBridge (dart:ffi)   │   │
+│  │  synheart_core_runtime_*()      │   │
 │  └──────────────┬──────────────────┘   │
 └──────────────────┬──────────────────────┘
                    │ (C ABI)
 ┌──────────────────▼──────────────────────┐
-│    synheart-runtime (Rust)              │
-│  • Signal processing                    │
-│  • Feature extraction                   │
-│  • HSV computation (6 heads)            │
-│  • HSI 1.1 serialization                │
+│    synheart-core-runtime (Rust)         │
+│  • Storage (SQLite), Crypto (E2EE)      │
+│  • Sync engine, Consent management      │
+│  • Artifact pipeline, Cloud connector   │
+│  • SRM (baselines), Capability gating   │
+│  • Signal processing (synheart-engine) │
+│  • HSV computation, HSI serialization   │
 └─────────────────────────────────────────┘
 ```
 
@@ -64,39 +54,19 @@ The Synheart Core SDK (Dart) is a modular, consent-first framework for collectin
 
 ## Core Modules
 
-### 1. Capability Module
-**Purpose**: Feature gating via signed tokens
+### 1. CoreRuntimeBridge
+**Purpose**: FFI bridge to synheart-core-runtime (Rust)
 
-- Validates server-signed capability tokens (HMAC-SHA256)
-- Maps SDK features to capability levels: `NONE`, `CORE`, `EXTENDED`, `RESEARCH`
-- Controls access to: wear, phone, behavior, cloud, HSI features
-- Falls back to unsigned capabilities for development
+All core business logic is delegated to the Rust runtime via this bridge:
+- Capability gating, consent management, storage, crypto, sync
+- Artifact pipeline, cloud connector, SRM baselines
+- Signal processing and HSI computation (via embedded synheart-engine)
 
-**Key Class**: `CapabilityModule`
-
----
-
-### 2. Consent Module
-**Purpose**: User permission management (single source of truth)
-
-**Consent Types**:
-- `biosignals` — Heart rate, HRV collection
-- `behavior` — User interaction tracking
-- `phoneContext` — Device motion, screen state, app context
-- `cloudUpload` — Data transmission
-- `syni` — Personalization hooks
-
-**Key Properties**:
-- Default-deny (all false) for safety
-- Persistent storage (SharedPreferences)
-- Change notifications via listeners
-- Gating enforced at multiple levels (module start, data read, upload)
-
-**Key Class**: `ConsentModule`
+**Key Class**: `CoreRuntimeBridge`
 
 ---
 
-### 3. Wear Module
+### 2. Wear Module
 **Purpose**: Biosignal collection from wearables
 
 **Data Sources**:
@@ -127,7 +97,7 @@ The Synheart Core SDK (Dart) is a modular, consent-first framework for collectin
 
 ---
 
-### 5. Behavior Module
+### 4. Behavior Module
 **Purpose**: User interaction tracking
 
 **Event Types**:
@@ -138,71 +108,25 @@ The Synheart Core SDK (Dart) is a modular, consent-first framework for collectin
 ```
 BehaviorEventStream
   → WindowAggregator (30s, 5m, 1h, 24h windows)
-  → RuntimeModule
+  → CoreRuntimeBridge
 ```
 
 **Key Classes**: `BehaviorModule`, `BehaviorEvent`, `WindowAggregator`
 
 ---
 
-### 6. Runtime Module
-**Purpose**: FFI bridge to synheart-runtime
+### Modules now in synheart-core-runtime (Rust)
 
-**Responsibilities**:
-1. Subscribe to wear/behavior streams
-2. Push data into native via `synheart_runtime_push_*()` functions
-3. Periodic tick (every 5s): `synheart_runtime_tick()`
-4. Emit HSI JSON when available
+The following modules previously lived in the Dart SDK but have been migrated to `synheart-core-runtime` and are accessed via `CoreRuntimeBridge`:
 
-**Functions**:
-- `synheart_runtime_push_rr(handle, ts_ms, rr_ms)`
-- `synheart_runtime_push_hr(handle, ts_ms, bpm)`
-- `synheart_runtime_push_accel(handle, ts_ms, x, y, z)`
-- `synheart_runtime_push_behavior(handle, ts_ms, event_type, value)`
-- `synheart_runtime_tick(handle, now_ms)` → HSI JSON string
-
-**Graceful Degradation**: If native library not available, pipeline is inert (no errors)
-
-**Key Classes**: `RuntimeModule`, `RuntimeBridge`
-
----
-
-### 7. SRM Module
-**Purpose**: Self-Reference Model (personal baselines)
-
-**Features**:
-- Per-stratum bounded buffers (quality-gated windows)
-- Robust reference statistics (median/MAD per metric)
-- Baseline status: `EMPTY` → `WARMING` → `READY`
-- Persistent snapshot save/restore
-- Distinct calendar day tracking
-
-**Key Classes**: `SRMModule`, `SRMSnapshot`, `SRMBaseline`
-
----
-
-### 8. Cloud Connector Module
-**Purpose**: Secure HSI uploads to platform
-
-**Architecture**:
-```
-RuntimeModule (HSI JSON)
-  → RateLimiter (per window type)
-  → NetworkMonitor (online/offline detection)
-  → UploadQueue (FIFO, max 100, persistent)
-  → UploadClient (HMAC-SHA256 signed)
-  → Platform API
-```
-
-**Features**:
-- HMAC-SHA256 request signing
-- Consent & capability enforcement
-- Rate limiting per window type
-- Exponential backoff (max 3 retries)
-- Offline queue with auto-flush
-- Persistence (survives app restart)
-
-**Key Classes**: `CloudConnectorModule`, `UploadClient`, `UploadQueue`, `RateLimiter`
+- **Capability Module** -- Feature gating via signed tokens (HMAC-SHA256)
+- **Consent Module** -- User permission management, default-deny, persistent
+- **SRM Module** -- Self-Reference Model baselines (per-stratum buffers, median/MAD)
+- **Cloud Connector** -- HMAC-signed uploads, rate limiting, offline queue, exponential backoff
+- **Storage Manager** -- SQLite CRUD, WAL mode, corrupt DB recovery
+- **Artifact Pipeline** -- HSI window, baseline snapshot, session summary artifacts
+- **Crypto** -- SMK, URK, E2EE encryption/decryption
+- **Sync Engine** -- Push/pull with URK provisioning, exponential backoff
 
 ---
 
@@ -212,35 +136,33 @@ RuntimeModule (HSI JSON)
 
 ```
 1. Synheart.initialize(userId, config)
-   ├─ Validate capability token
-   ├─ Load consent from storage
-   ├─ Create all modules
-   └─ Register with ModuleManager
+   ├─ CoreRuntimeBridge.initialize(config JSON)
+   │   ├─ Validate capability token
+   │   ├─ Load consent from storage
+   │   ├─ Initialize storage, crypto, sync
+   │   └─ Create signal processing runtime
+   └─ Start platform collection modules (wear, phone, behavior)
 
-2. ModuleManager.initializeAll()
-   └─ Topologically sort dependencies
-   └─ Call module.initialize() in order
-
-3. NO DATA COLLECTION YET
+2. NO DATA COLLECTION YET
 ```
 
 ### Session Lifecycle
 
 ```
 Synheart.startSession()
-├─ ModuleManager.startAll()
-└─ All modules begin streaming
+├─ CoreRuntimeBridge.startSession()
+└─ Platform modules begin streaming
 
 Data flows:
-Wear → WearModule → RuntimeModule → RuntimeBridge → synheart-runtime
-Phone → PhoneModule → RuntimeModule → RuntimeBridge → synheart-runtime
-Behavior → BehaviorModule → RuntimeModule → RuntimeBridge → synheart-runtime
+Wear → WearModule ──┐
+Phone → PhoneModule ──┼──→ CoreRuntimeBridge (FFI) → synheart-core-runtime
+Behavior → BehaviorModule ──┘
 
-synheart-runtime → HSI JSON → onHSIUpdate stream → CloudConnector
+synheart-core-runtime → HSI JSON → native callback → onHSIUpdate stream
 
 Synheart.stopSession()
-├─ ModuleManager.stopAll()
-└─ Persist SRM snapshots
+├─ CoreRuntimeBridge.stopSession()
+└─ Session artifacts + SRM snapshots persisted in Rust
 ```
 
 ### Signal Fusion
@@ -251,28 +173,29 @@ INPUT SIGNALS (Parallel)
 ├─ Heart rate (bpm)
 ├─ Accelerometer (x, y, z)
 └─ Behavior events (type, value)
-     ↓ (consent & capability gated)
+     ↓ (consent & capability gated in Rust)
      ↓
-RuntimeBridge (dart:ffi → Rust C ABI)
-synheart_runtime_push_rr(ts, rr_ms)
-synheart_runtime_push_hr(ts, bpm)
-synheart_runtime_push_accel(ts, x, y, z)
-synheart_runtime_push_behavior(ts, event_type, value)
-synheart_runtime_tick(ts) ← every 5 seconds
+CoreRuntimeBridge (dart:ffi → Rust C ABI)
+synheart_core_runtime_push_rr(ts, rr_ms)
+synheart_core_runtime_push_hr(ts, bpm)
+synheart_core_runtime_push_accel(ts, x, y, z)
+synheart_core_runtime_push_behavior(ts, event_type, value)
+synheart_core_runtime_tick(ts) ← every 5 seconds
      ↓
-synheart-runtime (Rust)
-├─ Signal processing
+synheart-core-runtime (Rust)
+├─ Signal processing (embedded synheart-engine)
 ├─ Feature extraction
 ├─ HSV computation (6 heads)
 ├─ SRM baseline application
 ├─ Quality assessment
-└─ HSI JSON serialization
+├─ HSI JSON serialization
+├─ Artifact pipeline + storage
+└─ Cloud upload (rate-limited, HMAC-signed)
      ↓
 HSI JSON Output
-├─ onHSIUpdate (Stream<String>)
+├─ onHSIUpdate (native callback → Stream<String>)
 ├─ lastQuality() (quality metrics)
-├─ lastHsv() (internal diagnostics)
-└─ Cloud upload (rate-limited)
+└─ lastHsv() (internal diagnostics)
 ```
 
 ---
@@ -281,8 +204,8 @@ HSI JSON Output
 
 ### HSV (Human State Vector) - INTERNAL
 
-**Computed by**: synheart-runtime
-**Access**: `RuntimeBridge.lastHsv()` → JSON string
+**Computed by**: synheart-core-runtime (embedded synheart-engine)
+**Access**: `CoreRuntimeBridge.lastHsv()` → JSON string
 **Use**: Internal SDK diagnostics and quality assessment
 **NOT**: Part of public SDK API
 
@@ -310,7 +233,7 @@ HSI JSON Output
 
 ### HSI (Human State Interface) - PUBLIC
 
-**Computed by**: synheart-runtime (Flux layer)
+**Computed by**: synheart-core-runtime (Flux layer)
 **Access**: `onHSIUpdate` stream (primary) or `lastQuality()` query
 **Use**: Main output format for consumers
 **Format**: RFC HSI 1.1 JSON with domain axes
@@ -342,8 +265,8 @@ HSI 1.1 (public domain axes)
 
 ### Pre-processed Data (Internal)
 
-**Computed by**: synheart-runtime (internal signal pipeline)
-**Access**: `RuntimeBridge.lastPreprocessed()` → JSON string
+**Computed by**: synheart-core-runtime (internal signal pipeline)
+**Access**: `CoreRuntimeBridge.lastPreprocessed()` → JSON string
 **Use**: On-device model training, R&D, feature engineering, anomaly detection
 **Scope**: Internal-only; NOT part of public API
 
@@ -465,7 +388,7 @@ Example: WEAR feature
 - Cloud upload round-trip
 
 ### Expected Test Failures
-- RuntimeBridge tests skip (native library not available in test env)
+- CoreRuntimeBridge tests skip (native library not available in test env)
 - This is expected behavior
 
 ---
@@ -475,6 +398,7 @@ Example: WEAR feature
 ### Initialize SDK
 
 ```dart
+// All core logic (storage, crypto, sync, consent, pipeline) runs in synheart-core-runtime
 await Synheart.initialize(
   userId: 'user_123',
   config: SynheartConfig(
@@ -482,11 +406,6 @@ await Synheart.initialize(
     wearConfig: WearConfig(),
     phoneConfig: PhoneConfig(),
     behaviorConfig: BehaviorConfig(),
-    cloudConfig: CloudConfig(
-      tenantId: 'your_tenant',
-      hmacSecret: 'your_secret',
-      subjectId: 'user_123',
-    ),
   ),
 );
 ```
@@ -525,17 +444,10 @@ await Synheart.stopSession();
 
 ## Troubleshooting
 
-### RuntimeBridge Tests Skip/Fail
-**Cause**: synheart-runtime native library not available
+### CoreRuntimeBridge Tests Skip/Fail
+**Cause**: `libsynheart_core_runtime` native library not available
 **Expected**: Yes, this is normal in test environment
 **Resolution**: None needed for SDK; native library is bundled in production
-
-### Cloud Upload Not Working
-**Check**:
-1. User granted `cloudUpload` consent
-2. Capability token allows `CLOUD` feature
-3. `CloudConfig` provided during initialization
-4. Network is available (check `isOnline`)
 
 ### Consent Changes Don't Take Effect Immediately
 **Expected**: Changes take effect at next `reevaluateAllFeatures()` cycle
