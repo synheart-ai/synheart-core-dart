@@ -1322,6 +1322,9 @@ class Synheart {
     return _coreRuntime?.labFinalize(endedAtMs);
   }
 
+  /// Get the last lab export JSON (available after session end in research mode).
+  static String? get labExportJson => _coreRuntime?.labExportJson();
+
   // Collection status getters
   bool get _isWearCollecting {
     return _wearModule?.status == ModuleStatus.running;
@@ -2315,6 +2318,10 @@ class Synheart {
       'lastQuality': _coreRuntime?.lastQuality() ?? 0.0,
     };
   }
+
+  /// All synheart crate versions, target, profile, and enabled features.
+  /// No active session needed — compile-time info baked into the .so/.a.
+  static Map<String, dynamic>? get buildInfo => CoreRuntimeBridge.buildInfo();
 
   /// Get module statuses (for debugging)
   Map<String, String> getModuleStatuses() {

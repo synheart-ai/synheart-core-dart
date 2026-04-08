@@ -158,6 +158,16 @@ class SynheartCoreFFI {
 
   // ── Resolved symbols ────────────────────────────────────────────────
 
+  late final initLogging = _lib.lookupFunction<
+    Int32 Function(Pointer<Utf8>, Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>?, Pointer<Void>),
+    int Function(Pointer<Utf8>, Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>?, Pointer<Void>)
+  >('synheart_core_init_logging');
+
+  late final buildInfo = _lib.lookupFunction<
+    Pointer<Utf8> Function(),
+    Pointer<Utf8> Function()
+  >('synheart_core_build_info');
+
   late final coreNew = _lib.lookupFunction<_NewC, _NewDart>('synheart_core_new');
   late final coreFree = _lib.lookupFunction<_FreeC, _FreeDart>('synheart_core_free');
   late final coreFreeString = _lib.lookupFunction<_FreeStringC, _FreeStringDart>('synheart_core_free_string');
@@ -236,6 +246,7 @@ class SynheartCoreFFI {
   late final labSetStateOverrides = _lib.lookupFunction<_LabSetStateOverridesC, _LabSetStateOverridesDart>('synheart_core_lab_set_state_overrides');
   late final labFinalize = _lib.lookupFunction<_LabFinalizeC, _LabFinalizeDart>('synheart_core_lab_finalize');
   late final labAvailable = _lib.lookupFunction<_LabAvailableC, _LabAvailableDart>('synheart_core_is_lab_available');
+  late final labExportJson = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>('synheart_core_lab_export_json');
 
   // Version / frame diagnostics
   late final version = _lib.lookupFunction<_VersionC, _VersionDart>('synheart_core_version');
