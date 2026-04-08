@@ -219,6 +219,8 @@ class CoreRuntimeBridge {
   /// Get the last Wellness Score as JSON, or null if baselines are not ready.
   String? wellnessJson() => _readAndFree(_ffi.wellnessJson(_handle));
 
+  String? lastFeatures() => _readAndFree(_ffi.lastFeatures(_handle));
+
   // ── Diagnostics ──────────────────────────────────────────────────────
 
   String? diagnostics() => _readAndFree(_ffi.diagnostics(_handle));
