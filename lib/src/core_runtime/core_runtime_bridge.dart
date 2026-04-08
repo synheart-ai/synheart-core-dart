@@ -10,7 +10,15 @@ import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 
+import 'package:flutter/foundation.dart';
+
 import 'ffi_bindings.dart';
+
+/// Top-level callback for Rust log forwarding (must be top-level for Pointer.fromFunction).
+void _onRustLog(Pointer<Utf8> line, Pointer<Void> userData) {
+  if (line == nullptr) return;
+  debugPrint('[synheart] ${line.toDartString()}');
+}
 
 /// Bridge to the Rust core runtime via FFI.
 ///
@@ -39,6 +47,9 @@ class CoreRuntimeBridge {
     final ffi = SynheartCoreFFI.load();
     if (ffi == null) return null;
 
+    // Initialize logging before any other call (no-op if already done).
+    _initLogging(ffi);
+
     final json = jsonEncode(config);
     final cJson = json.toNativeUtf8();
     try {
@@ -48,6 +59,18 @@ class CoreRuntimeBridge {
     } finally {
       malloc.free(cJson);
     }
+  }
+
+  static bool _loggingDone = false;
+  static void _initLogging(SynheartCoreFFI ffi) {
+    if (_loggingDone) return;
+    _loggingDone = true;
+    try {
+      final cb = Pointer.fromFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>(_onRustLog);
+      final filter = 'info,synheart_core_runtime=debug'.toNativeUtf8();
+      ffi.initLogging(filter.cast(), cb, nullptr);
+      malloc.free(filter);
+    } catch (_) {}
   }
 
   /// Whether the native library was loaded and the handle is valid.
@@ -337,7 +360,26 @@ class CoreRuntimeBridge {
     return _readAndFree(_ffi.labFinalize(_handle, endedAtMs));
   }
 
-  // ── Version / Frame diagnostics ─────────────────────────────────────
+  /// Get the last lab export JSON (populated after session end in research mode).
+  String? labExportJson() => _readAndFree(_ffi.labExportJson(_handle));
+
+  // ── Build info / Version ────────────────────────────────────────────
+
+  /// All synheart crate versions, target, profile, and features as JSON.
+  /// No handle needed — compile-time info.
+  static Map<String, dynamic>? buildInfo() {
+    final ffi = SynheartCoreFFI.load();
+    if (ffi == null) return null;
+    final ptr = ffi.buildInfo();
+    if (ptr == nullptr) return null;
+    final json = ptr.toDartString();
+    ffi.coreFreeString(ptr);
+    try {
+      return jsonDecode(json) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// The native synheart-engine version string, or null.
   static String? version() {
