@@ -1,7 +1,29 @@
 import 'srm_stratum.dart';
 import 'srm_baseline_status.dart';
-import 'srm_buffer.dart';
 import 'srm_types.dart';
+
+/// Minimal buffer entry for SRM snapshot serialization.
+///
+/// Previously defined in srm_buffer.dart; inlined here after that file
+class BufferEntry {
+  final DateTime timestamp;
+  final Map<String, double> values;
+
+  const BufferEntry({required this.timestamp, required this.values});
+
+  Map<String, dynamic> toJson() => {
+    'timestamp': timestamp.toUtc().toIso8601String(),
+    'values': values,
+  };
+
+  factory BufferEntry.fromJson(Map<String, dynamic> json) {
+    return BufferEntry(
+      timestamp: DateTime.parse(json['timestamp'] as String),
+      values: (json['values'] as Map<String, dynamic>)
+          .map((k, v) => MapEntry(k, (v as num).toDouble())),
+    );
+  }
+}
 
 /// Per-stratum snapshot for serialization.
 class StratumSnapshot {

@@ -1,6 +1,6 @@
 /// Pre-processed Window - INTERNAL ONLY
 ///
-/// Intermediate signal processing and feature extraction output from synheart-runtime.
+/// Intermediate signal processing and feature extraction output from synheart-engine.
 /// Contains quality metrics, derived features, SRM baseline context, and embeddings.
 ///
 /// Used internally for:

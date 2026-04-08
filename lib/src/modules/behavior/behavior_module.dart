@@ -7,7 +7,7 @@ import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
 import '../interfaces/feature_providers.dart';
 import '../interfaces/raw_data_provider.dart';
-import '../runtime/runtime_behavior_code.dart';
+import 'behavior_code.dart';
 import 'behavior_events.dart';
 import 'behavior_event_stream.dart';
 import 'window_aggregator.dart';
@@ -15,7 +15,6 @@ import 'window_aggregator.dart';
 /// Behavior Module
 ///
 /// Captures user-device interaction patterns using synheart_behavior package.
-/// RFC-CORE-0007 compliant: no feature computation in Core.
 ///
 /// Consent gating policy: no collection at all without consent.
 /// synheart_behavior.initialize() starts native collection, so we only
@@ -71,11 +70,10 @@ class BehaviorModule extends BaseSynheartModule
   /// ```
   sb.SynheartBehavior? get synheartBehavior => _synheartBehavior;
 
-  // MARK: - RawBehaviorDataProvider
 
   @override
   List<BehaviorEvent> rawEvents(WindowType window) {
-    if (!_consent.current().behavior) return [];
+    if (!_consent.current().allowsChannel('behavior.digital_activity')) return [];
     return _aggregator.getEvents(window);
   }
 
@@ -90,7 +88,7 @@ class BehaviorModule extends BaseSynheartModule
 
   /// Handle events from synheart_behavior, forwarding to event stream and runtime.
   void _onSynheartBehaviorEvent(sb.BehaviorEvent event) {
-    if (!_consent.current().behavior) return;
+    if (!_consent.current().allowsChannel('behavior.digital_activity')) return;
     final behaviorEvent = _convertSynheartEvent(event);
     if (behaviorEvent != null) {
       _eventStream.addEvent(behaviorEvent);
@@ -141,7 +139,7 @@ class BehaviorModule extends BaseSynheartModule
     // Observe consent so we can start/stop dynamically.
     _consentSubscription ??= _consent.observe().listen(
       (consent) async {
-        if (!consent.behavior) {
+        if (!consent.allowsChannel('behavior.digital_activity')) {
           await _stopTracking(disposeSdk: true);
         } else {
           await _startTrackingIfNeeded();
@@ -161,7 +159,7 @@ class BehaviorModule extends BaseSynheartModule
   Future<void> _startTrackingIfNeeded() async {
     if (_isStarting) return;
     if (_eventSubscription != null || _cleanupTimer != null) return;
-    if (!_consent.current().behavior) return;
+    if (!_consent.current().allowsChannel('behavior.digital_activity')) return;
 
     _isStarting = true;
     try {
@@ -190,7 +188,7 @@ class BehaviorModule extends BaseSynheartModule
       // Subscribe to manual event stream only when consent is granted.
       _eventSubscription = _eventStream.events.listen(
         (event) {
-          if (!_consent.current().behavior) return;
+          if (!_consent.current().allowsChannel('behavior.digital_activity')) return;
           _aggregator.addEvent(event);
         },
         onError: (e, st) => SynheartLogger.log(

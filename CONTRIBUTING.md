@@ -35,8 +35,8 @@ Thank you for your interest in contributing to the Synheart Core SDK! This docum
 
 1. **Fork and clone the repository**
    ```bash
-   git clone https://github.com/synheart/synheart-core-dart.git
-   cd synheart-core-dart
+   git clone https://github.com/synheart/synheart-core-flutter.git
+   cd synheart-core-flutter
    ```
 
 2. **Install dependencies**

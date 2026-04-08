@@ -70,37 +70,6 @@ class HSIWindowArtifact {
     required this.provenance,
   });
 
-  /// Create an HSIWindow artifact with a computed deterministic ID.
-  factory HSIWindowArtifact.create({
-    required String subjectId,
-    required String sessionId,
-    required int startMs,
-    required int endMs,
-    required Map<String, dynamic> hsi,
-    required Provenance provenance,
-    int? seq,
-    int windowSizeMs = 30000,
-  }) {
-    final header = ArtifactHeader(
-      type: 'hsi_window',
-      subjectId: subjectId,
-      sessionId: sessionId,
-      timeRange: TimeRange(startMs: startMs, endMs: endMs),
-      seq: seq,
-      schema: const SchemaRef(name: 'hsi_window', version: '1'),
-    );
-    return HSIWindowArtifact(
-      header: header,
-      window: WindowData(
-        startMs: startMs,
-        endMs: endMs,
-        windowSizeMs: windowSizeMs,
-        hsi: hsi,
-      ),
-      provenance: provenance,
-    );
-  }
-
   Map<String, dynamic> toJson() => {
         ...header.toJson(),
         'window': window.toJson(),

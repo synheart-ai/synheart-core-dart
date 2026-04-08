@@ -1,7 +1,6 @@
 import '../modules/capabilities/capability_token.dart';
 import '../modules/interfaces/auth_provider.dart';
 import 'api_endpoints.dart';
-import 'platform_ingest_config.dart';
 import 'synheart_mode.dart';
 import 'synheart_errors.dart';
 
@@ -11,7 +10,7 @@ import 'synheart_errors.dart';
 /// 1. Configure SynheartAuth with [authBaseUrl]
 /// 2. Register the device (idempotent)
 /// 3. Fetch capability tokens from the server using device-signed requests
-/// 4. Use [DeviceAuthProvider] for cloud/platform ingest signing
+/// 4. Use [DeviceAuthProvider] for cloud/lab ingest signing
 class DeviceAuthConfig {
   /// Base URL for the device auth service.
   final String authBaseUrl;
@@ -70,7 +69,7 @@ class SynheartConfig {
   /// App version string (used in session records).
   final String appVersion;
 
-  /// Human-readable app name (used in platform metadata).
+  /// Human-readable app name (used in lab metadata).
   final String appName;
 
   /// App category (e.g. "Game", "Health", "Productivity").
@@ -79,7 +78,7 @@ class SynheartConfig {
   /// Developer name or organization.
   final String developer;
 
-  /// Additional app-level metadata for platform ingestion.
+  /// Additional app-level metadata for lab ingestion.
   final Map<String, dynamic> additionalAppMetadata;
 
   /// Device identifier (auto-generated if not provided).
@@ -107,9 +106,6 @@ class SynheartConfig {
 
   /// Consent service configuration
   final ConsentConfig? consentConfig;
-
-  /// Platform ingestion configuration (custom session/metadata uploads)
-  final PlatformIngestConfig? platformIngestConfig;
 
   /// Device authentication configuration.
   /// When set, enables automatic device registration, capability token
@@ -149,7 +145,6 @@ class SynheartConfig {
     this.behaviorConfig,
     this.cloudConfig,
     this.consentConfig,
-    this.platformIngestConfig,
     this.deviceAuthConfig,
     this.capabilityToken,
     this.capabilitySecret,
@@ -313,10 +308,7 @@ class CloudConfig {
     this.uploadInterval = const Duration(minutes: 5),
     this.maxRetries = 3,
     this.enableBacklog = true,
-  }) : assert(
-         hmacSecret != null || authProvider != null,
-         'CloudConfig requires either hmacSecret or authProvider',
-       );
+  });
 }
 
 /// Consent service configuration
@@ -342,16 +334,18 @@ class ConsentConfig {
   /// Region code (e.g., 'US', 'EU')
   final String? region;
 
-  const ConsentConfig({
-    this.consentServiceUrl = ApiEndpoints.defaultConsentBaseUrl,
+  ConsentConfig({
+    String? consentServiceUrl,
     this.appId,
     this.appApiKey,
     this.deviceId,
     this.platform = 'flutter',
     this.userId,
     this.region,
-  });
+  }) : consentServiceUrl = (consentServiceUrl != null && consentServiceUrl.isNotEmpty)
+           ? consentServiceUrl
+           : ApiEndpoints.resolvedConsentBaseUrl;
 
   /// Check if consent service is configured
-  bool get isConfigured => appId != null && appApiKey != null;
+  bool get isConfigured => appId != null;
 }

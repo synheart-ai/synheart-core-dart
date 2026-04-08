@@ -11,11 +11,11 @@ import 'wear_cache.dart';
 import 'wear_module_status.dart';
 import 'mock_wear_source.dart';
 import 'synheart_wear_source_handler.dart';
+import 'wearable_event_processor.dart';
 
 /// Wear Module
 ///
 /// Collects and buffers raw biosignals from wearables.
-/// RFC-CORE-0007 compliant: no feature computation in Core.
 class WearModule extends BaseSynheartModule
     implements RawWearDataProvider {
   @override
@@ -40,6 +40,16 @@ class WearModule extends BaseSynheartModule
   // Stream controller for module status events
   final StreamController<WearModuleStatus> _statusController =
       StreamController<WearModuleStatus>.broadcast();
+
+  // Vendor sync state — emits true/false when vendor_sync consent changes.
+  // The wear SDK (synheart_wear) subscribes to this to start/stop RAMEN.
+  final StreamController<bool> _vendorSyncController =
+      StreamController<bool>.broadcast();
+  bool _lastVendorSyncState = false;
+
+  // Wearable event processor — bridges RAMEN events to the SRM pipeline.
+  // Set via setEventProcessor() after Synheart.configure() provides storage + runtime.
+  WearableEventProcessor? _eventProcessor;
 
   WearModule({
     required CapabilityProvider capabilities,
@@ -97,11 +107,10 @@ class WearModule extends BaseSynheartModule
     }
   }
 
-  // MARK: - RawWearDataProvider
 
   @override
   List<WearSample> rawSamples(WindowType window) {
-    if (!_consent.current().biosignals) return [];
+    if (!_consent.current().allowsChannel('biosignals.vitals')) return [];
     return _cache.getSamples(window);
   }
 
@@ -130,16 +139,27 @@ class WearModule extends BaseSynheartModule
     _consentSubscription = _consent
         .observe()
         .asyncMap((consent) async {
-          if (!consent.biosignals) {
+          if (!consent.allowsChannel('biosignals.vitals')) {
             // Consent revoked - stop data collection immediately
             // SynheartLogger.log(
             //   '[WearModule] Biosignals consent revoked - stopping data collection',
             // );
             await _stopDataCollection();
-          } else if (consent.biosignals && _subscriptions.isEmpty) {
+          } else if (consent.allowsChannel('biosignals.vitals') && _subscriptions.isEmpty) {
             // Consent granted (either initially or after revoke) — start data collection.
             await _startDataCollection();
           }
+
+          // Track vendor sync state changes
+          final vendorSyncNow = consent.vendorSync;
+          if (vendorSyncNow != _lastVendorSyncState) {
+            _lastVendorSyncState = vendorSyncNow;
+            _vendorSyncController.add(vendorSyncNow);
+            SynheartLogger.log(
+              '[WearModule] Vendor sync ${vendorSyncNow ? "enabled" : "disabled"}',
+            );
+          }
+
           return consent;
         })
         .listen(
@@ -155,10 +175,16 @@ class WearModule extends BaseSynheartModule
           },
         );
 
+    // Initialize vendor sync state
+    _lastVendorSyncState = _consent.current().vendorSync;
+    if (_lastVendorSyncState) {
+      _vendorSyncController.add(true);
+    }
+
     // Start data collection only when consent is granted.
     // This prevents OS health permission dialogs from appearing before the user
     // grants Synheart biosignals consent.
-    if (_consent.current().biosignals) {
+    if (_consent.current().allowsChannel('biosignals.vitals')) {
       await _startDataCollection();
     }
 
@@ -183,7 +209,7 @@ class WearModule extends BaseSynheartModule
 
     try {
     // Check consent again before starting
-    if (!_consent.current().biosignals) {
+    if (!_consent.current().allowsChannel('biosignals.vitals')) {
       // SynheartLogger.log(
       //   '[WearModule] Cannot start: biosignals consent denied',
       // );
@@ -230,7 +256,7 @@ class WearModule extends BaseSynheartModule
         final subscription = source.sampleStream.listen(
           (sample) {
             // Check consent before caching or streaming - don't process if consent is denied
-            if (!_consent.current().biosignals) {
+            if (!_consent.current().allowsChannel('biosignals.vitals')) {
               // SynheartLogger.log(
               //   '[WearModule] Sample ignored: biosignals consent denied',
               // );
@@ -349,6 +375,52 @@ class WearModule extends BaseSynheartModule
   /// ```
   Stream<WearModuleStatus> get statusStream => _statusController.stream;
 
+  /// Stream that emits `true` when vendor_sync consent is granted,
+  /// `false` when revoked. The wear SDK (synheart_wear) uses this to
+  /// start/stop the RAMEN real-time event connection.
+  Stream<bool> get vendorSyncState => _vendorSyncController.stream;
+
+  /// Current vendor sync consent state.
+  bool get isVendorSyncEnabled => _lastVendorSyncState;
+
+  /// Set the wearable event processor (called by Synheart after configure).
+  void setEventProcessor(WearableEventProcessor processor) {
+    _eventProcessor = processor;
+  }
+
+  /// Process a vendor event from RAMEN into the SRM pipeline.
+  ///
+  /// Call this when a [RamenEvent] arrives from the wear SDK.
+  /// The processor normalizes the event, stores it in SQLite,
+  /// and pushes daily values to the runtime for baseline computation.
+  Future<void> processVendorEvent({
+    required String provider,
+    required String eventType,
+    required Map<String, dynamic> payload,
+    required String eventId,
+    required int seq,
+  }) async {
+    if (!_lastVendorSyncState) {
+      SynheartLogger.log(
+        '[WearModule] Vendor sync consent not granted — dropping $provider/$eventType',
+      );
+      return;
+    }
+    if (_eventProcessor == null) {
+      SynheartLogger.log(
+        '[WearModule] Event processor not configured — dropping $provider/$eventType',
+      );
+      return;
+    }
+    await _eventProcessor!.processRamenEvent(
+      provider: provider,
+      eventType: eventType,
+      payload: payload,
+      eventId: eventId,
+      seq: seq,
+    );
+  }
+
   void _emitStatus(WearModuleStatus status) {
     if (!_statusController.isClosed) {
       _statusController.add(status);
@@ -357,6 +429,9 @@ class WearModule extends BaseSynheartModule
 
   @override
   Future<void> onDispose() async {
+    // Close vendor sync stream
+    await _vendorSyncController.close();
+
     // Close raw sample stream controller
     await _rawSampleController?.close();
     _rawSampleController = null;

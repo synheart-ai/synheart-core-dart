@@ -133,23 +133,6 @@ class BaselineSnapshotArtifact {
     this.wearableReference,
   });
 
-  factory BaselineSnapshotArtifact.create({
-    required String subjectId,
-    required BaselineData baseline,
-  }) {
-    final header = ArtifactHeader(
-      type: 'baseline_snapshot',
-      subjectId: subjectId,
-      sessionId: null,
-      timeRange: TimeRange(
-        startMs: baseline.coverage.startMs,
-        endMs: baseline.coverage.endMs,
-      ),
-      schema: const SchemaRef(name: 'baseline_snapshot', version: '1'),
-    );
-    return BaselineSnapshotArtifact(header: header, baseline: baseline);
-  }
-
   Map<String, dynamic> toJson() => {
         ...header.toJson(),
         'baseline': baseline.toJson(),

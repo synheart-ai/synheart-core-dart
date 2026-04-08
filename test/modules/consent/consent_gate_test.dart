@@ -2,8 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:synheart_core/src/modules/interfaces/consent_provider.dart';
-import 'package:synheart_core/src/modules/runtime/runtime_bridge.dart';
-import 'package:synheart_core/src/modules/runtime/runtime_module.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -53,9 +53,9 @@ dependencies:
 
 dependency_overrides:
   synheart_wear:
-    path: ../../synheart-wear-dart
+    path: ../../synheart-wear-flutter
   synheart_behavior:
-    path: ../../synheart-behavior-dart
+    path: ../../synheart-behavior-flutter
 
 dev_dependencies:
   flutter_test:
