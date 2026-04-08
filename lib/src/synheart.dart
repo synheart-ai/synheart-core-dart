@@ -1220,14 +1220,16 @@ class Synheart {
 
   /// Push a wear HR event into runtime and optionally synthesize RR.
   /// Use when HR is coming from external/watch channels not wired to WearModule.
-  static void pushWearHr(int tsMs, double bpm, {bool synthesizeRr = true, double? rrMs}) {
+  static void pushWearHr(int tsMs, double bpm) {
     _coreRuntime?.pushHr(tsMs, bpm);
-    if (rrMs != null) {
-      _coreRuntime?.pushRr(tsMs, rrMs);
-    } else if (synthesizeRr && bpm > 0) {
-      _coreRuntime?.pushRr(tsMs, 60000.0 / bpm);
-    }
   }
+
+  static void pushRr(int tsMs, double rrMs) {
+    _coreRuntime?.pushRr(tsMs, rrMs);
+  }
+
+  /// Last preprocessed features from the engine (HRV, motion, quality, SRM context).
+  static String? get lastFeatures => _coreRuntime?.lastFeatures();
 
   // ── synheart-engine SRM API (baselines live in the native Rust engine) ──
 

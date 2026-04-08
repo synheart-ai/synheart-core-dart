@@ -207,6 +207,7 @@ class SynheartCoreFFI {
 
   late final wellnessJson = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>('synheart_core_wellness_json');
 
+  late final lastFeatures = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>('synheart_core_last_features');
   late final diagnostics = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>('synheart_core_diagnostics');
   late final lastErrorCode = _lib.lookupFunction<_IntReturnC, _IntReturnDart>('synheart_core_last_error_code');
   late final isRuntimeAvailable = _lib.lookupFunction<_IntReturnC, _IntReturnDart>('synheart_core_is_runtime_available');
