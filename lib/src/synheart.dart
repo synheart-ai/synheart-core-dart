@@ -33,6 +33,7 @@ import 'core_runtime/core_runtime_bridge.dart';
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
 import 'modules/consent/consent_ui.dart';
+import 'models/canonical_wearable_event.dart';
 import 'modules/wear/wearable_event_processor.dart';
 import 'modules/session/watch_session_module.dart';
 import 'package:synheart_session/synheart_session.dart';
@@ -453,6 +454,38 @@ class Synheart {
   /// Whether the SDK has been initialized via [initialize] or [configure].
   static bool get isInitialized => shared._isConfigured;
 
+  /// Ensure the Rust core runtime bridge is loaded.
+  ///
+  /// Call this after [initialize] if another module may have initialized
+  /// the SDK first without the native runtime bridge (e.g. behavior SDK).
+  static void ensureRuntimeBridge({
+    required String appId,
+    required String subjectId,
+  }) {
+    if (_coreRuntime != null) return;
+    try {
+      _coreRuntime = CoreRuntimeBridge.create({
+        'app_id': appId,
+        'subject_id': subjectId,
+        'mode': shared._config?.mode.name ?? 'personal',
+        'device_id': shared._config?.deviceId ?? '',
+        'app_version': shared._config?.appVersion ?? '0.0.0',
+        'platform': 'flutter',
+        'storage': {'enabled': shared._config?.storage.enabled ?? true},
+        'sync': {
+          'enabled': shared._config?.sync.enabled ?? false,
+          'base_url': shared._config?.sync.baseUrl ?? '',
+        },
+        'privacy': {'allow_research': shared._config?.privacy.allowResearch ?? false},
+      });
+      if (_coreRuntime != null) {
+        SynheartLogger.log('[Synheart] Rust core runtime bridge loaded (ensureRuntimeBridge)');
+      }
+    } catch (e) {
+      SynheartLogger.log('[Synheart] Rust core runtime bridge unavailable: $e');
+    }
+  }
+
   /// The currently active session, if any.
   static SessionHandle? get currentSession => shared._currentSessionHandle;
 
@@ -631,6 +664,7 @@ class Synheart {
         subjectId: runtimeSubjectId,
         deviceInstallId: runtimeSessionId,
       ));
+      _wearModule!.setBridge(_coreRuntime);
 
       // Push all behavior events (notification, app_switch, touch, etc.) to the runtime
       if (_coreRuntime != null) {
@@ -1995,6 +2029,102 @@ class Synheart {
       eventId: eventId,
       seq: seq,
     );
+  }
+
+  // ── Vendor Sync (RAMEN via Rust stream-runtime) ─────────────────
+
+  /// Start the Rust-based RAMEN streaming connection.
+  ///
+  /// [config] must include `host`, `port`, `app_id`, `device_id`, `user_id`.
+  /// Optional: `api_key`, `use_tls`, `providers`, `event_types`.
+  ///
+  /// Stream events are automatically routed through [processVendorEvent]
+  /// for normalization and storage.
+  static void startVendorSync(Map<String, dynamic> config) {
+    final bridge = _coreRuntime;
+    if (bridge == null) {
+      SynheartLogger.log('[Synheart] Cannot start vendor sync: runtime not initialized');
+      return;
+    }
+
+    // Register callback — each event from Rust is parsed and processed.
+    bridge.setStreamCallback((String eventJson) {
+      try {
+        final event = jsonDecode(eventJson) as Map<String, dynamic>;
+        final provider = event['provider']?.toString() ?? '';
+        final eventType = event['event_type']?.toString() ?? '';
+        final payloadJson = event['payload_json']?.toString() ?? '{}';
+        final eventId = event['event_id']?.toString() ?? '';
+        final seq = (event['seq'] as num?)?.toInt() ?? 0;
+
+        Map<String, dynamic> payload;
+        try {
+          payload = jsonDecode(payloadJson) as Map<String, dynamic>;
+        } catch (_) {
+          payload = {};
+        }
+
+        processVendorEvent(
+          provider: provider,
+          eventType: eventType,
+          payload: payload,
+          eventId: eventId,
+          seq: seq,
+        );
+      } catch (e) {
+        SynheartLogger.log('[Synheart] Stream event parse failed: $e');
+      }
+    });
+
+    bridge.startStream(config);
+  }
+
+  /// Stop the Rust-based RAMEN streaming connection.
+  static void stopVendorSync() {
+    _coreRuntime?.stopStream();
+    _coreRuntime?.clearStreamCallback();
+  }
+
+  /// Get the current vendor sync connection state.
+  ///
+  /// Returns "connecting", "connected", "disconnected", or "reconnecting".
+  static String? get vendorSyncState => _coreRuntime?.streamState();
+
+  /// Stream of canonical vendor events as they are processed and stored.
+  static Stream<CanonicalWearableEvent>? get vendorEvents =>
+      shared._wearModule?.canonicalEvents;
+
+  /// Query stored vendor events from the Rust runtime.
+  ///
+  /// Returns a list of decoded event maps with `event_id`, `type`, `provider`,
+  /// `payload`, `observed_at_ms`, `confidence`, etc.
+  static List<dynamic>? queryVendorEvents({
+    String? provider,
+    String? type,
+    DateTime? start,
+    DateTime? end,
+    int limit = 100,
+  }) {
+    return _coreRuntime?.queryVendorEvents(
+      provider: provider,
+      type: type,
+      startMs: start?.millisecondsSinceEpoch,
+      endMs: end?.millisecondsSinceEpoch,
+      limit: limit,
+    );
+  }
+
+  /// Get the most recent vendor event of a given type.
+  static Map<String, dynamic>? getLatestVendorEvent(
+    String provider,
+    String type,
+  ) {
+    return _coreRuntime?.getLatestVendorEvent(provider, type);
+  }
+
+  /// Delete all stored vendor events for a provider (e.g. on unlink).
+  static int deleteVendorEventsForProvider(String provider) {
+    return _coreRuntime?.deleteVendorEventsForProvider(provider) ?? -1;
   }
 
   static Future<void> grantConsent({
