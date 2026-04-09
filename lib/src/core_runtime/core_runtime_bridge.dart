@@ -13,11 +13,23 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
 import 'ffi_bindings.dart';
+import 'sdk_crypto_callbacks.dart';
+import 'sdk_ffi.dart';
 
-/// Top-level callback for Rust log forwarding (must be top-level for Pointer.fromFunction).
-void _onRustLog(Pointer<Utf8> line, Pointer<Void> userData) {
+/// Forwarder installed before `synheart_core_init_logging` (top-level for FFI).
+void Function(String line)? synheartRustLogForwarder;
+
+void _synheartRustLogTrampoline(Pointer<Utf8> line, Pointer<Void> userData) {
   if (line == nullptr) return;
-  debugPrint('[synheart] ${line.toDartString()}');
+  final text = line.toDartString();
+  final custom = synheartRustLogForwarder;
+  if (custom != null) {
+    custom(text);
+    return;
+  }
+  if (kDebugMode) {
+    debugPrint('[synheart] $text');
+  }
 }
 
 /// Bridge to the Rust core runtime via FFI.
@@ -40,6 +52,49 @@ class CoreRuntimeBridge {
   final SynheartCoreFFI _ffi;
   final Pointer<Void> _handle;
   bool _disposed = false;
+  Pointer<SynheartSdkCryptoCallbacks>? _sdkCryptoTable;
+
+  /// Default `env_filter` when [initRustLogging] is called with a null/empty filter.
+  static String defaultRustLogEnvFilter = 'info,synheart_core_runtime=debug';
+
+  static bool _loggingInstalled = false;
+
+  /// Initialize Rust `tracing` once per process (call before [create] if you need
+  /// a custom filter or sink). Matches [SDK_LOGGING_INIT.md] / SDK auth sequence §1b.
+  ///
+  /// Returns `0` on success, `1` if already initialized, negative on failure.
+  static int initRustLogging({
+    SynheartCoreFFI? ffi,
+    String? envFilter,
+    void Function(String line)? onLine,
+  }) {
+    if (_loggingInstalled) return 1;
+    final lib = ffi ?? SynheartCoreFFI.load();
+    if (lib == null) return -2;
+    final chosen = envFilter ?? defaultRustLogEnvFilter;
+    Pointer<Utf8> filterArg;
+    if (chosen.isEmpty) {
+      filterArg = nullptr;
+    } else {
+      filterArg = chosen.toNativeUtf8();
+    }
+    try {
+      synheartRustLogForwarder = onLine;
+      final cb = Pointer.fromFunction<
+          Void Function(Pointer<Utf8>, Pointer<Void>)>(_synheartRustLogTrampoline);
+      final rc = lib.initLogging(filterArg, cb, nullptr);
+      if (rc == 0 || rc == 1) {
+        _loggingInstalled = true;
+      }
+      return rc;
+    } catch (_) {
+      return -3;
+    } finally {
+      if (filterArg != nullptr) {
+        malloc.free(filterArg);
+      }
+    }
+  }
 
   /// Create a bridge from a config map. Returns null if the native
   /// library is unavailable or config is invalid.
@@ -47,8 +102,8 @@ class CoreRuntimeBridge {
     final ffi = SynheartCoreFFI.load();
     if (ffi == null) return null;
 
-    // Initialize logging before any other call (no-op if already done).
-    _initLogging(ffi);
+    // §1b: logging before `synheart_core_new` (idempotent if app called [initRustLogging]).
+    initRustLogging(ffi: ffi);
 
     final json = jsonEncode(config);
     final cJson = json.toNativeUtf8();
@@ -61,26 +116,86 @@ class CoreRuntimeBridge {
     }
   }
 
-  static bool _loggingDone = false;
-  static void _initLogging(SynheartCoreFFI ffi) {
-    if (_loggingDone) return;
-    _loggingDone = true;
-    try {
-      final cb = Pointer.fromFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>(_onRustLog);
-      final filter = 'info,synheart_core_runtime=debug'.toNativeUtf8();
-      ffi.initLogging(filter.cast(), cb, nullptr);
-      malloc.free(filter);
-    } catch (_) {}
-  }
-
   /// Whether the native library was loaded and the handle is valid.
   bool get isAvailable => !_disposed;
+
+  /// True when this native build exports the full `synheart_core_sdk_*` device-auth ABI.
+  bool get sdkDeviceAuthAvailable => !_disposed && _ffi.sdkFfi.isAvailable;
+
+  /// Register host crypto callbacks (§2). Must be called before [sdkRegisterDevice] / proof APIs.
+  ///
+  /// Returns `0` on success. On failure, frees the allocated callback table.
+  int setSdkCryptoCallbacks(SynheartCoreCryptoCallbacks callbacks) {
+    if (_disposed) return -1;
+    if (!_ffi.sdkFfi.isAvailable) return -2;
+    synheartSdkCryptoAttach(callbacks);
+    if (_sdkCryptoTable != null) {
+      calloc.free(_sdkCryptoTable!);
+      _sdkCryptoTable = null;
+    }
+    final table = calloc<SynheartSdkCryptoCallbacks>();
+    synheartFillSdkCryptoStruct(table);
+    final rc = _ffi.sdkFfi.setCryptoCallbacksInvoke(_handle, table);
+    if (rc != 0) {
+      calloc.free(table);
+      synheartSdkCryptoAttach(null);
+      return rc;
+    }
+    _sdkCryptoTable = table;
+    return 0;
+  }
+
+  /// §3 — device registration (attestation). [clientId] is the app user id for this session.
+  Map<String, dynamic>? sdkRegisterDevice(String clientId) {
+    if (_disposed || _ffi.sdkFfi.registerDevice == null) return null;
+    return _withCString(clientId, (p) {
+      final out = _readAndFree(_ffi.sdkFfi.registerDevice!(_handle, p));
+      if (out == null) return null;
+      try {
+        return jsonDecode(out) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
+  /// §3 / §5 — JSON snapshot from `synheart_core_sdk_device_auth_status`.
+  Map<String, dynamic>? sdkDeviceAuthStatus() {
+    if (_disposed || _ffi.sdkFfi.deviceAuthStatus == null) return null;
+    final out = _readAndFree(_ffi.sdkFfi.deviceAuthStatus!(_handle));
+    if (out == null) return null;
+    try {
+      return jsonDecode(out) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// §4 — compact JWS value for `X-Synheart-Proof` (non-ingest APIs). Use uppercase [method].
+  String? buildProofHeader(String method, String absoluteUrl) {
+    if (_disposed || _ffi.sdkFfi.buildProofHeader == null) return null;
+    final m = method.toNativeUtf8();
+    final u = absoluteUrl.toNativeUtf8();
+    try {
+      return _readAndFree(
+        _ffi.sdkFfi.buildProofHeader!(_handle, m.cast(), u.cast()),
+      );
+    } finally {
+      malloc.free(m);
+      malloc.free(u);
+    }
+  }
 
   /// Release the native handle. Must be called when done.
   void dispose() {
     if (!_disposed) {
       clearHsiCallback();
       _ffi.coreFree(_handle);
+      if (_sdkCryptoTable != null) {
+        calloc.free(_sdkCryptoTable!);
+        _sdkCryptoTable = null;
+      }
+      synheartSdkCryptoAttach(null);
       _disposed = true;
     }
   }
