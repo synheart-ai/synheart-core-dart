@@ -21,7 +21,10 @@ abstract class SynheartCoreCryptoCallbacks {
   /// Returns base64url (or base64) signature bytes for [data].
   String signBytesBase64Url(String deviceId, Uint8List data);
 
-  /// Returns `{ "format": "...", "blob": "<base64>" }` for [challengeHash].
+  /// Returns `{ "format": "...", "blob": "..." }` for [challengeHash].
+  ///
+  /// For Android Play Integrity, `blob` must be the raw compact JOSE token
+  /// from the client API (do not re-encode/wrap/truncate).
   String getAttestationJson(String deviceId, Uint8List challengeHash);
 
   bool keyExists(String deviceId);

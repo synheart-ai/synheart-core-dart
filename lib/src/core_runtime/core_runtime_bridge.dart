@@ -7,6 +7,7 @@ library;
 
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 
@@ -55,9 +56,11 @@ class CoreRuntimeBridge {
   Pointer<SynheartSdkCryptoCallbacks>? _sdkCryptoTable;
 
   /// Default `env_filter` when [initRustLogging] is called with a null/empty filter.
-  static String defaultRustLogEnvFilter = 'info,synheart_core_runtime=debug';
+  // static String defaultRustLogEnvFilter = 'info,synheart_core_runtime=debug';
+  static String defaultRustLogEnvFilter = 'synheart_core_runtime=trace,info';
 
   static bool _loggingInstalled = false;
+  static NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>? _logCallable;
 
   /// Initialize Rust `tracing` once per process (call before [create] if you need
   /// a custom filter or sink). Matches [SDK_LOGGING_INIT.md] / SDK auth sequence §1b.
@@ -80,9 +83,8 @@ class CoreRuntimeBridge {
     }
     try {
       synheartRustLogForwarder = onLine;
-      final cb = Pointer.fromFunction<
-          Void Function(Pointer<Utf8>, Pointer<Void>)>(_synheartRustLogTrampoline);
-      final rc = lib.initLogging(filterArg, cb, nullptr);
+      _logCallable ??= NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>.listener(_synheartRustLogTrampoline);
+      final rc = lib.initLogging(filterArg, _logCallable!.nativeFunction, nullptr);
       if (rc == 0 || rc == 1) {
         _loggingInstalled = true;
       }
@@ -145,16 +147,43 @@ class CoreRuntimeBridge {
     return 0;
   }
 
+  /// Register host crypto callbacks natively bypassing Dart trampolines.
+  int setSdkCryptoCallbacksRaw(Pointer<SynheartSdkCryptoCallbacks> table) {
+    if (_disposed) return -1;
+    if (!_ffi.sdkFfi.isAvailable) return -2;
+    synheartSdkCryptoAttach(null);
+    if (_sdkCryptoTable != null) {
+      calloc.free(_sdkCryptoTable!);
+    }
+    final rc = _ffi.sdkFfi.setCryptoCallbacksInvoke(_handle, table);
+    if (rc != 0) {
+      calloc.free(table);
+      return rc;
+    }
+    _sdkCryptoTable = table;
+    return 0;
+  }
+
   /// §3 — device registration (attestation). [clientId] is the app user id for this session.
-  Map<String, dynamic>? sdkRegisterDevice(String clientId) {
+  /// Runs on a background isolate so the blocking FFI call doesn't ANR the UI thread.
+  Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) async {
     if (_disposed || _ffi.sdkFfi.registerDevice == null) return null;
-    return _withCString(clientId, (p) {
-      final out = _readAndFree(_ffi.sdkFfi.registerDevice!(_handle, p));
-      if (out == null) return null;
+    final handleAddr = _handle.address;
+    return await Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final p = clientId.toNativeUtf8();
       try {
-        return jsonDecode(out) as Map<String, dynamic>;
+        final resPtr = ffi.sdkFfi.registerDevice!(handle, p.cast());
+        if (resPtr == nullptr) return null;
+        final str = resPtr.toDartString();
+        ffi.coreFreeString(resPtr);
+        return jsonDecode(str) as Map<String, dynamic>;
       } catch (_) {
         return null;
+      } finally {
+        malloc.free(p);
       }
     });
   }

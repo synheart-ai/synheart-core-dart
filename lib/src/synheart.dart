@@ -26,8 +26,9 @@ import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
 import 'modules/cloud/device_auth_provider.dart';
 import 'core_runtime/core_runtime_bridge.dart';
+import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
 import 'core_runtime/sdk_crypto_callbacks.dart';
-import 'core_runtime/software_sdk_crypto_callbacks.dart';
+
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
 import 'modules/consent/consent_ui.dart';
@@ -549,18 +550,43 @@ class Synheart {
       if (_coreRuntime != null) {
         SynheartLogger.log('[Synheart] Rust core runtime bridge loaded');
         if (_coreRuntime!.sdkDeviceAuthAvailable) {
-          final callbacks = _coreDeviceCrypto ?? SoftwareSdkCryptoCallbacks();
-          final crc = _coreRuntime!.setSdkCryptoCallbacks(callbacks);
-          if (crc != 0) {
+          // Attach crypto callbacks before any core SDK registration/proof
+          // API is used (SDK auth sequence §2).
+          //
+          // Priority: host-registered > native process symbols.
+          // No software fallback — if neither is available, device auth
+          // will fail fast at registration time.
+          final nativeBridgeTable = _coreDeviceCrypto == null
+              ? PlatformNativeSdkCryptoCallbacks.tryCreateRawTable()
+              : null;
+          
+          if (_coreDeviceCrypto == null && nativeBridgeTable == null) {
             SynheartLogger.log(
-              '[Synheart] synheart_core_sdk_set_crypto_callbacks failed: $crc',
+              '[Synheart] ⚠️ No native crypto callbacks available — '
+              'device auth will fail. Ensure synheart_auth plugin is '
+              'registered and libsynheart_native_crypto.so is bundled.',
             );
           } else {
-            _sdkCryptoCallbacksAttached = true;
-            if (_coreDeviceCrypto == null) {
+            final crc = _coreDeviceCrypto != null 
+                ? _coreRuntime!.setSdkCryptoCallbacks(_coreDeviceCrypto!)
+                : _coreRuntime!.setSdkCryptoCallbacksRaw(nativeBridgeTable!);
+
+            if (crc != 0) {
               SynheartLogger.log(
-                '[Synheart] Using built-in software SDK crypto callbacks.',
+                '[Synheart] synheart_core_sdk_set_crypto_callbacks failed: $crc',
               );
+            } else {
+              _sdkCryptoCallbacksAttached = true;
+              if (_coreDeviceCrypto != null) {
+                SynheartLogger.log(
+                  '[Synheart] Using host-registered crypto callbacks.',
+                );
+              } else {
+                SynheartLogger.log(
+                  '[Synheart] Using SDK-owned native crypto callback bridge '
+                  '(synheart_native_* symbols found natively, bypassing Dart).',
+                );
+              }
             }
           }
         } else if (_coreDeviceCrypto != null && !_coreRuntime!.sdkDeviceAuthAvailable) {
@@ -2525,7 +2551,9 @@ class Synheart {
     }
     if (!_sdkCryptoCallbacksAttached) {
       throw StateError(
-        'Device registration requires SDK crypto callbacks to be attached.',
+        'Device registration requires SDK crypto callbacks to be attached. '
+        'Register synchronous platform crypto via Synheart.registerCoreDeviceAuthCrypto(...) '
+        'before initialize().',
       );
     }
 
@@ -2537,7 +2565,7 @@ class Synheart {
     );
 
     try {
-      final reg = runtime.sdkRegisterDevice(resolvedConfig.subjectId);
+      final reg = await runtime.sdkRegisterDevice(resolvedConfig.subjectId);
       final deviceId = reg?['device_id'] as String? ?? reg?['deviceId'] as String?;
       final err = reg?['error']?.toString();
       if (reg == null || deviceId == null || (err != null && err.isNotEmpty)) {
@@ -2552,7 +2580,7 @@ class Synheart {
       );
     } catch (e) {
       SynheartLogger.log(
-        '[Synheart] Core SDK register_device failed: $e',
+        '[Synheart] Device registration failed: $e',
         error: e,
       );
       if (resolvedConfig.allowUnsignedCapabilities) {
