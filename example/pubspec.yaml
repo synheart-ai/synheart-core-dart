@@ -53,9 +53,9 @@ dependencies:
 
 dependency_overrides:
   synheart_wear:
-    path: /Users/fujin/Documents/synheart/Core-Related/synheart-wear-dart
+    path: ../../synheart-wear-dart
   synheart_behavior:
-    path: /Users/fujin/Documents/synheart/Core-Related/synheart-behavior-dart
+    path: ../../synheart-behavior-dart
 
 dev_dependencies:
   flutter_test:

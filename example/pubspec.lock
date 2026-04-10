@@ -720,8 +720,8 @@ packages:
   synheart_auth:
     dependency: transitive
     description:
-      path: "/Users/fujin/Documents/synheart/Core-Related/auth/synheart-auth-dart"
-      relative: false
+      path: "../../synheart-auth-dart"
+      relative: true
     source: path
     version: "1.0.0"
   synheart_behavior:

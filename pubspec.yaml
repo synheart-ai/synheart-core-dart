@@ -24,15 +24,15 @@ dependencies:
 
   # Synheart interpretation SDKs (local)
   synheart_wear:
-    path: /Users/fujin/Documents/synheart/Core-Related/synheart-wear-dart
+    path: ../synheart-wear-dart
   synheart_session:
-    path: /Users/fujin/Documents/synheart/Core-Related/synheart-session-dart
+    path: ../synheart-session-dart
   # synheart_emotion and synheart_focus removed — HSV heads now computed by
   # synheart-runtime and accessed via RuntimeBridge.lastHsv().
   synheart_behavior:
-    path: /Users/fujin/Documents/synheart/Core-Related/synheart-behavior-dart
+    path: ../synheart-behavior-dart
   synheart_auth:
-    path: /Users/fujin/Documents/synheart/Core-Related/auth/synheart-auth-dart
+    path: ../synheart-auth-dart
 
   # FFI for synheart-runtime native library
   ffi: ^2.1.0
@@ -70,11 +70,11 @@ dependencies:
 
 dependency_overrides:
   synheart_wear:
-    path: /Users/fujin/Documents/synheart/Core-Related/synheart-wear-dart
+    path: ../synheart-wear-dart
   synheart_behavior:
-    path: /Users/fujin/Documents/synheart/Core-Related/synheart-behavior-dart
+    path: ../synheart-behavior-dart
   synheart_auth:
-    path: /Users/fujin/Documents/synheart/Core-Related/auth/synheart-auth-dart
+    path: ../synheart-auth-dart
 
 dev_dependencies:
   flutter_test:
