@@ -7,10 +7,11 @@ import 'synheart_errors.dart';
 /// Device authentication configuration.
 ///
 /// When provided, the SDK will automatically:
-/// 1. Configure SynheartAuth with [authBaseUrl]
-/// 2. Register the device (idempotent)
+/// 1. Register the device via core-runtime (idempotent)
 /// 3. Fetch capability tokens from the server using device-signed requests
-/// 4. Use [DeviceAuthProvider] for cloud/lab ingest signing
+/// 4. Use [DeviceAuthProvider] (runtime proof) for cloud/lab ingest signing
+///
+/// Runtime-only policy: SDK layers must not perform outbound auth API calls directly.
 class DeviceAuthConfig {
   /// Base URL for the device auth service.
   final String authBaseUrl;
@@ -126,6 +127,10 @@ class SynheartConfig {
   /// streaming events and ticking every second. HSI is then only produced after stop.
   final bool batchIngestOnStop;
 
+  /// Optional `tracing` `EnvFilter` for `synheart_core_init_logging` (SDK §1b).
+  /// When non-empty, overrides the bridge default filter during SDK initialization.
+  final String? runtimeLogEnvFilter;
+
   SynheartConfig({
     this.appId = '',
     this.subjectId = '',
@@ -150,6 +155,7 @@ class SynheartConfig {
     this.capabilitySecret,
     this.allowUnsignedCapabilities = false,
     this.batchIngestOnStop = false,
+    this.runtimeLogEnvFilter,
   });
 
   /// Create default configuration

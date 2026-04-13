@@ -9,6 +9,8 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
+import 'sdk_ffi.dart';
+
 // ── C function typedefs (native + Dart) ─────────────────────────────────
 
 // Handle lifecycle
@@ -135,9 +137,12 @@ typedef _DoubleReturnDart = double Function(Pointer<Void> h);
 
 /// Resolved FFI bindings for `synheart_core_runtime`.
 class SynheartCoreFFI {
-  SynheartCoreFFI._(this._lib);
+  SynheartCoreFFI._(this._lib) : sdkFfi = SynheartSdkFfi.tryBind(_lib);
 
   final DynamicLibrary _lib;
+
+  /// Optional `synheart_core_sdk_*` device-auth symbols (null fields if absent).
+  final SynheartSdkFfi sdkFfi;
 
   static SynheartCoreFFI? _instance;
 

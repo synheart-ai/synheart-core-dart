@@ -1,22 +1,21 @@
 import 'dart:typed_data';
-import 'package:synheart_auth/synheart_auth.dart';
 import '../../core/logger.dart';
+import '../../core_runtime/core_runtime_bridge.dart';
 import '../interfaces/auth_provider.dart';
 
-/// [AuthProvider] backed by SynheartAuth device-identity signing.
+/// [AuthProvider] backed by core-runtime proof generation.
 ///
-/// Wraps [SynheartAuth.signRequest] to produce the signed header set
-/// (X-App-ID, X-Device-ID, X-Synheart-Signature, etc.) for every
-/// outgoing request to cloud and platform ingest services.
+/// Runtime-only policy: this provider must not call platform SDK/API code
+/// for outbound auth. It only asks core-runtime to build `X-Synheart-Proof`.
 class DeviceAuthProvider implements AuthProvider {
-  final SynheartAuth _auth;
-  final String _appId;
+  final CoreRuntimeBridge _coreRuntime;
+  final String _baseUrl;
 
   DeviceAuthProvider({
-    required String appId,
-    SynheartAuth? auth,
-  })  : _appId = appId,
-        _auth = auth ?? SynheartAuth.instance;
+    required CoreRuntimeBridge coreRuntime,
+    required String baseUrl,
+  })  : _coreRuntime = coreRuntime,
+        _baseUrl = baseUrl;
 
   @override
   Future<Map<String, String>> signRequest({
@@ -24,13 +23,16 @@ class DeviceAuthProvider implements AuthProvider {
     required String path,
     required Uint8List bodyBytes,
   }) async {
-    final signed = await _auth.signRequest(
-      appId: _appId,
-      method: method,
-      path: path,
-      bodyBytes: bodyBytes,
-    );
-    return signed.toMap();
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    final absoluteUrl = '${_baseUrl.replaceAll(RegExp(r'/+$'), '')}$normalizedPath';
+    final proof = _coreRuntime.buildProofHeader(method.toUpperCase(), absoluteUrl);
+    if (proof == null || proof.isEmpty) {
+      SynheartLogger.log(
+        '[DeviceAuth] Failed to build runtime proof header for $method $normalizedPath',
+      );
+      return <String, String>{};
+    }
+    return <String, String>{'X-Synheart-Proof': proof};
   }
 
   @override
@@ -38,31 +40,27 @@ class DeviceAuthProvider implements AuthProvider {
     required int statusCode,
     required Map<String, String> responseHeaders,
   }) async {
-    // Handle clock skew — server sends its timestamp so we can correct drift.
+    // Runtime-only auth path: the runtime does not currently expose clock-skew
+    // correction or key-rotation APIs through the proof-header FFI, so neither
+    // class of 401 is recoverable from the SDK side. Surface the known signals
+    // in logs so the gap is visible, then propagate the error.
+    //
+    // TODO(runtime): wire synheart_core_sdk_apply_server_ts and
+    //   synheart_core_sdk_rotate_key so we can return true and retry here.
     final serverTs = responseHeaders['x-server-timestamp'];
     if (serverTs != null) {
-      final ts = double.tryParse(serverTs);
-      if (ts != null) {
-        await _auth.correctClockSkew(ts);
-        SynheartLogger.log('[DeviceAuth] Clock skew corrected, retrying');
-        return true;
-      }
+      SynheartLogger.log(
+        '[DeviceAuth] 401 with x-server-timestamp=$serverTs — '
+        'runtime proof uses device clock; skew correction not yet exposed.',
+      );
     }
-
-    // Handle key invalidation — rotate and retry.
-    final errorCode = responseHeaders['x-synheart-error'];
-    if (errorCode == 'KEY_INVALIDATED') {
-      try {
-        final result = await _auth.rotateKey(_appId);
-        if (result.status == RotationStatus.success) {
-          SynheartLogger.log('[DeviceAuth] Key rotated, retrying');
-          return true;
-        }
-      } catch (e) {
-        SynheartLogger.log('[DeviceAuth] Key rotation failed: $e', error: e);
-      }
+    final errCode = responseHeaders['x-synheart-error'];
+    if (errCode == 'KEY_INVALIDATED') {
+      SynheartLogger.log(
+        '[DeviceAuth] 401 KEY_INVALIDATED — '
+        'runtime key rotation not yet implemented; re-registration required.',
+      );
     }
-
     return false;
   }
 }

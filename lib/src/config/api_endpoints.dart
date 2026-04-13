@@ -1,22 +1,15 @@
 /// Central registry of all Synheart API endpoints and default base URLs.
 ///
-/// 3 services behind the API gateway:
-///   api.synheart.ai/auth/v1/...     — auth, device attestation, account
-///   api.synheart.ai/consent/v1/...  — consent profiles, tokens
-///   api.synheart.ai/ingest/v1/...   — HSI, platform/lab, wear, SWIP
+/// Runtime owns service postfix routing. SDK base URLs should be origin-only:
+///   https://api.synheart.ai
 ///
-/// Dev gateway: api-dev.synheart.io (same paths)
+/// Dev gateway: https://api-dev.synheart.io
 abstract final class ApiEndpoints {
   // ── Base URL ────────────────────────────────────────────────────────
   static const String defaultBaseUrl = String.fromEnvironment(
     'SYNHEART_BASE_URL',
     defaultValue: 'https://api.synheart.ai',
   );
-
-  // ── Gateway prefixes (3 services) ─────────────────────────────────
-  static const String _authGateway = '/auth';
-  static const String _consentGateway = '/consent';
-  static const String _ingestGateway = '/ingest';
 
   // ── Per-service base URL overrides (optional, for legacy/dev) ─────
   static const String _authOverride = String.fromEnvironment(
@@ -39,22 +32,19 @@ abstract final class ApiEndpoints {
   static const String defaultLabIngestBaseUrl = _ingestOverride;
 
   // ── Resolved base URLs ────────────────────────────────────────────
-  static String _resolve(String override, String gatewayPrefix) {
+  static String _resolve(String override) {
     if (override.isNotEmpty) return override;
-    return '$defaultBaseUrl$gatewayPrefix';
+    return defaultBaseUrl;
   }
 
-  /// Auth: api.synheart.ai/auth
-  static String get resolvedAuthBaseUrl =>
-      _resolve(_authOverride, _authGateway);
+  /// Auth base URL (origin only; runtime appends service postfixes).
+  static String get resolvedAuthBaseUrl => _resolve(_authOverride);
 
-  /// Consent: api.synheart.ai/consent
-  static String get resolvedConsentBaseUrl =>
-      _resolve(_consentOverride, _consentGateway);
+  /// Consent base URL (origin only; runtime appends service postfixes).
+  static String get resolvedConsentBaseUrl => _resolve(_consentOverride);
 
-  /// Ingest (HSI + platform + wear): api.synheart.ai/ingest
-  static String get resolvedIngestBaseUrl =>
-      _resolve(_ingestOverride, _ingestGateway);
+  /// Ingest base URL (origin only; runtime appends service postfixes).
+  static String get resolvedIngestBaseUrl => _resolve(_ingestOverride);
 
   // Cloud and lab ingest both go to the ingest service
   static String get resolvedCloudBaseUrl => resolvedIngestBaseUrl;

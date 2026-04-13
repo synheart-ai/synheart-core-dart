@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:rxdart/rxdart.dart';
-import 'config/api_endpoints.dart';
 import 'config/synheart_config.dart';
 import 'core/logger.dart';
 import 'modules/base/module_manager.dart';
@@ -18,7 +16,6 @@ import 'modules/wear/wear_source_handler.dart';
 import 'modules/phone/phone_module.dart';
 import 'modules/behavior/behavior_module.dart';
 import 'modules/behavior/behavior_events.dart';
-import 'modules/interfaces/feature_providers.dart';
 import 'models/behavior_session_results.dart';
 import 'package:synheart_behavior/synheart_behavior.dart' as sb;
 import 'config/synheart_mode.dart';
@@ -27,9 +24,10 @@ import 'models/hsi_state.dart';
 import 'models/metric_event.dart';
 import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
-import 'package:synheart_auth/synheart_auth.dart';
 import 'modules/cloud/device_auth_provider.dart';
 import 'core_runtime/core_runtime_bridge.dart';
+import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
+
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
 import 'modules/consent/consent_ui.dart';
@@ -72,7 +70,7 @@ class Synheart {
   static Synheart? _instance;
   static Synheart get shared => _instance ??= Synheart._();
 
-  /// Rust core runtime bridge (FFI). Null when native lib unavailable.
+  /// core runtime bridge (FFI). Null when native lib unavailable.
   static CoreRuntimeBridge? _coreRuntime;
 
   Synheart._();
@@ -87,6 +85,10 @@ class Synheart {
   PhoneModule? _phoneModule;
   BehaviorModule? _behaviorModule;
   DeviceAuthProvider? _deviceAuthProvider;
+
+  /// True when [sdkRegisterDevice] succeeded for this process (core-runtime auth path).
+  static bool _deviceAuthViaCoreRuntime = false;
+  static bool _sdkCryptoCallbacksAttached = false;
 
   // Watch session module
   WatchSessionModule? _watchSessionModule;
@@ -245,8 +247,11 @@ class Synheart {
       if (result != null) {
         return StorageUsage(
           totalBytes: result['total_bytes'] as int? ?? 0,
-          bySessionBytes: (result['by_session_bytes'] as Map<String, dynamic>?)
-              ?.map((k, v) => MapEntry(k, v as int)) ?? {},
+          bySessionBytes:
+              (result['by_session_bytes'] as Map<String, dynamic>?)?.map(
+                (k, v) => MapEntry(k, v as int),
+              ) ??
+              {},
         );
       }
     }
@@ -291,36 +296,24 @@ class Synheart {
   }
 
   /// Request account deletion — wipes local data and requests server-side deletion.
+  ///
+  /// Local data is wiped regardless of whether the server request succeeds: the
+  /// user has expressed intent to delete, and a failed server hop shouldn't
+  /// leave their data on this device.
   static Future<DeletionRequestResult> requestAccountDeletion() async {
-    if (_coreRuntime != null) {
-      final ok = _coreRuntime!.requestAccountDeletion();
-      return DeletionRequestResult(
-        status: ok ? 'accepted' : 'error',
-        message: ok
-            ? 'Account deletion requested via core runtime.'
-            : 'Account deletion request failed.',
+    if (_coreRuntime == null) {
+      return const DeletionRequestResult(
+        status: 'error',
+        message: 'Account deletion unavailable: core runtime not loaded.',
       );
     }
-    final token = shared._consentModule?.getCurrentToken();
-    if (token != null && token.isValid) {
-      try {
-        await http.post(
-          shared._buildAccountApiUri(ApiEndpoints.accountDeletePath),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ${token.token}',
-          },
-          body: jsonEncode({'confirmation': 'DELETE_MY_ACCOUNT'}),
-        );
-      } catch (_) {
-        // Server deletion request failed — still wipe locally
-      }
-    }
-
+    final serverOk = _coreRuntime!.requestAccountDeletion();
     await wipeLocalData();
-    return const DeletionRequestResult(
+    return DeletionRequestResult(
       status: 'accepted',
-      message: 'Local data wiped. Server deletion pending.',
+      message: serverOk
+          ? 'Local data wiped. Server deletion pending.'
+          : 'Local data wiped. Server deletion request failed — retry when online.',
     );
   }
 
@@ -335,40 +328,10 @@ class Synheart {
             : 'Account deletion cancellation failed.',
       );
     }
-    final token = shared._consentModule?.getCurrentToken();
-    if (token == null || !token.isValid) {
-      return const DeletionRequestResult(
-        status: 'error',
-        message: 'No valid consent token',
-      );
-    }
-
-    try {
-      final response = await http.post(
-        shared._buildAccountApiUri(ApiEndpoints.accountDeleteCancelPath),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${token.token}',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        return const DeletionRequestResult(
-          status: 'cancelled',
-          message: 'Account deletion cancelled.',
-        );
-      }
-
-      return DeletionRequestResult(
-        status: 'error',
-        message: 'Cancel failed: ${response.statusCode}',
-      );
-    } catch (e) {
-      return DeletionRequestResult(
-        status: 'error',
-        message: 'Cancel failed: $e',
-      );
-    }
+    return const DeletionRequestResult(
+      status: 'error',
+      message: 'Account deletion cancellation requires core-runtime network bridge.',
+    );
   }
 
   // --- Phase 3: Auth ---
@@ -378,7 +341,9 @@ class Synheart {
     if (_coreRuntime != null) {
       _coreRuntime!.wipeLocalData();
     }
-    try { await shared._consentModule?.revokeConsent(); } catch (_) {}
+    try {
+      await shared._consentModule?.revokeConsent();
+    } catch (_) {}
   }
 
   // --- Phase 3: Sync API ---
@@ -454,7 +419,7 @@ class Synheart {
   /// Whether the SDK has been initialized via [initialize] or [configure].
   static bool get isInitialized => shared._isConfigured;
 
-  /// Ensure the Rust core runtime bridge is loaded.
+  /// Ensure the core runtime bridge is loaded.
   ///
   /// Call this after [initialize] if another module may have initialized
   /// the SDK first without the native runtime bridge (e.g. behavior SDK).
@@ -479,10 +444,10 @@ class Synheart {
         'privacy': {'allow_research': shared._config?.privacy.allowResearch ?? false},
       });
       if (_coreRuntime != null) {
-        SynheartLogger.log('[Synheart] Rust core runtime bridge loaded (ensureRuntimeBridge)');
+        SynheartLogger.log('[Synheart] core runtime bridge loaded (ensureRuntimeBridge)');
       }
     } catch (e) {
-      SynheartLogger.log('[Synheart] Rust core runtime bridge unavailable: $e');
+      SynheartLogger.log('[Synheart] core runtime bridge unavailable: $e');
     }
   }
 
@@ -500,6 +465,8 @@ class Synheart {
     SynheartConfig? config,
     String? userId,
     bool autoStart = false,
+    String? runtimeLogEnvFilter,
+    void Function(String line)? runtimeLogForwarder,
   }) async {
     if (config != null) {
       config.validate();
@@ -509,14 +476,48 @@ class Synheart {
       userId: userId ?? config?.subjectId ?? '',
       config: config,
       autoStart: autoStart,
+      runtimeLogEnvFilter: runtimeLogEnvFilter,
+      runtimeLogForwarder: runtimeLogForwarder,
     );
   }
+
+  /// §1b — Initialize Core Runtime `tracing` once per process (optional if you rely on [CoreRuntimeBridge.create]).
+  ///
+  /// Returns `0` success, `1` already initialized, negative on failure.
+  static int initRuntimeLogging({
+    String? envFilter,
+    void Function(String line)? onLine,
+  }) {
+    return CoreRuntimeBridge.initRuntimeLogging(
+      envFilter: envFilter,
+      onLine: onLine,
+    );
+  }
+
+  /// §3 / §5 — JSON from `synheart_core_sdk_device_auth_status`, or null if unavailable.
+  static Map<String, dynamic>? coreDeviceAuthStatus() {
+    return _coreRuntime?.sdkDeviceAuthStatus();
+  }
+
+  /// §4 — Compact JWS for `X-Synheart-Proof` (non-ingest APIs). Use uppercase [method].
+  static String? buildProofHeader(String method, String absoluteUrl) {
+    return _coreRuntime?.buildProofHeader(method, absoluteUrl);
+  }
+
+  /// Whether the loaded native library exports the full core SDK device-auth ABI.
+  static bool get coreSdkDeviceAuthAvailable =>
+      _coreRuntime?.sdkDeviceAuthAvailable ?? false;
+
+  /// True after a successful [sdkRegisterDevice] via the core runtime in this session.
+  static bool get deviceAuthUsedCoreRuntime => _deviceAuthViaCoreRuntime;
 
   Future<void> _configure({
     required String appKey,
     required String userId,
     SynheartConfig? config,
     bool autoStart = false,
+    String? runtimeLogEnvFilter,
+    void Function(String line)? runtimeLogForwarder,
   }) async {
     // Already done — no-op.
     if (_isConfigured) return;
@@ -531,28 +532,79 @@ class Synheart {
     _userId = userId;
     _config = config ?? SynheartConfig.defaults();
 
-    // Initialize Rust core runtime bridge (best-effort; null if native lib absent)
+    final resolvedCfg = _config!;
+    final effRuntimeFilter = runtimeLogEnvFilter ?? resolvedCfg.runtimeLogEnvFilter;
+    if (effRuntimeFilter != null && effRuntimeFilter.isNotEmpty) {
+      CoreRuntimeBridge.defaultRuntimeLogEnvFilter = effRuntimeFilter;
+    }
+    final logRc = CoreRuntimeBridge.initRuntimeLogging(
+      envFilter: effRuntimeFilter,
+      onLine: runtimeLogForwarder,
+    );
+    if (logRc < 0) {
+      SynheartLogger.log(
+        '[Synheart] synheart_core_init_logging returned $logRc (Core Runtime diagnostics may be limited)',
+      );
+    }
+
+    // Initialize core runtime bridge (best-effort; null if native lib absent)
     try {
-      final resolvedCfg = _config!;
-      _coreRuntime = CoreRuntimeBridge.create({
+      final coreJson = <String, dynamic>{
         'app_id': resolvedCfg.appId,
         'subject_id': resolvedCfg.subjectId,
+        'client_id': resolvedCfg.subjectId,
+        'api_base_url': resolvedCfg.sync.baseUrl,
         'mode': resolvedCfg.mode.name,
-        'device_id': resolvedCfg.deviceId ?? '',
-        'app_version': resolvedCfg.appVersion ?? '0.0.0',
-        'platform': 'flutter',
+        'device_id': resolvedCfg.deviceId.isNotEmpty ? resolvedCfg.deviceId : '',
+        'app_version': resolvedCfg.appVersion,
+        'platform': resolvedCfg.platform,
         'storage': {'enabled': resolvedCfg.storage.enabled},
         'sync': {
           'enabled': resolvedCfg.sync.enabled,
           'base_url': resolvedCfg.sync.baseUrl,
         },
         'privacy': {'allow_research': resolvedCfg.privacy.allowResearch},
-      });
+      };
+      if (resolvedCfg.deviceAuthConfig != null) {
+        coreJson['device_auth'] = {
+          'enabled': true,
+          'auth_base_url': resolvedCfg.deviceAuthConfig!.authBaseUrl,
+        };
+      }
+      _coreRuntime = CoreRuntimeBridge.create(coreJson);
       if (_coreRuntime != null) {
-        SynheartLogger.log('[Synheart] Rust core runtime bridge loaded');
+        SynheartLogger.log('[Synheart] core runtime bridge loaded');
+        if (_coreRuntime!.sdkDeviceAuthAvailable) {
+          // Attach crypto callbacks before any core SDK registration/proof
+          // API is used (SDK auth sequence §2).
+          //
+          // Resolves `synheart_native_*` symbols directly into the runtime's
+          // callback table — no Dart trampolines. Fails fast at registration
+          // time if symbols are missing.
+          final table = PlatformNativeSdkCryptoCallbacks.tryCreateRawTable();
+          if (table == null) {
+            SynheartLogger.log(
+              '[Synheart] ⚠️ synheart_native_* crypto symbols not found — '
+              'device auth will fail. Ensure synheart_auth plugin is '
+              'registered and libsynheart_native_crypto.so is bundled.',
+            );
+          } else {
+            final crc = _coreRuntime!.setSdkCryptoCallbacks(table);
+            if (crc != 0) {
+              SynheartLogger.log(
+                '[Synheart] synheart_core_sdk_set_crypto_callbacks failed: $crc',
+              );
+            } else {
+              _sdkCryptoCallbacksAttached = true;
+              SynheartLogger.log(
+                '[Synheart] Native crypto callbacks attached (synheart_native_*).',
+              );
+            }
+          }
+        }
       }
     } catch (e) {
-      SynheartLogger.log('[Synheart] Rust core runtime bridge unavailable: $e');
+      SynheartLogger.log('[Synheart] core runtime bridge unavailable: $e');
       _coreRuntime = null;
     }
 
@@ -595,16 +647,18 @@ class Synheart {
       // Wire device signing into consent module so all consent-token requests
       // are signed with device identity (X-Synheart-* headers).
       // Uses lazy binding — resolves _deviceAuthProvider at call time.
-      _consentModule!.setDeviceSigner(
-        ({required String method, required String path, required List<int> bodyBytes}) async {
-          if (_deviceAuthProvider == null) return <String, String>{};
-          return await _deviceAuthProvider!.signRequest(
-            method: method,
-            path: path,
-            bodyBytes: Uint8List.fromList(bodyBytes),
-          );
-        },
-      );
+      _consentModule!.setDeviceSigner(({
+        required String method,
+        required String path,
+        required List<int> bodyBytes,
+      }) async {
+        if (_deviceAuthProvider == null) return <String, String>{};
+        return await _deviceAuthProvider!.signRequest(
+          method: method,
+          path: path,
+          bodyBytes: Uint8List.fromList(bodyBytes),
+        );
+      });
 
       _moduleManager.registerModule(_capabilityModule!);
       _moduleManager.registerModule(_consentModule!);
@@ -659,11 +713,13 @@ class Synheart {
       }
 
       // Wire wearable event processor for vendor sync (RAMEN → pipeline)
-      _wearModule!.setEventProcessor(WearableEventProcessor(
-        bridge: _coreRuntime,
-        subjectId: runtimeSubjectId,
-        deviceInstallId: runtimeSessionId,
-      ));
+      _wearModule!.setEventProcessor(
+        WearableEventProcessor(
+          bridge: _coreRuntime,
+          subjectId: runtimeSubjectId,
+          deviceInstallId: runtimeSessionId,
+        ),
+      );
       _wearModule!.setBridge(_coreRuntime);
 
       // Push all behavior events (notification, app_switch, touch, etc.) to the runtime
@@ -684,38 +740,19 @@ class Synheart {
 
       _consentModule!.addListener(_onConsentChanged);
 
-      // Wire HSI callback from core runtime → _hsvStream + session engine
+      // Wire HSI callback from core runtime → _hsvStream
       if (_coreRuntime != null) {
         _coreRuntime!.setHsiCallback((hsiJson) {
           final consent = _consentModule?.current();
           if (consent == null || !consent.biosignals) return;
           _hsvStream.add(hsiJson);
-
-          // Bridge HSI metrics from runtime → session engine
-          final sid = _activeMainSessionId;
-          if (sid == null || _mainSession == null) return;
-          try {
-            final parsed = jsonDecode(hsiJson) as Map<String, dynamic>;
-            _mainSession!.ingestHsiMetrics(sid, parsed);
-          } catch (_) {}
         });
       }
 
       _activationManager = ActivationManager();
       _activationManager!.activateFromConfig(resolvedConfig);
 
-      // Phase 3: Initialize auth
-      final appId = resolvedConfig.appId;
-      if (appId.isNotEmpty) {
-        // Configure synheart-auth for device attestation + signing.
-        final authBaseUrl = resolvedConfig.deviceAuthConfig?.authBaseUrl
-            ?? 'https://auth.synheart.ai';
-        try {
-          await SynheartAuth.instance.configure(authBaseUrl);
-        } catch (e) {
-          SynheartLogger.log('[Synheart] SynheartAuth configure failed (non-fatal): $e');
-        }
-      }
+      // Runtime-only policy: no SDK-side auth API configuration/networking here.
 
       if (autoStart) {
         SynheartLogger.log('[Synheart] Starting all modules...');
@@ -1297,8 +1334,7 @@ class Synheart {
   // ── synheart-lab session API ──
 
   /// Whether the lab C ABI symbols are available in the loaded native library.
-  static bool get isLabAvailable =>
-      _coreRuntime?.isLabAvailable ?? false;
+  static bool get isLabAvailable => _coreRuntime?.isLabAvailable ?? false;
 
   /// Start a lab session. Returns `null` on success, or an error string.
   static String? labStart(String protocolJson, int startedAtMs) {
@@ -1313,7 +1349,10 @@ class Synheart {
     required int startedAtMs,
   }) {
     return _coreRuntime?.labOpenWindow(
-      parentId, windowType, label, startedAtMs,
+      parentId,
+      windowType,
+      label,
+      startedAtMs,
     );
   }
 
@@ -2094,7 +2133,7 @@ class Synheart {
   static Stream<CanonicalWearableEvent>? get vendorEvents =>
       shared._wearModule?.canonicalEvents;
 
-  /// Query stored vendor events from the Rust runtime.
+  /// Query stored vendor events from the Core runtime.
   ///
   /// Returns a list of decoded event maps with `event_id`, `type`, `provider`,
   /// `payload`, `observed_at_ms`, `confidence`, etc.
@@ -2204,7 +2243,9 @@ class Synheart {
         _config?.deviceAuthConfig != null &&
         _deviceAuthProvider == null) {
       try {
-        SynheartLogger.log('[Synheart] Cloud consent granted — activating device auth...');
+        SynheartLogger.log(
+          '[Synheart] Cloud consent granted — activating device auth...',
+        );
         await _initDeviceAuth(_config!);
         SynheartLogger.log('[Synheart] Device auth activated successfully.');
       } catch (e) {
@@ -2217,9 +2258,7 @@ class Synheart {
     }
 
     // If cloud or platform-ingest is configured and cloudUpload is true, issue token.
-    if (_config?.cloudConfig != null &&
-        cloudUpload &&
-        profileId != null) {
+    if (_config?.cloudConfig != null && cloudUpload && profileId != null) {
       try {
         // Request token directly with known profile id.
         await _consentModule!.requestConsentByProfileId(
@@ -2249,7 +2288,8 @@ class Synheart {
       cloudUpload: cloudUpload,
       syni: false,
       focusEstimation: grantedChannels?.interpretation.focusEstimation ?? false,
-      emotionEstimation: grantedChannels?.interpretation.emotionEstimation ?? false,
+      emotionEstimation:
+          grantedChannels?.interpretation.emotionEstimation ?? false,
       vendorSync: vendorSync,
       timestamp: DateTime.now(),
       explicitlyDenied: false,
@@ -2592,6 +2632,27 @@ class Synheart {
   Future<void> _initDeviceAuth(SynheartConfig resolvedConfig) async {
     final dac = resolvedConfig.deviceAuthConfig!;
     SynheartLogger.log('[Synheart] Configuring device authentication...');
+
+    final runtime = _coreRuntime;
+    if (runtime == null) {
+      throw StateError(
+        'Device registration requires core-runtime. Native runtime bridge is unavailable.',
+      );
+    }
+    if (!runtime.sdkDeviceAuthAvailable) {
+      throw StateError(
+        'Device registration requires synheart_core_sdk_* symbols in the native runtime.',
+      );
+    }
+    if (!_sdkCryptoCallbacksAttached) {
+      throw StateError(
+        'Device registration requires SDK crypto callbacks to be attached. '
+        'Ensure the synheart_auth plugin is registered and '
+        'libsynheart_native_crypto.so (Android) / the @_cdecl symbols (iOS) '
+        'are bundled so synheart_native_* resolves.',
+      );
+    }
+
     SynheartLogger.log(
       '[Synheart] DeviceAuthConfig: authBaseUrl=${dac.authBaseUrl} '
       'capabilityBaseUrl=${dac.capabilityBaseUrl ?? "(default=authBaseUrl)"} '
@@ -2599,25 +2660,25 @@ class Synheart {
       'appId=${resolvedConfig.appId}',
     );
 
-    // 1. Configure SynheartAuth
-    await SynheartAuth.instance.configure(dac.authBaseUrl);
-
-    // Optional: surface current registration state before attempting registration.
     try {
-      final already = await SynheartAuth.instance.isRegistered(resolvedConfig.appId);
-      SynheartLogger.log('[Synheart] Device already registered? $already');
+      final reg = await runtime.sdkRegisterDevice(resolvedConfig.subjectId);
+      final deviceId = reg?['device_id'] as String? ?? reg?['deviceId'] as String?;
+      final err = reg?['error']?.toString();
+      if (reg == null || deviceId == null || (err != null && err.isNotEmpty)) {
+        throw StateError('Core SDK register_device failed: ${reg ?? "null result"}');
+      }
+      _deviceAuthViaCoreRuntime = true;
+      final idPreview = deviceId.length <= 8
+          ? deviceId
+          : '${deviceId.substring(0, 8)}...';
+      SynheartLogger.log(
+        '[Synheart] Core SDK device registration complete (device_id preview: $idPreview)',
+      );
     } catch (e) {
-      SynheartLogger.log('[Synheart] isRegistered() check failed (non-fatal): $e', error: e);
-    }
-
-    // 2. Register device (idempotent — returns alreadyRegistered if done)
-    final regResult = await SynheartAuth.instance.registerDevice(
-      resolvedConfig.appId,
-    );
-    SynheartLogger.log(
-      '[Synheart] registerDevice result: status=${regResult.status} deviceId=${regResult.deviceId}',
-    );
-    if (regResult.status == RegistrationStatus.failed) {
+      SynheartLogger.log(
+        '[Synheart] Device registration failed: $e',
+        error: e,
+      );
       if (resolvedConfig.allowUnsignedCapabilities) {
         SynheartLogger.log(
           '[Synheart] WARNING: Device registration failed, falling back to unsigned capabilities.',
@@ -2625,17 +2686,15 @@ class Synheart {
         await _capabilityModule!.loadDefaults();
         return;
       }
-      throw StateError(
-        'Device registration failed. Set allowUnsignedCapabilities: true for dev mode.',
-      );
+      rethrow;
     }
-    SynheartLogger.log(
-      '[Synheart] Device registered: ${regResult.deviceId}',
-    );
 
     try {
       if (resolvedConfig.capabilitySecret != null) {
-        _coreRuntime?.loadCapabilityToken('{}', resolvedConfig.capabilitySecret!);
+        _coreRuntime?.loadCapabilityToken(
+          '{}',
+          resolvedConfig.capabilitySecret!,
+        );
       }
       _capabilityModule?.loadDefaults();
     } catch (e) {
@@ -2654,7 +2713,10 @@ class Synheart {
     }
 
     // 4. Create DeviceAuthProvider for cloud/platform signing
-    _deviceAuthProvider = DeviceAuthProvider(appId: resolvedConfig.appId);
+    _deviceAuthProvider = DeviceAuthProvider(
+      coreRuntime: runtime,
+      baseUrl: dac.authBaseUrl,
+    );
   }
 
   /// Check whether the CapabilityModule allows a given feature.
@@ -2759,6 +2821,8 @@ class Synheart {
       _isConfigured = false;
       _isRunning = false;
       _initCompleter = null;
+      _deviceAuthViaCoreRuntime = false;
+      _sdkCryptoCallbacksAttached = false;
 
       SynheartLogger.log('[Synheart] Disposed');
       // Allow re-initialization by creating a fresh instance next time.
@@ -2772,18 +2836,6 @@ class Synheart {
     }
   }
 
-  String _accountApiBaseUrl() {
-    final configured = _config?.sync.baseUrl.trim();
-    if (configured != null && configured.isNotEmpty) {
-      return configured;
-    }
-    return ApiEndpoints.defaultAuthBaseUrl;
-  }
-
-  Uri _buildAccountApiUri(String path) {
-    final base = Uri.parse(_accountApiBaseUrl());
-    return base.resolve(path);
-  }
 }
 
 /// Sync result from a push/pull cycle.
