@@ -18,12 +18,12 @@ import 'sdk_crypto_callbacks.dart';
 import 'sdk_ffi.dart';
 
 /// Forwarder installed before `synheart_core_init_logging` (top-level for FFI).
-void Function(String line)? synheartRustLogForwarder;
+void Function(String line)? synheartRuntimeLogForwarder;
 
-void _synheartRustLogTrampoline(Pointer<Utf8> line, Pointer<Void> userData) {
+void _synheartRuntimeLogTrampoline(Pointer<Utf8> line, Pointer<Void> userData) {
   if (line == nullptr) return;
   final text = line.toDartString();
-  final custom = synheartRustLogForwarder;
+  final custom = synheartRuntimeLogForwarder;
   if (custom != null) {
     custom(text);
     return;
@@ -33,7 +33,7 @@ void _synheartRustLogTrampoline(Pointer<Utf8> line, Pointer<Void> userData) {
   }
 }
 
-/// Bridge to the Rust core runtime via FFI.
+/// Bridge to the core runtime via FFI.
 ///
 /// Usage:
 /// ```dart
@@ -55,18 +55,18 @@ class CoreRuntimeBridge {
   bool _disposed = false;
   Pointer<SynheartSdkCryptoCallbacks>? _sdkCryptoTable;
 
-  /// Default `env_filter` when [initRustLogging] is called with a null/empty filter.
-  // static String defaultRustLogEnvFilter = 'info,synheart_core_runtime=debug';
-  static String defaultRustLogEnvFilter = 'synheart_core_runtime=trace,info';
+  /// Default `env_filter` when [initRuntimeLogging] is called with a null/empty filter.
+  // static String defaultRuntimeLogEnvFilter = 'info,synheart_core_runtime=debug';
+  static String defaultRuntimeLogEnvFilter = 'synheart_core_runtime=trace,info';
 
   static bool _loggingInstalled = false;
   static NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>? _logCallable;
 
-  /// Initialize Rust `tracing` once per process (call before [create] if you need
+  /// Initialize Runtime `tracing` once per process (call before [create] if you need
   /// a custom filter or sink). Matches [SDK_LOGGING_INIT.md] / SDK auth sequence §1b.
   ///
   /// Returns `0` on success, `1` if already initialized, negative on failure.
-  static int initRustLogging({
+  static int initRuntimeLogging({
     SynheartCoreFFI? ffi,
     String? envFilter,
     void Function(String line)? onLine,
@@ -74,7 +74,7 @@ class CoreRuntimeBridge {
     if (_loggingInstalled) return 1;
     final lib = ffi ?? SynheartCoreFFI.load();
     if (lib == null) return -2;
-    final chosen = envFilter ?? defaultRustLogEnvFilter;
+    final chosen = envFilter ?? defaultRuntimeLogEnvFilter;
     Pointer<Utf8> filterArg;
     if (chosen.isEmpty) {
       filterArg = nullptr;
@@ -82,8 +82,8 @@ class CoreRuntimeBridge {
       filterArg = chosen.toNativeUtf8();
     }
     try {
-      synheartRustLogForwarder = onLine;
-      _logCallable ??= NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>.listener(_synheartRustLogTrampoline);
+      synheartRuntimeLogForwarder = onLine;
+      _logCallable ??= NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>.listener(_synheartRuntimeLogTrampoline);
       final rc = lib.initLogging(filterArg, _logCallable!.nativeFunction, nullptr);
       if (rc == 0 || rc == 1) {
         _loggingInstalled = true;
@@ -104,8 +104,8 @@ class CoreRuntimeBridge {
     final ffi = SynheartCoreFFI.load();
     if (ffi == null) return null;
 
-    // §1b: logging before `synheart_core_new` (idempotent if app called [initRustLogging]).
-    initRustLogging(ffi: ffi);
+    // §1b: logging before core runtime bridge is created (idempotent if app called [initRuntimeLogging]).
+    initRuntimeLogging(ffi: ffi);
 
     final json = jsonEncode(config);
     final cJson = json.toNativeUtf8();

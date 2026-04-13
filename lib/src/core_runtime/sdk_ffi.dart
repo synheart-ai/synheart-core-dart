@@ -27,7 +27,7 @@ typedef SynheartGetAttestationNative = Pointer<Utf8> Function(
 typedef SynheartKeyExistsNative = Int32 Function(Pointer<Utf8> deviceId);
 typedef SynheartDeleteKeyNative = Int32 Function(Pointer<Utf8> deviceId);
 
-// ── Host crypto callback table (must match Rust `SynheartSdkCryptoCallbacks`) ─
+// ── Host crypto callback table (must match Core Runtime `SynheartSdkCryptoCallbacks`) ─
 
 final class SynheartSdkCryptoCallbacks extends Struct {
   external Pointer<NativeFunction<SynheartGenerateKeyNative>> generate_key;

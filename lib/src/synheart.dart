@@ -71,7 +71,7 @@ class Synheart {
   static Synheart? _instance;
   static Synheart get shared => _instance ??= Synheart._();
 
-  /// Rust core runtime bridge (FFI). Null when native lib unavailable.
+  /// core runtime bridge (FFI). Null when native lib unavailable.
   static CoreRuntimeBridge? _coreRuntime;
 
   Synheart._();
@@ -418,7 +418,7 @@ class Synheart {
   /// Whether the SDK has been initialized via [initialize] or [configure].
   static bool get isInitialized => shared._isConfigured;
 
-  /// Ensure the Rust core runtime bridge is loaded.
+  /// Ensure the core runtime bridge is loaded.
   ///
   /// Call this after [initialize] if another module may have initialized
   /// the SDK first without the native runtime bridge (e.g. behavior SDK).
@@ -443,10 +443,10 @@ class Synheart {
         'privacy': {'allow_research': shared._config?.privacy.allowResearch ?? false},
       });
       if (_coreRuntime != null) {
-        SynheartLogger.log('[Synheart] Rust core runtime bridge loaded (ensureRuntimeBridge)');
+        SynheartLogger.log('[Synheart] core runtime bridge loaded (ensureRuntimeBridge)');
       }
     } catch (e) {
-      SynheartLogger.log('[Synheart] Rust core runtime bridge unavailable: $e');
+      SynheartLogger.log('[Synheart] core runtime bridge unavailable: $e');
     }
   }
 
@@ -464,8 +464,8 @@ class Synheart {
     SynheartConfig? config,
     String? userId,
     bool autoStart = false,
-    String? rustLogEnvFilter,
-    void Function(String line)? rustLogForwarder,
+    String? runtimeLogEnvFilter,
+    void Function(String line)? runtimeLogForwarder,
   }) async {
     if (config != null) {
       config.validate();
@@ -475,19 +475,19 @@ class Synheart {
       userId: userId ?? config?.subjectId ?? '',
       config: config,
       autoStart: autoStart,
-      rustLogEnvFilter: rustLogEnvFilter,
-      rustLogForwarder: rustLogForwarder,
+      runtimeLogEnvFilter: runtimeLogEnvFilter,
+      runtimeLogForwarder: runtimeLogForwarder,
     );
   }
 
-  /// §1b — Initialize Rust `tracing` once per process (optional if you rely on [CoreRuntimeBridge.create]).
+  /// §1b — Initialize Core Runtime `tracing` once per process (optional if you rely on [CoreRuntimeBridge.create]).
   ///
   /// Returns `0` success, `1` already initialized, negative on failure.
-  static int initRustLogging({
+  static int initRuntimeLogging({
     String? envFilter,
     void Function(String line)? onLine,
   }) {
-    return CoreRuntimeBridge.initRustLogging(
+    return CoreRuntimeBridge.initRuntimeLogging(
       envFilter: envFilter,
       onLine: onLine,
     );
@@ -496,7 +496,7 @@ class Synheart {
   /// §2 — Register synchronous platform crypto before core-driven device registration.
   ///
   /// Call **before** [initialize] (or before cloud consent triggers device auth). Implementations
-  /// must not use async platform channels from Rust callback threads.
+  /// must not use async platform channels from Runtime callback threads.
   static void registerCoreDeviceAuthCrypto(SynheartCoreCryptoCallbacks? callbacks) {
     _coreDeviceCrypto = callbacks;
     _sdkCryptoCallbacksAttached = false;
@@ -524,8 +524,8 @@ class Synheart {
     required String userId,
     SynheartConfig? config,
     bool autoStart = false,
-    String? rustLogEnvFilter,
-    void Function(String line)? rustLogForwarder,
+    String? runtimeLogEnvFilter,
+    void Function(String line)? runtimeLogForwarder,
   }) async {
     // Already done — no-op.
     if (_isConfigured) return;
@@ -541,21 +541,21 @@ class Synheart {
     _config = config ?? SynheartConfig.defaults();
 
     final resolvedCfg = _config!;
-    final effRustFilter = rustLogEnvFilter ?? resolvedCfg.rustLogEnvFilter;
-    if (effRustFilter != null && effRustFilter.isNotEmpty) {
-      CoreRuntimeBridge.defaultRustLogEnvFilter = effRustFilter;
+    final effRuntimeFilter = runtimeLogEnvFilter ?? resolvedCfg.runtimeLogEnvFilter;
+    if (effRuntimeFilter != null && effRuntimeFilter.isNotEmpty) {
+      CoreRuntimeBridge.defaultRuntimeLogEnvFilter = effRuntimeFilter;
     }
-    final logRc = CoreRuntimeBridge.initRustLogging(
-      envFilter: effRustFilter,
-      onLine: rustLogForwarder,
+    final logRc = CoreRuntimeBridge.initRuntimeLogging(
+      envFilter: effRuntimeFilter,
+      onLine: runtimeLogForwarder,
     );
     if (logRc < 0) {
       SynheartLogger.log(
-        '[Synheart] synheart_core_init_logging returned $logRc (Rust diagnostics may be limited)',
+        '[Synheart] synheart_core_init_logging returned $logRc (Core Runtime diagnostics may be limited)',
       );
     }
 
-    // Initialize Rust core runtime bridge (best-effort; null if native lib absent)
+    // Initialize core runtime bridge (best-effort; null if native lib absent)
     try {
       final coreJson = <String, dynamic>{
         'app_id': resolvedCfg.appId,
@@ -581,7 +581,7 @@ class Synheart {
       }
       _coreRuntime = CoreRuntimeBridge.create(coreJson);
       if (_coreRuntime != null) {
-        SynheartLogger.log('[Synheart] Rust core runtime bridge loaded');
+        SynheartLogger.log('[Synheart] core runtime bridge loaded');
         if (_coreRuntime!.sdkDeviceAuthAvailable) {
           // Attach crypto callbacks before any core SDK registration/proof
           // API is used (SDK auth sequence §2).
@@ -629,7 +629,7 @@ class Synheart {
         }
       }
     } catch (e) {
-      SynheartLogger.log('[Synheart] Rust core runtime bridge unavailable: $e');
+      SynheartLogger.log('[Synheart] core runtime bridge unavailable: $e');
       _coreRuntime = null;
     }
 
@@ -2168,7 +2168,7 @@ class Synheart {
   static Stream<CanonicalWearableEvent>? get vendorEvents =>
       shared._wearModule?.canonicalEvents;
 
-  /// Query stored vendor events from the Rust runtime.
+  /// Query stored vendor events from the Core runtime.
   ///
   /// Returns a list of decoded event maps with `event_id`, `type`, `provider`,
   /// `payload`, `observed_at_ms`, `confidence`, etc.

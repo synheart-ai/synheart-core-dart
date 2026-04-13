@@ -241,7 +241,7 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     // Get RR intervals if available
     final rrIntervals = wearMetrics.rrIntervalsMs;
 
-    // Pass raw steps as motion input — the Rust runtime normalizes
+    // Pass raw steps as motion input — the Core runtime normalizes
     // and computes motion intensity from this + accelerometer data.
     final steps =
         wearMetrics.getMetric(wear.MetricType.steps)?.toDouble() ?? 0.0;

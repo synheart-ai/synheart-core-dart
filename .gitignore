@@ -63,8 +63,9 @@ native/
 /#Guidelines/
 
 /example/android/app/src/main/jniLibs
-android/app/src/main/jniLibs
+/example/android/.settings
 # Local endpoint defines (do not commit real endpoints)
 env/*.local.json
 
 .cursor/
+device-registration-flow.backup.patch

@@ -1,6 +1,6 @@
 /// Synchronous platform crypto hooks for [CoreRuntimeBridge.setSdkCryptoCallbacks].
 ///
-/// Rust invokes these from worker threads during device registration and proof
+/// Core Runtime invokes these from worker threads during device registration and proof
 /// assembly. Implementations must not block on async platform channels; use a
 /// native FFI plugin or other synchronous bridge.
 library;

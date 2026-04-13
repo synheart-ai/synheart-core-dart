@@ -129,7 +129,7 @@ class SynheartConfig {
 
   /// Optional `tracing` `EnvFilter` for `synheart_core_init_logging` (SDK §1b).
   /// When non-empty, overrides the bridge default filter during SDK initialization.
-  final String? rustLogEnvFilter;
+  final String? runtimeLogEnvFilter;
 
   SynheartConfig({
     this.appId = '',
@@ -155,7 +155,7 @@ class SynheartConfig {
     this.capabilitySecret,
     this.allowUnsignedCapabilities = false,
     this.batchIngestOnStop = false,
-    this.rustLogEnvFilter,
+    this.runtimeLogEnvFilter,
   });
 
   /// Create default configuration
