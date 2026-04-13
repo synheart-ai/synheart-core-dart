@@ -296,19 +296,24 @@ class Synheart {
   }
 
   /// Request account deletion — wipes local data and requests server-side deletion.
+  ///
+  /// Local data is wiped regardless of whether the server request succeeds: the
+  /// user has expressed intent to delete, and a failed server hop shouldn't
+  /// leave their data on this device.
   static Future<DeletionRequestResult> requestAccountDeletion() async {
-    if (_coreRuntime != null) {
-      final ok = _coreRuntime!.requestAccountDeletion();
-      return DeletionRequestResult(
-        status: ok ? 'accepted' : 'error',
-        message: ok
-            ? 'Account deletion requested via core runtime.'
-            : 'Account deletion request failed.',
+    if (_coreRuntime == null) {
+      return const DeletionRequestResult(
+        status: 'error',
+        message: 'Account deletion unavailable: core runtime not loaded.',
       );
     }
-    return const DeletionRequestResult(
-      status: 'error',
-      message: 'Account deletion requires core-runtime network bridge.',
+    final serverOk = _coreRuntime!.requestAccountDeletion();
+    await wipeLocalData();
+    return DeletionRequestResult(
+      status: 'accepted',
+      message: serverOk
+          ? 'Local data wiped. Server deletion pending.'
+          : 'Local data wiped. Server deletion request failed — retry when online.',
     );
   }
 
