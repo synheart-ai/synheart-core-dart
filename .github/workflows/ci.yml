@@ -10,39 +10,22 @@ jobs:
   analyze:
     name: Analyze and Format
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: synheart-core-dart
 
     steps:
+      - name: Generate synheart CI token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.SYNHEART_CI_APP_ID }}
+          private-key: ${{ secrets.SYNHEART_CI_APP_PRIVATE_KEY }}
+          owner: synheart-ai
+
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          path: synheart-core-dart
-      - name: Checkout synheart-wear-dart
-        uses: actions/checkout@v4
-        with:
-          repository: synheart-ai/synheart-wear-dart
-          path: synheart-wear-dart
-          token: ${{ secrets.synheart_secret || github.token }}
-      - name: Checkout synheart-session-dart
-        uses: actions/checkout@v4
-        with:
-          repository: synheart-ai/synheart-session-dart
-          path: synheart-session-dart
-          token: ${{ secrets.synheart_secret || github.token }}
-      - name: Checkout synheart-behavior-dart
-        uses: actions/checkout@v4
-        with:
-          repository: synheart-ai/synheart-behavior-dart
-          path: synheart-behavior-dart
-          token: ${{ secrets.synheart_secret || github.token }}
-      - name: Checkout synheart-auth-dart
-        uses: actions/checkout@v4
-        with:
-          repository: synheart-ai/synheart-auth-dart
-          path: synheart-auth-dart
-          token: ${{ secrets.synheart_secret || github.token }}
+
+      - name: Rewrite github.com URLs to use CI token
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -65,9 +48,6 @@ jobs:
   test:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: synheart-core-dart
 
     strategy:
       matrix:
@@ -75,34 +55,20 @@ jobs:
         flutter: [pinned, latest]
 
     steps:
+      - name: Generate synheart CI token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.SYNHEART_CI_APP_ID }}
+          private-key: ${{ secrets.SYNHEART_CI_APP_PRIVATE_KEY }}
+          owner: synheart-ai
+
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          path: synheart-core-dart
-      - name: Checkout synheart-wear-dart
-        uses: actions/checkout@v4
-        with:
-          repository: synheart-ai/synheart-wear-dart
-          path: synheart-wear-dart
-          token: ${{ secrets.synheart_secret || github.token }}
-      - name: Checkout synheart-session-dart
-        uses: actions/checkout@v4
-        with:
-          repository: synheart-ai/synheart-session-dart
-          path: synheart-session-dart
-          token: ${{ secrets.synheart_secret || github.token }}
-      - name: Checkout synheart-behavior-dart
-        uses: actions/checkout@v4
-        with:
-          repository: synheart-ai/synheart-behavior-dart
-          path: synheart-behavior-dart
-          token: ${{ secrets.synheart_secret || github.token }}
-      - name: Checkout synheart-auth-dart
-        uses: actions/checkout@v4
-        with:
-          repository: synheart-ai/synheart-auth-dart
-          path: synheart-auth-dart
-          token: ${{ secrets.synheart_secret || github.token }}
+
+      - name: Rewrite github.com URLs to use CI token
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Setup Flutter (pinned)
         uses: subosito/flutter-action@v2
