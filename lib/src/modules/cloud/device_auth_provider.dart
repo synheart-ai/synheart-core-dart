@@ -40,8 +40,27 @@ class DeviceAuthProvider implements AuthProvider {
     required int statusCode,
     required Map<String, String> responseHeaders,
   }) async {
-    // Runtime-only auth path: recovery is handled by core-runtime/device-auth state.
-    // Keep this hook non-throwing for caller compatibility.
+    // Runtime-only auth path: the runtime does not currently expose clock-skew
+    // correction or key-rotation APIs through the proof-header FFI, so neither
+    // class of 401 is recoverable from the SDK side. Surface the known signals
+    // in logs so the gap is visible, then propagate the error.
+    //
+    // TODO(runtime): wire synheart_core_sdk_apply_server_ts and
+    //   synheart_core_sdk_rotate_key so we can return true and retry here.
+    final serverTs = responseHeaders['x-server-timestamp'];
+    if (serverTs != null) {
+      SynheartLogger.log(
+        '[DeviceAuth] 401 with x-server-timestamp=$serverTs — '
+        'runtime proof uses device clock; skew correction not yet exposed.',
+      );
+    }
+    final errCode = responseHeaders['x-synheart-error'];
+    if (errCode == 'KEY_INVALIDATED') {
+      SynheartLogger.log(
+        '[DeviceAuth] 401 KEY_INVALIDATED — '
+        'runtime key rotation not yet implemented; re-registration required.',
+      );
+    }
     return false;
   }
 }
