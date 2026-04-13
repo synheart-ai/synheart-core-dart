@@ -14,7 +14,6 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
 import 'ffi_bindings.dart';
-import 'sdk_crypto_callbacks.dart';
 import 'sdk_ffi.dart';
 
 /// Forwarder installed before `synheart_core_init_logging` (top-level for FFI).
@@ -126,34 +125,17 @@ class CoreRuntimeBridge {
 
   /// Register host crypto callbacks (§2). Must be called before [sdkRegisterDevice] / proof APIs.
   ///
-  /// Returns `0` on success. On failure, frees the allocated callback table.
-  int setSdkCryptoCallbacks(SynheartCoreCryptoCallbacks callbacks) {
+  /// [table] must point at a caller-owned [SynheartSdkCryptoCallbacks] populated with
+  /// process-resolved native function pointers — the bridge takes ownership and frees
+  /// it on [dispose] or on the next successful call.
+  ///
+  /// Returns `0` on success. On failure, frees the provided table.
+  int setSdkCryptoCallbacks(Pointer<SynheartSdkCryptoCallbacks> table) {
     if (_disposed) return -1;
     if (!_ffi.sdkFfi.isAvailable) return -2;
-    synheartSdkCryptoAttach(callbacks);
     if (_sdkCryptoTable != null) {
       calloc.free(_sdkCryptoTable!);
       _sdkCryptoTable = null;
-    }
-    final table = calloc<SynheartSdkCryptoCallbacks>();
-    synheartFillSdkCryptoStruct(table);
-    final rc = _ffi.sdkFfi.setCryptoCallbacksInvoke(_handle, table);
-    if (rc != 0) {
-      calloc.free(table);
-      synheartSdkCryptoAttach(null);
-      return rc;
-    }
-    _sdkCryptoTable = table;
-    return 0;
-  }
-
-  /// Register host crypto callbacks natively bypassing Dart trampolines.
-  int setSdkCryptoCallbacksRaw(Pointer<SynheartSdkCryptoCallbacks> table) {
-    if (_disposed) return -1;
-    if (!_ffi.sdkFfi.isAvailable) return -2;
-    synheartSdkCryptoAttach(null);
-    if (_sdkCryptoTable != null) {
-      calloc.free(_sdkCryptoTable!);
     }
     final rc = _ffi.sdkFfi.setCryptoCallbacksInvoke(_handle, table);
     if (rc != 0) {
@@ -225,7 +207,6 @@ class CoreRuntimeBridge {
         calloc.free(_sdkCryptoTable!);
         _sdkCryptoTable = null;
       }
-      synheartSdkCryptoAttach(null);
       _disposed = true;
     }
   }

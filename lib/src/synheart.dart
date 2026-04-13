@@ -27,7 +27,6 @@ import 'config/activation_manager.dart';
 import 'modules/cloud/device_auth_provider.dart';
 import 'core_runtime/core_runtime_bridge.dart';
 import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
-import 'core_runtime/sdk_crypto_callbacks.dart';
 
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
@@ -86,9 +85,6 @@ class Synheart {
   PhoneModule? _phoneModule;
   BehaviorModule? _behaviorModule;
   DeviceAuthProvider? _deviceAuthProvider;
-
-  /// Optional host crypto for `synheart_core_sdk_*` (set via [Synheart.registerCoreDeviceAuthCrypto]).
-  static SynheartCoreCryptoCallbacks? _coreDeviceCrypto;
 
   /// True when [sdkRegisterDevice] succeeded for this process (core-runtime auth path).
   static bool _deviceAuthViaCoreRuntime = false;
@@ -493,15 +489,6 @@ class Synheart {
     );
   }
 
-  /// §2 — Register synchronous platform crypto before core-driven device registration.
-  ///
-  /// Call **before** [initialize] (or before cloud consent triggers device auth). Implementations
-  /// must not use async platform channels from Runtime callback threads.
-  static void registerCoreDeviceAuthCrypto(SynheartCoreCryptoCallbacks? callbacks) {
-    _coreDeviceCrypto = callbacks;
-    _sdkCryptoCallbacksAttached = false;
-  }
-
   /// §3 / §5 — JSON from `synheart_core_sdk_device_auth_status`, or null if unavailable.
   static Map<String, dynamic>? coreDeviceAuthStatus() {
     return _coreRuntime?.sdkDeviceAuthStatus();
@@ -586,46 +573,29 @@ class Synheart {
           // Attach crypto callbacks before any core SDK registration/proof
           // API is used (SDK auth sequence §2).
           //
-          // Priority: host-registered > native process symbols.
-          // No software fallback — if neither is available, device auth
-          // will fail fast at registration time.
-          final nativeBridgeTable = _coreDeviceCrypto == null
-              ? PlatformNativeSdkCryptoCallbacks.tryCreateRawTable()
-              : null;
-          
-          if (_coreDeviceCrypto == null && nativeBridgeTable == null) {
+          // Resolves `synheart_native_*` symbols directly into the runtime's
+          // callback table — no Dart trampolines. Fails fast at registration
+          // time if symbols are missing.
+          final table = PlatformNativeSdkCryptoCallbacks.tryCreateRawTable();
+          if (table == null) {
             SynheartLogger.log(
-              '[Synheart] ⚠️ No native crypto callbacks available — '
+              '[Synheart] ⚠️ synheart_native_* crypto symbols not found — '
               'device auth will fail. Ensure synheart_auth plugin is '
               'registered and libsynheart_native_crypto.so is bundled.',
             );
           } else {
-            final crc = _coreDeviceCrypto != null 
-                ? _coreRuntime!.setSdkCryptoCallbacks(_coreDeviceCrypto!)
-                : _coreRuntime!.setSdkCryptoCallbacksRaw(nativeBridgeTable!);
-
+            final crc = _coreRuntime!.setSdkCryptoCallbacks(table);
             if (crc != 0) {
               SynheartLogger.log(
                 '[Synheart] synheart_core_sdk_set_crypto_callbacks failed: $crc',
               );
             } else {
               _sdkCryptoCallbacksAttached = true;
-              if (_coreDeviceCrypto != null) {
-                SynheartLogger.log(
-                  '[Synheart] Using host-registered crypto callbacks.',
-                );
-              } else {
-                SynheartLogger.log(
-                  '[Synheart] Using SDK-owned native crypto callback bridge '
-                  '(synheart_native_* symbols found natively, bypassing Dart).',
-                );
-              }
+              SynheartLogger.log(
+                '[Synheart] Native crypto callbacks attached (synheart_native_*).',
+              );
             }
           }
-        } else if (_coreDeviceCrypto != null && !_coreRuntime!.sdkDeviceAuthAvailable) {
-          SynheartLogger.log(
-            '[Synheart] Core device auth crypto registered but native lib lacks synheart_core_sdk_* symbols.',
-          );
         }
       }
     } catch (e) {
@@ -2682,8 +2652,9 @@ class Synheart {
     if (!_sdkCryptoCallbacksAttached) {
       throw StateError(
         'Device registration requires SDK crypto callbacks to be attached. '
-        'Register synchronous platform crypto via Synheart.registerCoreDeviceAuthCrypto(...) '
-        'before initialize().',
+        'Ensure the synheart_auth plugin is registered and '
+        'libsynheart_native_crypto.so (Android) / the @_cdecl symbols (iOS) '
+        'are bundled so synheart_native_* resolves.',
       );
     }
 

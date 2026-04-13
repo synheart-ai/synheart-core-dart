@@ -81,7 +81,6 @@ export 'src/modules/cloud/cloud_exceptions.dart';
 
 // Core Runtime Bridge (FFI to synheart-core-runtime for HSI, baselines, lab, sync)
 export 'src/core_runtime/core_runtime_bridge.dart';
-export 'src/core_runtime/sdk_crypto_callbacks.dart';
 
 // Watch Session (adapter around synheart_session for watch relay)
 export 'src/modules/session/watch_session_module.dart';
