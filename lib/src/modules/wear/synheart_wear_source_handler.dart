@@ -241,29 +241,22 @@ class SynheartWearSourceHandler implements WearSourceHandler {
     // Get RR intervals if available
     final rrIntervals = wearMetrics.rrIntervalsMs;
 
-    // Get steps for motion estimation (rough proxy)
+    // Pass raw steps as motion input — the Core runtime normalizes
+    // and computes motion intensity from this + accelerometer data.
     final steps =
         wearMetrics.getMetric(wear.MetricType.steps)?.toDouble() ?? 0.0;
-    final motionLevel = _estimateMotionFromSteps(steps);
 
     final sample = WearSample(
       timestamp: wearMetrics.timestamp, // Use timestamp from metrics
       hr: hr,
       hrvRmssd: hrv,
       respRate: null, // Not provided by synheart_wear yet
-      motionLevel: motionLevel,
+      motionLevel: steps, // Raw steps — runtime normalizes
       sleepStage: null, // Not provided by synheart_wear yet
       rrIntervals: rrIntervals,
     );
 
     _controller!.add(sample);
-  }
-
-  /// Estimate motion level from steps (rough approximation)
-  /// This is a placeholder until synheart_wear provides direct motion data
-  double _estimateMotionFromSteps(double steps) {
-    // Normalize steps to 0-1 range (assuming 10000 steps = max activity)
-    return (steps / SynheartDefaults.maxStepsForMotion).clamp(0.0, 1.0);
   }
 
   @override

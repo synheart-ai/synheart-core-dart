@@ -137,7 +137,8 @@ Add `synheart_core` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  synheart_core: ^0.0.2
+  synheart_core:
+    path: ../synheart-core-flutter
 ```
 
 Then run:
@@ -145,6 +146,26 @@ Then run:
 ```bash
 flutter pub get
 ```
+
+### Native Runtime Setup
+
+This SDK requires the **synheart-core-runtime** native library. The library is NOT committed to this repo — you must build it from [synheart-core-runtime](https://github.com/synheart-ai/synheart-core-runtime) and copy it into the plugin's `ios/Frameworks/` directory.
+
+```bash
+# From the synheart-core-runtime repo:
+make ios          # Builds iOS XCFramework
+make android      # Builds Android .so files
+
+# Copy to this plugin:
+cp -R build/ios/SynheartCoreRuntime.xcframework ../synheart-core-flutter/ios/Frameworks/
+
+# Copy to your Flutter app (Android):
+cp -R build/android/jniLibs/* ../your-app/android/app/src/main/jniLibs/
+```
+
+The iOS podspec uses `-force_load` to ensure all FFI symbols are preserved for Dart's `dlsym`. The xcframework is gitignored — each developer must build or download it.
+
+> **Note:** If your app also uses another Rust static library (e.g. isar), you may hit duplicate `_rust_eh_personality` symbols. Remove the other Rust dependency or build this runtime as a dynamic framework instead.
 
 ## Endpoint Configuration (No Hardcoded URLs)
 

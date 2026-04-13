@@ -12,8 +12,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Generate synheart CI token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.SYNHEART_CI_APP_ID }}
+          private-key: ${{ secrets.SYNHEART_CI_APP_PRIVATE_KEY }}
+          owner: synheart-ai
+
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Rewrite github.com URLs to use CI token
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -43,8 +55,20 @@ jobs:
         flutter: [pinned, latest]
 
     steps:
+      - name: Generate synheart CI token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.SYNHEART_CI_APP_ID }}
+          private-key: ${{ secrets.SYNHEART_CI_APP_PRIVATE_KEY }}
+          owner: synheart-ai
+
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Rewrite github.com URLs to use CI token
+        run: |
+          git config --global url."https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Setup Flutter (pinned)
         uses: subosito/flutter-action@v2

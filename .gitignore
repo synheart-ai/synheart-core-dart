@@ -46,6 +46,12 @@ app.*.map.json
 # Native shared libraries (loaded at runtime, not committed)
 *.so
 
+# Native runtime binaries — built from synheart-core-runtime and copied
+# via `make flutter` or `make ios-watch`. Not committed to this repo.
+ios/Frameworks/SynheartCoreRuntime.xcframework/
+lib/libsynheart_runtime.dylib
+native/
+
 # Claude Code
 .claude/
 
@@ -57,6 +63,8 @@ app.*.map.json
 /#Guidelines/
 
 /example/android/app/src/main/jniLibs
-
+/example/android/.settings
 # Local endpoint defines (do not commit real endpoints)
 env/*.local.json
+
+.cursor/
