@@ -83,6 +83,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # ML model assets removed — emotion/focus heads deprecated in favour of
-  # synheart-runtime inference via RuntimeBridge.lastHsv().
+
+  plugin:
+    platforms:
+      ios:
+        pluginClass: SynheartCorePlugin
 
