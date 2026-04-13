@@ -632,30 +632,38 @@ packages:
   synheart_auth:
     dependency: "direct main"
     description:
-      path: "../synheart-auth-flutter"
-      relative: true
-    source: path
-    version: "1.0.0"
+      path: "."
+      ref: "v0.1.0"
+      resolved-ref: "29501ccbd3b87bc42c30be5ddfc300d00e83b4e3"
+      url: "https://github.com/synheart-ai/synheart-auth-flutter.git"
+    source: git
+    version: "0.1.0"
   synheart_behavior:
     dependency: "direct main"
     description:
-      path: "../synheart-behavior-flutter"
-      relative: true
-    source: path
+      path: "."
+      ref: "v0.2.1"
+      resolved-ref: d73fb0328aaec39859fe21c315741f0a497c4407
+      url: "https://github.com/synheart-ai/synheart-behavior-flutter.git"
+    source: git
     version: "0.2.1"
   synheart_session:
     dependency: "direct main"
     description:
-      path: "../synheart-session-flutter"
-      relative: true
-    source: path
+      path: "."
+      ref: "v0.2.0"
+      resolved-ref: e39203954142002ab0c39a1dfc3a803b5f9a066b
+      url: "https://github.com/synheart-ai/synheart-session-flutter.git"
+    source: git
     version: "0.2.0"
   synheart_wear:
     dependency: "direct main"
     description:
-      path: "../synheart-wear-flutter"
-      relative: true
-    source: path
+      path: "."
+      ref: "v0.3.1"
+      resolved-ref: "241e236ef08283e5deed1d5017abdbaf353f94ed"
+      url: "https://github.com/synheart-ai/synheart-wear-flutter.git"
+    source: git
     version: "0.3.1"
   term_glyph:
     dependency: transitive
