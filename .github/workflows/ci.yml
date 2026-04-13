@@ -10,10 +10,39 @@ jobs:
   analyze:
     name: Analyze and Format
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: synheart-core-dart
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          path: synheart-core-dart
+      - name: Checkout synheart-wear-dart
+        uses: actions/checkout@v4
+        with:
+          repository: synheart-ai/synheart-wear-dart
+          path: synheart-wear-dart
+          token: ${{ secrets.GH_PAT || github.token }}
+      - name: Checkout synheart-session-dart
+        uses: actions/checkout@v4
+        with:
+          repository: synheart-ai/synheart-session-dart
+          path: synheart-session-dart
+          token: ${{ secrets.GH_PAT || github.token }}
+      - name: Checkout synheart-behavior-dart
+        uses: actions/checkout@v4
+        with:
+          repository: synheart-ai/synheart-behavior-dart
+          path: synheart-behavior-dart
+          token: ${{ secrets.GH_PAT || github.token }}
+      - name: Checkout synheart-auth-dart
+        uses: actions/checkout@v4
+        with:
+          repository: synheart-ai/synheart-auth-dart
+          path: synheart-auth-dart
+          token: ${{ secrets.GH_PAT || github.token }}
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -36,6 +65,9 @@ jobs:
   test:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: synheart-core-dart
 
     strategy:
       matrix:
@@ -45,6 +77,32 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          path: synheart-core-dart
+      - name: Checkout synheart-wear-dart
+        uses: actions/checkout@v4
+        with:
+          repository: synheart-ai/synheart-wear-dart
+          path: synheart-wear-dart
+          token: ${{ secrets.GH_PAT || github.token }}
+      - name: Checkout synheart-session-dart
+        uses: actions/checkout@v4
+        with:
+          repository: synheart-ai/synheart-session-dart
+          path: synheart-session-dart
+          token: ${{ secrets.GH_PAT || github.token }}
+      - name: Checkout synheart-behavior-dart
+        uses: actions/checkout@v4
+        with:
+          repository: synheart-ai/synheart-behavior-dart
+          path: synheart-behavior-dart
+          token: ${{ secrets.GH_PAT || github.token }}
+      - name: Checkout synheart-auth-dart
+        uses: actions/checkout@v4
+        with:
+          repository: synheart-ai/synheart-auth-dart
+          path: synheart-auth-dart
+          token: ${{ secrets.GH_PAT || github.token }}
 
       - name: Setup Flutter (pinned)
         uses: subosito/flutter-action@v2
