@@ -19,9 +19,37 @@ import 'sdk_ffi.dart';
 /// Forwarder installed before `synheart_core_init_logging` (top-level for FFI).
 void Function(String line)? synheartRuntimeLogForwarder;
 
+/// Set by [CoreRuntimeBridge.initRuntimeLogging] so the top-level trampoline
+/// can release CStrings that the Rust layer leaks across the async hop.
+void Function(Pointer<Utf8> ptr)? _synheartRuntimeLogFree;
+
+/// Decode an FFI-owned C string and free it via [freeFn]. Tolerates malformed
+/// UTF-8 so a bad byte never kills the listener isolate. Returns null only if
+/// `ptr` is null.
+String? _readFfiStringAndFree(
+  Pointer<Utf8> ptr,
+  void Function(Pointer<Utf8>) freeFn,
+) {
+  if (ptr == nullptr) return null;
+  try {
+    return ptr.toDartString();
+  } on FormatException {
+    final raw = ptr.cast<Uint8>();
+    var len = 0;
+    while (raw[len] != 0) {
+      len++;
+    }
+    return utf8.decode(raw.asTypedList(len), allowMalformed: true);
+  } finally {
+    freeFn(ptr);
+  }
+}
+
 void _synheartRuntimeLogTrampoline(Pointer<Utf8> line, Pointer<Void> userData) {
-  if (line == nullptr) return;
-  final text = line.toDartString();
+  final free = _synheartRuntimeLogFree;
+  if (free == null) return;
+  final text = _readFfiStringAndFree(line, free);
+  if (text == null) return;
   final custom = synheartRuntimeLogForwarder;
   if (custom != null) {
     custom(text);
@@ -82,6 +110,7 @@ class CoreRuntimeBridge {
     }
     try {
       synheartRuntimeLogForwarder = onLine;
+      _synheartRuntimeLogFree = lib.coreFreeString;
       _logCallable ??= NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>.listener(_synheartRuntimeLogTrampoline);
       final rc = lib.initLogging(filterArg, _logCallable!.nativeFunction, nullptr);
       if (rc == 0 || rc == 1) {
@@ -459,9 +488,9 @@ class CoreRuntimeBridge {
     clearStreamCallback();
 
     void nativeCallback(Pointer<Utf8> jsonPtr, Pointer<Void> _) {
-      if (jsonPtr != nullptr) {
-        onEvent(jsonPtr.toDartString());
-      }
+      if (jsonPtr == nullptr) return;
+      final text = _readFfiStringAndFree(jsonPtr, _ffi.coreFreeString);
+      if (text != null) onEvent(text);
     }
 
     _streamCallable = NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>
@@ -494,9 +523,9 @@ class CoreRuntimeBridge {
     clearHsiCallback();
 
     void nativeCallback(Pointer<Utf8> jsonPtr, Pointer<Void> _) {
-      if (jsonPtr != nullptr) {
-        onHsi(jsonPtr.toDartString());
-      }
+      if (jsonPtr == nullptr) return;
+      final text = _readFfiStringAndFree(jsonPtr, _ffi.coreFreeString);
+      if (text != null) onHsi(text);
     }
 
     _hsiCallable = NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>
