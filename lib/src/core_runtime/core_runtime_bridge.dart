@@ -218,6 +218,7 @@ class CoreRuntimeBridge {
   /// Release the native handle. Must be called when done.
   void dispose() {
     if (!_disposed) {
+      clearStreamCallback();
       clearHsiCallback();
       _ffi.coreFree(_handle);
       if (_sdkCryptoTable != null) {
@@ -352,6 +353,57 @@ class CoreRuntimeBridge {
     return _callJson(() => _ffi.syncNow(_handle));
   }
 
+  // ── Vendor Events ────────────────────────────────────────────────────
+
+  /// Ingest a canonical vendor event (JSON map from CanonicalWearableEvent.toMap()).
+  bool ingestVendorEvent(String eventJson) {
+    return _withCString(
+        eventJson, (p) => _ffi.ingestVendorEvent(_handle, p) == 0);
+  }
+
+  /// Query stored vendor events. Returns parsed JSON list, or null on error.
+  List<dynamic>? queryVendorEvents({
+    String? provider,
+    String? type,
+    int? startMs,
+    int? endMs,
+    int limit = 100,
+  }) {
+    final query = jsonEncode({
+      if (provider != null) 'provider': provider,
+      if (type != null) 'type': type,
+      if (startMs != null) 'start_ms': startMs,
+      if (endMs != null) 'end_ms': endMs,
+      'limit': limit,
+    });
+    return _withCString(query, (p) {
+      final json = _readAndFree(_ffi.queryVendorEvents(_handle, p));
+      if (json == null) return null;
+      return jsonDecode(json) as List<dynamic>;
+    });
+  }
+
+  /// Get the latest vendor event for a provider + type. Returns JSON map or null.
+  Map<String, dynamic>? getLatestVendorEvent(String provider, String type) {
+    final pProv = provider.toNativeUtf8();
+    final pType = type.toNativeUtf8();
+    try {
+      final json = _readAndFree(
+          _ffi.getLatestVendorEvent(_handle, pProv.cast(), pType.cast()));
+      if (json == null) return null;
+      return jsonDecode(json) as Map<String, dynamic>;
+    } finally {
+      malloc.free(pProv);
+      malloc.free(pType);
+    }
+  }
+
+  /// Delete all vendor events for a provider. Returns deleted count, or -1 on error.
+  int deleteVendorEventsForProvider(String provider) {
+    return _withCString(
+        provider, (p) => _ffi.deleteVendorEventsForProvider(_handle, p));
+  }
+
   // ── SRM / Baselines ──────────────────────────────────────────────────
 
   String? baselinesJson() => _readAndFree(_ffi.baselinesJson(_handle));
@@ -401,6 +453,51 @@ class CoreRuntimeBridge {
       _ffi.requestAccountDeletion(_handle) == 0;
   bool cancelAccountDeletion() =>
       _ffi.cancelAccountDeletion(_handle) == 0;
+
+  // ── Stream (RAMEN vendor sync) ─────────────────────────────────────
+
+  NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>? _streamCallable;
+
+  /// Start the Rust RAMEN streaming connection.
+  ///
+  /// [config] must include: `host`, `port`, `app_id`, `device_id`, `user_id`.
+  /// Optional: `api_key`, `use_tls`, `providers`, `event_types`.
+  int startStream(Map<String, dynamic> config) {
+    final json = jsonEncode(config);
+    return _withCString(json, (p) => _ffi.streamStart(_handle, p));
+  }
+
+  /// Stop the Rust RAMEN streaming connection.
+  int stopStream() => _ffi.streamStop(_handle);
+
+  /// Register a callback for RAMEN stream events.
+  ///
+  /// The [onEvent] function receives raw event JSON for each vendor event.
+  /// Uses the same NativeCallable.listener pattern as HSI callback.
+  void setStreamCallback(void Function(String eventJson) onEvent) {
+    clearStreamCallback();
+
+    void nativeCallback(Pointer<Utf8> jsonPtr, Pointer<Void> _) {
+      if (jsonPtr != nullptr) {
+        onEvent(jsonPtr.toDartString());
+      }
+    }
+
+    _streamCallable = NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>
+        .listener(nativeCallback);
+    _ffi.setStreamCallback(_handle, _streamCallable!.nativeFunction, nullptr);
+  }
+
+  /// Unregister the stream callback.
+  void clearStreamCallback() {
+    if (_streamCallable != null) {
+      _streamCallable!.close();
+      _streamCallable = null;
+    }
+  }
+
+  /// Get the current stream connection state.
+  String? streamState() => _readAndFree(_ffi.streamState(_handle));
 
   // ── HSI state callback ──────────────────────────────────────────────
 

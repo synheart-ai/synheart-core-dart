@@ -43,24 +43,21 @@ class BehaviorSessionResults {
     required this.summary,
   });
 
-  /// Create from BehaviorSessionSummary
+  /// Create from BehaviorSessionSummary.
+  ///
+  /// Raw rates are passed through without normalization. The Rust runtime
+  /// is the authoritative source for normalized behavioral metrics.
   factory BehaviorSessionResults.fromSummary(
     sb.BehaviorSessionSummary summary,
   ) {
-    // Extract tap rate from activity summary
-    // Normalize based on typical values (assume max 10 taps/sec = 1.0)
-    final tapRate =
-        (summary.activitySummary.totalEvents /
-                (summary.durationMs / 1000.0) /
-                10.0)
-            .clamp(0.0, 1.0);
+    final durationSec = summary.durationMs / 1000.0;
+    final tapRate = durationSec > 0
+        ? summary.activitySummary.totalEvents / durationSec
+        : 0.0;
 
-    // Extract keystroke rate from typing summary if available
     double keystrokeRate = 0.0;
     if (summary.typingSessionSummary != null) {
-      final typing = summary.typingSessionSummary!;
-      // Normalize based on typical typing speed (assume max 10 keystrokes/sec = 1.0)
-      keystrokeRate = (typing.averageTypingSpeed / 10.0).clamp(0.0, 1.0);
+      keystrokeRate = summary.typingSessionSummary!.averageTypingSpeed;
     }
 
     return BehaviorSessionResults(

@@ -41,6 +41,10 @@ export 'src/models/metric_event.dart';
 // Wearable Events
 export 'src/models/canonical_wearable_event.dart';
 
+// Vendor Providers (cloud OAuth + data fetch)
+export 'src/modules/vendor/whoop_provider.dart';
+export 'src/modules/vendor/garmin_provider.dart';
+
 // Data Models
 export 'src/models/behavior.dart';
 export 'src/models/context.dart';

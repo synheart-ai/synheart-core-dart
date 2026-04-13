@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:synheart_wear/synheart_wear.dart' as wear;
 import '../../core/logger.dart';
+import '../../core_runtime/core_runtime_bridge.dart';
+import '../../models/canonical_wearable_event.dart';
 import '../base/synheart_module.dart';
 import '../interfaces/capability_provider.dart';
 import '../interfaces/consent_provider.dart';
@@ -46,6 +49,13 @@ class WearModule extends BaseSynheartModule
   final StreamController<bool> _vendorSyncController =
       StreamController<bool>.broadcast();
   bool _lastVendorSyncState = false;
+
+  // Canonical vendor event stream — emits after normalization + storage.
+  final StreamController<CanonicalWearableEvent> _canonicalEventController =
+      StreamController<CanonicalWearableEvent>.broadcast();
+
+  /// Bridge to Rust runtime for vendor event storage.
+  CoreRuntimeBridge? _bridge;
 
   // Wearable event processor — bridges RAMEN events to the SRM pipeline.
   // Set via setEventProcessor() after Synheart.configure() provides storage + runtime.
@@ -383,6 +393,15 @@ class WearModule extends BaseSynheartModule
   /// Current vendor sync consent state.
   bool get isVendorSyncEnabled => _lastVendorSyncState;
 
+  /// Stream of canonical vendor events, emitted after normalization and storage.
+  Stream<CanonicalWearableEvent> get canonicalEvents =>
+      _canonicalEventController.stream;
+
+  /// Set the runtime bridge for vendor event storage.
+  void setBridge(CoreRuntimeBridge? bridge) {
+    _bridge = bridge;
+  }
+
   /// Set the wearable event processor (called by Synheart after configure).
   void setEventProcessor(WearableEventProcessor processor) {
     _eventProcessor = processor;
@@ -412,13 +431,29 @@ class WearModule extends BaseSynheartModule
       );
       return;
     }
-    await _eventProcessor!.processRamenEvent(
+    final event = await _eventProcessor!.processRamenEvent(
       provider: provider,
       eventType: eventType,
       payload: payload,
       eventId: eventId,
       seq: seq,
     );
+
+    if (event != null) {
+      // Store in Rust SQLite via runtime bridge.
+      try {
+        _bridge?.ingestVendorEvent(jsonEncode(event.toMap()));
+      } catch (e) {
+        SynheartLogger.log(
+          '[WearModule] Vendor event storage failed: $e',
+        );
+      }
+
+      // Emit for UI subscribers.
+      if (!_canonicalEventController.isClosed) {
+        _canonicalEventController.add(event);
+      }
+    }
   }
 
   void _emitStatus(WearModuleStatus status) {
@@ -429,6 +464,9 @@ class WearModule extends BaseSynheartModule
 
   @override
   Future<void> onDispose() async {
+    // Close canonical vendor event stream
+    await _canonicalEventController.close();
+
     // Close vendor sync stream
     await _vendorSyncController.close();
 

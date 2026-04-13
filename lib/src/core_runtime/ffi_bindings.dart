@@ -77,6 +77,16 @@ typedef _WipeDart = int Function(Pointer<Void> h);
 typedef _RetentionC = Int64 Function(Pointer<Void> h, Int32 days);
 typedef _RetentionDart = int Function(Pointer<Void> h, int days);
 
+// Vendor events
+typedef _IngestVendorEventC = Int32 Function(Pointer<Void> h, Pointer<Utf8> json);
+typedef _IngestVendorEventDart = int Function(Pointer<Void> h, Pointer<Utf8> json);
+typedef _QueryVendorEventsC = Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> queryJson);
+typedef _QueryVendorEventsDart = Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> queryJson);
+typedef _GetLatestVendorEventC = Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> provider, Pointer<Utf8> eventType);
+typedef _GetLatestVendorEventDart = Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> provider, Pointer<Utf8> eventType);
+typedef _DeleteVendorEventsC = Int64 Function(Pointer<Void> h, Pointer<Utf8> provider);
+typedef _DeleteVendorEventsDart = int Function(Pointer<Void> h, Pointer<Utf8> provider);
+
 // Sync
 typedef _SetSyncC = Void Function(Pointer<Void> h, Int32 enabled);
 typedef _SetSyncDart = void Function(Pointer<Void> h, int enabled);
@@ -207,6 +217,11 @@ class SynheartCoreFFI {
   late final wipeLocalData = _lib.lookupFunction<_WipeC, _WipeDart>('synheart_core_wipe_local_data');
   late final setRetentionDays = _lib.lookupFunction<_RetentionC, _RetentionDart>('synheart_core_set_retention_days');
 
+  late final ingestVendorEvent = _lib.lookupFunction<_IngestVendorEventC, _IngestVendorEventDart>('synheart_core_ingest_vendor_event');
+  late final queryVendorEvents = _lib.lookupFunction<_QueryVendorEventsC, _QueryVendorEventsDart>('synheart_core_query_vendor_events');
+  late final getLatestVendorEvent = _lib.lookupFunction<_GetLatestVendorEventC, _GetLatestVendorEventDart>('synheart_core_get_latest_vendor_event');
+  late final deleteVendorEventsForProvider = _lib.lookupFunction<_DeleteVendorEventsC, _DeleteVendorEventsDart>('synheart_core_delete_vendor_events_for_provider');
+
   late final setSyncEnabled = _lib.lookupFunction<_SetSyncC, _SetSyncDart>('synheart_core_set_sync_enabled');
   late final syncNow = _lib.lookupFunction<_SyncNowC, _SyncNowDart>('synheart_core_sync_now');
 
@@ -241,6 +256,27 @@ class SynheartCoreFFI {
     Void Function(Pointer<Void>),
     void Function(Pointer<Void>)
   >('synheart_core_clear_hsi_callback');
+
+  // Stream (RAMEN vendor sync)
+  late final streamStart = _lib.lookupFunction<
+    Int32 Function(Pointer<Void>, Pointer<Utf8>),
+    int Function(Pointer<Void>, Pointer<Utf8>)
+  >('synheart_core_stream_start');
+
+  late final streamStop = _lib.lookupFunction<
+    Int32 Function(Pointer<Void>),
+    int Function(Pointer<Void>)
+  >('synheart_core_stream_stop');
+
+  late final setStreamCallback = _lib.lookupFunction<
+    Void Function(Pointer<Void>, Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>, Pointer<Void>),
+    void Function(Pointer<Void>, Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>, Pointer<Void>)
+  >('synheart_core_set_stream_callback');
+
+  late final streamState = _lib.lookupFunction<
+    Pointer<Utf8> Function(Pointer<Void>),
+    Pointer<Utf8> Function(Pointer<Void>)
+  >('synheart_core_stream_state');
 
   // Lab
   late final labStart = _lib.lookupFunction<_LabStartC, _LabStartDart>('synheart_core_lab_start');
