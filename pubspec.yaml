@@ -46,7 +46,6 @@ dependencies:
   # Core dependencies
   rxdart: ^0.28.0
   collection: ^1.18.0
-  pointycastle: ^3.9.1
 
   # Cryptography for HMAC verification and artifact SHA-256
   crypto: ^3.0.3

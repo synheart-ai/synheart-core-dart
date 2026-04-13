@@ -68,4 +68,3 @@ native/
 env/*.local.json
 
 .cursor/
-device-registration-flow.backup.patch

@@ -740,22 +740,12 @@ class Synheart {
 
       _consentModule!.addListener(_onConsentChanged);
 
-      // Wire HSI callback from core runtime → _hsvStream + session engine
+      // Wire HSI callback from core runtime → _hsvStream
       if (_coreRuntime != null) {
         _coreRuntime!.setHsiCallback((hsiJson) {
           final consent = _consentModule?.current();
           if (consent == null || !consent.biosignals) return;
           _hsvStream.add(hsiJson);
-
-          // Bridge HSI metrics from runtime → session engine
-          final sid = _activeMainSessionId;
-          if (sid == null || _mainSession == null) return;
-          try {
-            final parsed = jsonDecode(hsiJson) as Map<String, dynamic>;
-            // `ingestHsiMetrics` was removed from newer synheart_session API.
-            // Keep runtime HSI callback active; session-level ingestion happens in runtime path.
-            if (parsed.isEmpty || sid.isEmpty) return;
-          } catch (_) {}
         });
       }
 
