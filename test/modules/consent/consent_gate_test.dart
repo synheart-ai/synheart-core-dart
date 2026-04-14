@@ -19,7 +19,6 @@ void main() {
         behavior: true,
         phoneContext: true,
         cloudUpload: false,
-        syni: false,
         timestamp: DateTime.now(),
       );
 
@@ -53,7 +52,6 @@ void main() {
         behavior: true,
         phoneContext: true,
         cloudUpload: false,
-        syni: false,
         timestamp: DateTime.now(),
       );
 

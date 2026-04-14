@@ -14,6 +14,7 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
 import 'ffi_bindings.dart';
+import 'platform_native_sdk_storage_callbacks.dart';
 import 'sdk_ffi.dart';
 
 /// Forwarder installed before `synheart_core_init_logging` (top-level for FFI).
@@ -173,6 +174,29 @@ class CoreRuntimeBridge {
     }
     _sdkCryptoTable = table;
     return 0;
+  }
+
+  /// Attach host-provided secure-storage callbacks so the Rust core can
+  /// persist state (consent tokens, device records, …) across app restarts.
+  ///
+  /// Resolves `synheart_native_secure_store` / `…_load` / `…_delete` from the
+  /// process (iOS) or from `libsynheart_native_crypto.so` (Android) and hands
+  /// the function pointers to `synheart_core_set_storage_callbacks`.
+  ///
+  /// Returns:
+  /// - `0` on success,
+  /// - `-1` if the runtime is disposed,
+  /// - `-2` if `synheart_core_set_storage_callbacks` isn't exported by this
+  ///   core build,
+  /// - `-3` if the native symbols are missing (no storage backend available),
+  /// - any other non-zero value the core's FFI returned.
+  int setStorageCallbacks() {
+    if (_disposed) return -1;
+    final setter = _ffi.sdkFfi.setStorageCallbacks;
+    if (setter == null) return -2;
+    final triple = PlatformNativeSdkStorageCallbacks.tryResolveTriple();
+    if (triple == null) return -3;
+    return setter(_handle, triple.store, triple.load, triple.delete);
   }
 
   /// §3 — device registration (attestation). [clientId] is the app user id for this session.

@@ -12,7 +12,9 @@ enum ConsentTier {
   research,
 }
 
-/// Types of consent
+/// Types of consent. Interpretation flags (focus/emotion estimation) are
+/// expressed at the channel level via [ConsentChannels] rather than as
+/// top-level consent types.
 enum ConsentType {
   /// Consent for biosignal collection
   biosignals,
@@ -29,14 +31,11 @@ enum ConsentType {
   /// Consent for Syni personalization
   syni,
 
-  /// Consent for focus estimation
-  focusEstimation,
-
-  /// Consent for emotion estimation
-  emotionEstimation,
-
   /// Consent for vendor sync (Wear Ramen service)
   vendorSync,
+
+  /// Consent for research data export
+  research,
 }
 
 /// Snapshot of user consent at a point in time
@@ -56,14 +55,11 @@ class ConsentSnapshot {
   /// Consent for Syni personalization
   final bool syni;
 
-  /// Consent for focus estimation
-  final bool focusEstimation;
-
-  /// Consent for emotion estimation
-  final bool emotionEstimation;
-
   /// Consent for vendor sync (Wear Ramen service — sleep, recovery, strain from Whoop/Garmin)
   final bool vendorSync;
+
+  /// Consent for research data export
+  final bool research;
 
   /// Timestamp when this consent was given
   final DateTime timestamp;
@@ -87,10 +83,9 @@ class ConsentSnapshot {
     required this.behavior,
     required this.phoneContext,
     required this.cloudUpload,
-    required this.syni,
-    this.focusEstimation = false,
-    this.emotionEstimation = false,
+    this.syni = false,
     this.vendorSync = false,
+    this.research = false,
     required this.timestamp,
     this.version = '1.0.0',
     this.explicitlyDenied = false,
@@ -111,12 +106,10 @@ class ConsentSnapshot {
         return cloudUpload;
       case ConsentType.syni:
         return syni;
-      case ConsentType.focusEstimation:
-        return focusEstimation;
-      case ConsentType.emotionEstimation:
-        return emotionEstimation;
       case ConsentType.vendorSync:
         return vendorSync;
+      case ConsentType.research:
+        return research;
     }
   }
 
@@ -134,8 +127,6 @@ class ConsentSnapshot {
     if (channel.startsWith('biosignals.')) return biosignals;
     if (channel.startsWith('behavior.')) return behavior;
     if (channel.startsWith('phone_context.')) return phoneContext;
-    if (channel.startsWith('interpretation.focus')) return focusEstimation;
-    if (channel.startsWith('interpretation.emotion')) return emotionEstimation;
     return false;
   }
 
@@ -180,9 +171,8 @@ class ConsentSnapshot {
     bool? phoneContext,
     bool? cloudUpload,
     bool? syni,
-    bool? focusEstimation,
-    bool? emotionEstimation,
     bool? vendorSync,
+    bool? research,
     DateTime? timestamp,
     String? version,
     bool? explicitlyDenied,
@@ -195,9 +185,8 @@ class ConsentSnapshot {
       phoneContext: phoneContext ?? this.phoneContext,
       cloudUpload: cloudUpload ?? this.cloudUpload,
       syni: syni ?? this.syni,
-      focusEstimation: focusEstimation ?? this.focusEstimation,
-      emotionEstimation: emotionEstimation ?? this.emotionEstimation,
       vendorSync: vendorSync ?? this.vendorSync,
+      research: research ?? this.research,
       timestamp: timestamp ?? this.timestamp,
       version: version ?? this.version,
       explicitlyDenied: explicitlyDenied ?? this.explicitlyDenied,
@@ -217,9 +206,8 @@ class ConsentSnapshot {
       phoneContext: false,
       cloudUpload: false,
       syni: false,
-      focusEstimation: false,
-      emotionEstimation: false,
       vendorSync: false,
+      research: false,
       timestamp: DateTime.now(),
       explicitlyDenied: explicitlyDenied,
     );
@@ -233,9 +221,8 @@ class ConsentSnapshot {
       phoneContext: true,
       cloudUpload: true,
       syni: true,
-      focusEstimation: true,
-      emotionEstimation: true,
       vendorSync: true,
+      research: true,
       timestamp: DateTime.now(),
     );
   }
@@ -247,9 +234,8 @@ class ConsentSnapshot {
       'phoneContext': phoneContext,
       'cloudUpload': cloudUpload,
       'syni': syni,
-      'focusEstimation': focusEstimation,
-      'emotionEstimation': emotionEstimation,
       'vendorSync': vendorSync,
+      'research': research,
       'timestamp': timestamp.toIso8601String(),
       'version': version,
       'explicitlyDenied': explicitlyDenied,
@@ -272,10 +258,9 @@ class ConsentSnapshot {
       behavior: json['behavior'] as bool,
       phoneContext: json['phoneContext'] as bool,
       cloudUpload: json['cloudUpload'] as bool,
-      syni: json['syni'] as bool,
-      focusEstimation: json['focusEstimation'] as bool? ?? false,
-      emotionEstimation: json['emotionEstimation'] as bool? ?? false,
+      syni: json['syni'] as bool? ?? false,
       vendorSync: json['vendorSync'] as bool? ?? false,
+      research: json['research'] as bool? ?? false,
       timestamp: DateTime.parse(json['timestamp'] as String),
       version: json['version'] as String? ?? '1.0.0',
       explicitlyDenied: json['explicitlyDenied'] as bool? ?? false,

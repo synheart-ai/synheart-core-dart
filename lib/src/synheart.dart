@@ -601,6 +601,29 @@ class Synheart {
               );
             }
           }
+          // Attach host-provided secure-storage callbacks so consent tokens,
+          // device records, etc. survive app restarts. Resolves
+          // `synheart_native_secure_store` / `…_load` / `…_delete` from the
+          // process (iOS) or the Android native lib. No-op on older core
+          // builds that don't export `synheart_core_set_storage_callbacks`.
+          final storageRc = _coreRuntime!.setStorageCallbacks();
+          if (storageRc == 0) {
+            SynheartLogger.log(
+              '[Synheart] Native secure-storage callbacks attached (synheart_native_secure_*).',
+            );
+          } else if (storageRc == -2) {
+            SynheartLogger.log(
+              '[Synheart] ⚠️ Core build lacks synheart_core_set_storage_callbacks; state will not persist.',
+            );
+          } else if (storageRc == -3) {
+            SynheartLogger.log(
+              '[Synheart] ⚠️ synheart_native_secure_* symbols not found — consent tokens and device records will not persist across app restarts.',
+            );
+          } else {
+            SynheartLogger.log(
+              '[Synheart] synheart_core_set_storage_callbacks failed: $storageRc',
+            );
+          }
         }
       }
     } catch (e) {
@@ -1242,8 +1265,8 @@ class Synheart {
           : current.phoneContext,
       cloudUpload: consentType == 'cloudUpload' ? false : current.cloudUpload,
       syni: consentType == 'syni' ? false : current.syni,
-      focusEstimation: false,
-      emotionEstimation: false,
+      vendorSync: consentType == 'vendorSync' ? false : current.vendorSync,
+      research: consentType == 'research' ? false : current.research,
       timestamp: DateTime.now(),
     );
 
@@ -2178,12 +2201,28 @@ class Synheart {
     bool research = false,
   }) async {
     if (_coreRuntime != null) {
-      if (biosignals) _coreRuntime!.grantConsent('biosignals');
-      if (behavior) _coreRuntime!.grantConsent('behavior');
-      if (phoneContext) _coreRuntime!.grantConsent('phoneContext');
-      if (cloudUpload) _coreRuntime!.grantConsent('cloudUpload');
-      if (vendorSync) _coreRuntime!.grantConsent('vendorSync');
-      if (research) _coreRuntime!.grantConsent('research');
+      // Mirror every channel's new value into the Rust core — grant when
+      // true, revoke when false. Without the revoke path the core's state
+      // drifts out of sync with the UI the moment the user flips a toggle
+      // OFF (the subsequent hasConsent read returns the stale TRUE).
+      biosignals
+          ? _coreRuntime!.grantConsent('biosignals')
+          : _coreRuntime!.revokeConsent('biosignals');
+      behavior
+          ? _coreRuntime!.grantConsent('behavior')
+          : _coreRuntime!.revokeConsent('behavior');
+      phoneContext
+          ? _coreRuntime!.grantConsent('phoneContext')
+          : _coreRuntime!.revokeConsent('phoneContext');
+      cloudUpload
+          ? _coreRuntime!.grantConsent('cloudUpload')
+          : _coreRuntime!.revokeConsent('cloudUpload');
+      vendorSync
+          ? _coreRuntime!.grantConsent('vendorSync')
+          : _coreRuntime!.revokeConsent('vendorSync');
+      research
+          ? _coreRuntime!.grantConsent('research')
+          : _coreRuntime!.revokeConsent('research');
       // Fall through to Dart consent module so UI and module wiring stays in sync
     }
     return shared._grantConsent(
@@ -2269,7 +2308,7 @@ class Synheart {
           research: research,
         );
         SynheartLogger.log(
-          '[Synheart] Consent token issued for profile: $profileId (tier: ${tier?.name ?? "legacy"})',
+          '[Synheart] Consent token issued for profile: $profileId (tier: ${(tier ?? ConsentTier.local).name})',
         );
       } catch (e) {
         SynheartLogger.log(
@@ -2287,10 +2326,8 @@ class Synheart {
       phoneContext: phoneContext,
       cloudUpload: cloudUpload,
       syni: false,
-      focusEstimation: grantedChannels?.interpretation.focusEstimation ?? false,
-      emotionEstimation:
-          grantedChannels?.interpretation.emotionEstimation ?? false,
       vendorSync: vendorSync,
+      research: research,
       timestamp: DateTime.now(),
       explicitlyDenied: false,
       tier: tier ?? ConsentTier.local,
@@ -2334,6 +2371,8 @@ class Synheart {
         'phoneContext': false,
         'cloudUpload': false,
         'syni': false,
+        'vendorSync': false,
+        'research': false,
       };
     }
 
@@ -2344,6 +2383,8 @@ class Synheart {
       'phoneContext': consent.phoneContext,
       'cloudUpload': consent.cloudUpload,
       'syni': consent.syni,
+      'vendorSync': consent.vendorSync,
+      'research': consent.research,
     };
   }
 
@@ -2507,6 +2548,8 @@ class Synheart {
     SynheartLogger.log('  - PhoneContext: ${newConsent.phoneContext}');
     SynheartLogger.log('  - Cloud Upload: ${newConsent.cloudUpload}');
     SynheartLogger.log('  - Syni: ${newConsent.syni}');
+    SynheartLogger.log('  - Vendor Sync: ${newConsent.vendorSync}');
+    SynheartLogger.log('  - Research: ${newConsent.research}');
 
     _reevaluateAllFeatures();
   }
@@ -2578,12 +2621,6 @@ class Synheart {
             ),
           );
         }
-      case SynheartFeature.focus:
-        // Focus is computed by synheart-engine and available via lastHsv()
-        break;
-      case SynheartFeature.emotion:
-        // Emotion is computed by synheart-engine and available via lastHsv()
-        break;
       case SynheartFeature.cloud:
         // Cloud connector removed — managed by core runtime bridge.
         break;
@@ -2730,10 +2767,6 @@ class Synheart {
         return cap.capability(Module.behavior) != CapabilityLevel.none;
       case SynheartFeature.phoneContext:
         return cap.capability(Module.phone) != CapabilityLevel.none;
-      case SynheartFeature.focus:
-        return cap.isFeatureEnabled(FeatureFlag.hsiEmotionFocus);
-      case SynheartFeature.emotion:
-        return cap.isFeatureEnabled(FeatureFlag.hsiEmotionFocus);
       case SynheartFeature.cloud:
         return cap.capability(Module.cloud) != CapabilityLevel.none;
       case SynheartFeature.syni:

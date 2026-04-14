@@ -27,6 +27,25 @@ typedef SynheartGetAttestationNative = Pointer<Utf8> Function(
 typedef SynheartKeyExistsNative = Int32 Function(Pointer<Utf8> deviceId);
 typedef SynheartDeleteKeyNative = Int32 Function(Pointer<Utf8> deviceId);
 
+// ── Platform secure-storage callback typedefs (native) ───────────────────
+//
+// Match `SynheartSdkSecureStoreFn` / `…LoadFn` / `…DeleteFn` in the Rust
+// `platform_bridge::ffi_bridge` module. These back consent token persistence
+// and any other state the core wants to survive process restarts.
+typedef SynheartSecureStoreNative = Int32 Function(
+  Pointer<Utf8> service,
+  Pointer<Utf8> key,
+  Pointer<Utf8> value,
+);
+typedef SynheartSecureLoadNative = Pointer<Utf8> Function(
+  Pointer<Utf8> service,
+  Pointer<Utf8> key,
+);
+typedef SynheartSecureDeleteNative = Int32 Function(
+  Pointer<Utf8> service,
+  Pointer<Utf8> key,
+);
+
 // ── Host crypto callback table (must match Core Runtime `SynheartSdkCryptoCallbacks`) ─
 
 final class SynheartSdkCryptoCallbacks extends Struct {
@@ -63,6 +82,16 @@ class SynheartSdkFfi {
     Pointer<Utf8> method,
     Pointer<Utf8> url,
   )? buildProofHeader;
+
+  /// `synheart_core_set_storage_callbacks(handle, store, load, delete) -> i32`.
+  /// Registers host-provided secure-storage callbacks so the core can persist
+  /// consent tokens, device records, etc. across process restarts.
+  int Function(
+    Pointer<Void> handle,
+    Pointer<NativeFunction<SynheartSecureStoreNative>> storeFn,
+    Pointer<NativeFunction<SynheartSecureLoadNative>> loadFn,
+    Pointer<NativeFunction<SynheartSecureDeleteNative>> deleteFn,
+  )? setStorageCallbacks;
 
   bool get _hasCryptoSetter =>
       setCryptoCallbacks != null || setCryptoCallbacksAlt != null;
@@ -118,6 +147,24 @@ class SynheartSdkFfi {
           Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>),
           Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>)>(
         'synheart_core_sdk_build_proof_header',
+      );
+    } catch (_) {}
+
+    try {
+      o.setStorageCallbacks = lib.lookupFunction<
+          Int32 Function(
+            Pointer<Void>,
+            Pointer<NativeFunction<SynheartSecureStoreNative>>,
+            Pointer<NativeFunction<SynheartSecureLoadNative>>,
+            Pointer<NativeFunction<SynheartSecureDeleteNative>>,
+          ),
+          int Function(
+            Pointer<Void>,
+            Pointer<NativeFunction<SynheartSecureStoreNative>>,
+            Pointer<NativeFunction<SynheartSecureLoadNative>>,
+            Pointer<NativeFunction<SynheartSecureDeleteNative>>,
+          )>(
+        'synheart_core_set_storage_callbacks',
       );
     } catch (_) {}
 

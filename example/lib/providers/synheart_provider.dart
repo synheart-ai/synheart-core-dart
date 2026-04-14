@@ -248,6 +248,8 @@ class SynheartProvider extends ChangeNotifier {
       phoneContext: statusMap['phoneContext'] ?? false,
       cloudUpload: statusMap['cloudUpload'] ?? false,
       syni: statusMap['syni'] ?? false,
+      vendorSync: statusMap['vendorSync'] ?? false,
+      research: statusMap['research'] ?? false,
       timestamp: DateTime.now(),
     );
   }

@@ -14,12 +14,6 @@ enum SynheartFeature {
   /// Device motion, screen state, and app context
   phoneContext('phoneContext'),
 
-  /// Focus inference head
-  focus('biosignals'),
-
-  /// Emotion inference head
-  emotion('biosignals'),
-
   /// Cloud upload connector
   cloud('cloudUpload'),
 

@@ -135,15 +135,12 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
           ? granted
           : _currentConsent!.cloudUpload,
       syni: type == ConsentType.syni ? granted : _currentConsent!.syni,
-      focusEstimation: type == ConsentType.focusEstimation
-          ? granted
-          : _currentConsent!.focusEstimation,
-      emotionEstimation: type == ConsentType.emotionEstimation
-          ? granted
-          : _currentConsent!.emotionEstimation,
       vendorSync: type == ConsentType.vendorSync
           ? granted
           : _currentConsent!.vendorSync,
+      research: type == ConsentType.research
+          ? granted
+          : _currentConsent!.research,
       timestamp: DateTime.now(),
     );
 
@@ -170,11 +167,10 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
       'biosignals': (oldConsent.biosignals, newConsent.biosignals),
       'behavior': (oldConsent.behavior, newConsent.behavior),
       'phoneContext': (oldConsent.phoneContext, newConsent.phoneContext),
-      'focusEstimation': (oldConsent.focusEstimation, newConsent.focusEstimation),
-      'emotionEstimation': (oldConsent.emotionEstimation, newConsent.emotionEstimation),
       'cloudUpload': (oldConsent.cloudUpload, newConsent.cloudUpload),
-      'vendorSync': (oldConsent.vendorSync, newConsent.vendorSync),
       'syni': (oldConsent.syni, newConsent.syni),
+      'vendorSync': (oldConsent.vendorSync, newConsent.vendorSync),
+      'research': (oldConsent.research, newConsent.research),
     };
     for (final e in fields.entries) {
       if (e.value.$1 != e.value.$2) {
@@ -261,7 +257,7 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
     );
     _currentToken = token;
     SynheartLogger.log(
-      '[ConsentModule] Consent updated for profile: $profileId (tier: ${tier?.name ?? "legacy"})',
+      '[ConsentModule] Consent updated for profile: $profileId (tier: ${(tier ?? ConsentTier.local).name})',
     );
     return token;
   }
@@ -376,8 +372,6 @@ class ConsentModule extends BaseSynheartModule implements ConsentProvider {
           effectiveChannels.phoneContext.systemState,
       cloudUpload: profile.cloudEnabled,
       syni: false, // Not in profile yet
-      focusEstimation: effectiveChannels.interpretation.focusEstimation,
-      emotionEstimation: effectiveChannels.interpretation.emotionEstimation,
       vendorSync: profile.vendorSyncEnabled,
       timestamp: DateTime.now(),
       explicitlyDenied: false, // User accepted, so not denied
