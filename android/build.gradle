@@ -1,0 +1,54 @@
+group 'ai.synheart.core_runtime'
+version '1.0-SNAPSHOT'
+
+buildscript {
+    ext.kotlin_version = '1.9.0'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'ai.synheart.core_runtime'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    // Native .so files are provisioned by `synheart install runtime`, which
+    // places them at <host-flutter-app>/synheart/vendor/runtime/android/jniLibs/
+    // (e.g. example/synheart/... in this repo). When this module is built as a
+    // subproject of a Flutter app, `rootProject.projectDir` is that app's
+    // android/ folder, so parent = the app pubspec root. When opened standalone,
+    // parent = the plugin package root (same as $rootDir/..).
+    // Override by setting `synheart.runtime.android.jniLibs` in gradle.properties.
+    sourceSets {
+        main {
+            jniLibs.srcDirs = [
+                project.findProperty('synheart.runtime.android.jniLibs')
+                    ?: new File(rootProject.projectDir.parentFile,
+                        'synheart/vendor/runtime/android/jniLibs').absolutePath
+            ]
+        }
+    }
+}

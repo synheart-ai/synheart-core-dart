@@ -259,28 +259,61 @@ class SynheartCoreFFI {
   static SynheartCoreFFI? _instance;
 
   /// Load the native library. Returns null if not found.
+  ///
+  /// Desktop (macOS/Linux/Windows) lookup order:
+  ///   1. `<cwd>/synheart/vendor/runtime/<platform>/<libname>` (installed by
+  ///      `synheart install runtime` or `synheart runtime install --from`)
+  ///   2. bare `<libname>` (system loader path — DYLD/LD_LIBRARY_PATH, PATH)
+  ///
+  /// iOS is statically linked (DynamicLibrary.process()). Android loads via
+  /// jniLibs/ auto-discovery by the Android loader.
   static SynheartCoreFFI? load() {
     if (_instance != null) return _instance;
 
-    DynamicLibrary lib;
+    DynamicLibrary? lib;
     try {
-      if (Platform.isAndroid || Platform.isLinux) {
+      if (Platform.isIOS) {
+        lib = DynamicLibrary.process(); // statically linked
+      } else if (Platform.isAndroid) {
         lib = DynamicLibrary.open('libsynheart_core_runtime.so');
       } else if (Platform.isMacOS) {
-        lib = DynamicLibrary.open('libsynheart_core_runtime.dylib');
+        lib = _openDesktop('macos', 'libsynheart_core_runtime.dylib');
+      } else if (Platform.isLinux) {
+        lib = _openDesktop('linux', 'libsynheart_core_runtime.so');
       } else if (Platform.isWindows) {
-        lib = DynamicLibrary.open('synheart_core_runtime.dll');
-      } else if (Platform.isIOS) {
-        lib = DynamicLibrary.process(); // statically linked
-      } else {
-        return null;
+        lib = _openDesktop('windows', 'synheart_core_runtime.dll');
       }
     } catch (_) {
       return null;
     }
 
+    if (lib == null) return null;
     _instance = SynheartCoreFFI._(lib);
     return _instance;
+  }
+
+  /// Try `synheart/vendor/runtime/<platform>/<libname>` relative to the
+  /// current working directory, then fall back to the bare filename so the
+  /// OS loader can resolve it from standard library search paths.
+  static DynamicLibrary? _openDesktop(String platform, String libname) {
+    final vendored = '${Directory.current.path}'
+        '${Platform.pathSeparator}synheart'
+        '${Platform.pathSeparator}vendor'
+        '${Platform.pathSeparator}runtime'
+        '${Platform.pathSeparator}$platform'
+        '${Platform.pathSeparator}$libname';
+    if (File(vendored).existsSync()) {
+      try {
+        return DynamicLibrary.open(vendored);
+      } catch (_) {
+        // fall through to bare lookup
+      }
+    }
+    try {
+      return DynamicLibrary.open(libname);
+    } catch (_) {
+      return null;
+    }
   }
 
   // ── Resolved symbols ────────────────────────────────────────────────

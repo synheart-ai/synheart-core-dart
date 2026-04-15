@@ -86,4 +86,7 @@ flutter:
     platforms:
       ios:
         pluginClass: SynheartCorePlugin
+      android:
+        ffiPlugin: true
+        package: ai.synheart.core_runtime
 
