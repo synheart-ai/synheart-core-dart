@@ -8,6 +8,7 @@ import 'core/logger.dart';
 import 'modules/base/module_manager.dart';
 import 'modules/base/synheart_module.dart';
 import 'modules/capabilities/capability_module.dart';
+import 'modules/consent/consent_form.dart';
 import 'modules/consent/consent_module.dart';
 import 'modules/interfaces/capability_provider.dart';
 import 'modules/interfaces/consent_provider.dart';
@@ -1233,11 +1234,24 @@ class Synheart {
   }
 
   /// Read editable consent form JSON contract from runtime.
+  ///
+  /// Prefer [consentGetEditableFormTyped] for typed access.
   static Map<String, dynamic>? consentGetEditableForm() {
     return _coreRuntime?.consentGetEditableForm();
   }
 
+  /// Read editable consent form as a typed [ConsentForm].
+  ///
+  /// Returns `null` when the runtime bridge is unavailable.
+  static ConsentForm? consentGetEditableFormTyped() {
+    final raw = _coreRuntime?.consentGetEditableForm();
+    if (raw == null) return null;
+    return ConsentForm.fromJson(raw);
+  }
+
   /// Submit consent form JSON to runtime using offline-first semantics.
+  ///
+  /// Prefer [consentSubmitFormTyped] for typed submission.
   static Future<Map<String, dynamic>?> consentSubmitForm({
     required Map<String, dynamic> formJson,
     String? deviceId,
@@ -1263,6 +1277,24 @@ class Synheart {
       platform: resolvedPlatform,
       userId: resolvedUserId,
       formJson: formJson,
+    );
+  }
+
+  /// Submit a typed [ConsentForm] to runtime using offline-first semantics.
+  ///
+  /// Returns the raw runtime response map (`{ synced, accepted, token }` on
+  /// success, `{ error }` on failure, `null` if the bridge is unavailable).
+  static Future<Map<String, dynamic>?> consentSubmitFormTyped({
+    required ConsentForm form,
+    String? deviceId,
+    String? platform,
+    String? userId,
+  }) {
+    return consentSubmitForm(
+      formJson: form.toJson(),
+      deviceId: deviceId,
+      platform: platform,
+      userId: userId,
     );
   }
 
@@ -2447,10 +2479,10 @@ class Synheart {
       return {
         'biosignals': runtime.hasConsent('biosignals'),
         'behavior': runtime.hasConsent('behavior'),
-        'phoneContext': runtime.hasConsent('phoneContext'),
-        'cloudUpload': runtime.hasConsent('cloudUpload'),
+        'phoneContext': runtime.hasConsent('phone_context'),
+        'cloudUpload': runtime.hasConsent('cloud_upload'),
         'syni': syni,
-        'vendorSync': runtime.hasConsent('vendorSync'),
+        'vendorSync': runtime.hasConsent('vendor_sync'),
         'research': runtime.hasConsent('research'),
       };
     }
@@ -2959,7 +2991,6 @@ class Synheart {
       );
     }
   }
-   
 }
 
 /// Sync result from a push/pull cycle.

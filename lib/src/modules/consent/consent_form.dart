@@ -1,34 +1,58 @@
 import '../interfaces/consent_provider.dart';
 
-/// Editable consent form returned by core-runtime cloud consent APIs.
-
+/// Editable consent form returned by synheart-core-runtime.
+///
+/// Mirrors the flat shape the runtime emits from
+/// `synheart_core_consent_get_editable_form` (see
+/// `synheart-core-runtime/src/consent/consent_form.rs`).
+///
+/// The runtime intentionally surfaces consent at the **category level**
+/// (`biosignals`, `phone_context`, `behavior`) rather than exposing per-channel
+/// toggles to hosts. Channel-level truth is stored inside the runtime and
+/// intersected against the cloud default profile on submit.
 class ConsentForm {
   const ConsentForm({
     required this.profileId,
-    required this.categories,
+    required this.biosignals,
+    required this.phoneContext,
+    required this.behavior,
     required this.consentTier,
     required this.allowCloud,
     required this.allowResearch,
     required this.allowVendorSync,
   });
 
+  /// Profile id the runtime resolved this form against. `"offline-default"`
+  /// when no cloud profile has been cached yet.
   final String profileId;
-  final List<ConsentCategory> categories;
+
+  /// Category-level toggle: at least one biosignals channel granted.
+  final bool biosignals;
+
+  /// Category-level toggle: at least one phone-context channel granted.
+  final bool phoneContext;
+
+  /// Category-level toggle: at least one behavior channel granted.
+  final bool behavior;
+
+  /// Processing tier (`local`, `cloud`, `research`).
   final ConsentTier consentTier;
+
+  /// Top-level switch: cloud processing permitted.
   final bool allowCloud;
+
+  /// Top-level switch: research export permitted.
   final bool allowResearch;
+
+  /// Top-level switch: vendor sync (Whoop/Garmin/etc.) permitted.
   final bool allowVendorSync;
 
   factory ConsentForm.fromJson(Map<String, dynamic> json) {
-    final categoriesRaw = json['categories'];
     return ConsentForm(
       profileId: (json['profile_id'] ?? '').toString(),
-      categories: categoriesRaw is List
-          ? categoriesRaw
-                .whereType<Map<String, dynamic>>()
-                .map(ConsentCategory.fromJson)
-                .toList(growable: false)
-          : const <ConsentCategory>[],
+      biosignals: json['biosignals'] == true,
+      phoneContext: json['phone_context'] == true,
+      behavior: json['behavior'] == true,
       consentTier: parseConsentTier(json['consent_tier']?.toString()),
       allowCloud: json['allow_cloud'] == true,
       allowResearch: json['allow_research'] == true,
@@ -39,7 +63,9 @@ class ConsentForm {
   Map<String, dynamic> toJson() {
     return {
       'profile_id': profileId,
-      'categories': categories.map((c) => c.toJson()).toList(growable: false),
+      'biosignals': biosignals,
+      'phone_context': phoneContext,
+      'behavior': behavior,
       'consent_tier': consentTier.name,
       'allow_cloud': allowCloud,
       'allow_research': allowResearch,
@@ -49,7 +75,9 @@ class ConsentForm {
 
   ConsentForm copyWith({
     String? profileId,
-    List<ConsentCategory>? categories,
+    bool? biosignals,
+    bool? phoneContext,
+    bool? behavior,
     ConsentTier? consentTier,
     bool? allowCloud,
     bool? allowResearch,
@@ -57,85 +85,41 @@ class ConsentForm {
   }) {
     return ConsentForm(
       profileId: profileId ?? this.profileId,
-      categories: categories ?? this.categories,
+      biosignals: biosignals ?? this.biosignals,
+      phoneContext: phoneContext ?? this.phoneContext,
+      behavior: behavior ?? this.behavior,
       consentTier: consentTier ?? this.consentTier,
       allowCloud: allowCloud ?? this.allowCloud,
       allowResearch: allowResearch ?? this.allowResearch,
       allowVendorSync: allowVendorSync ?? this.allowVendorSync,
     );
   }
-}
 
-/// Consent category section in the editable form.
-class ConsentCategory {
-  const ConsentCategory({
-    required this.categoryKey,
-    required this.categoryName,
-    required this.channels,
-  });
-
-  final String categoryKey;
-  final String categoryName;
-  final List<ConsentChannel> channels;
-
-  factory ConsentCategory.fromJson(Map<String, dynamic> json) {
-    final channelsRaw = json['channels'];
-    return ConsentCategory(
-      categoryKey: (json['category_key'] ?? '').toString(),
-      categoryName: (json['category_name'] ?? '').toString(),
-      channels: channelsRaw is List
-          ? channelsRaw
-                .whereType<Map<String, dynamic>>()
-                .map(ConsentChannel.fromJson)
-                .toList(growable: false)
-          : const <ConsentChannel>[],
-    );
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is ConsentForm &&
+        other.profileId == profileId &&
+        other.biosignals == biosignals &&
+        other.phoneContext == phoneContext &&
+        other.behavior == behavior &&
+        other.consentTier == consentTier &&
+        other.allowCloud == allowCloud &&
+        other.allowResearch == allowResearch &&
+        other.allowVendorSync == allowVendorSync;
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'category_key': categoryKey,
-      'category_name': categoryName,
-      'channels': channels.map((c) => c.toJson()).toList(growable: false),
-    };
-  }
-}
-
-/// Consent channel toggle in the editable form.
-class ConsentChannel {
-  const ConsentChannel({
-    required this.key,
-    required this.displayName,
-    required this.isGranted,
-  });
-
-  final String key;
-  final String displayName;
-  final bool isGranted;
-
-  factory ConsentChannel.fromJson(Map<String, dynamic> json) {
-    return ConsentChannel(
-      key: (json['key'] ?? '').toString(),
-      displayName: (json['display_name'] ?? '').toString(),
-      isGranted: json['is_granted'] == true,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'key': key,
-      'display_name': displayName,
-      'is_granted': isGranted,
-    };
-  }
-
-  ConsentChannel copyWith({String? key, String? displayName, bool? isGranted}) {
-    return ConsentChannel(
-      key: key ?? this.key,
-      displayName: displayName ?? this.displayName,
-      isGranted: isGranted ?? this.isGranted,
-    );
-  }
+  @override
+  int get hashCode => Object.hash(
+    profileId,
+    biosignals,
+    phoneContext,
+    behavior,
+    consentTier,
+    allowCloud,
+    allowResearch,
+    allowVendorSync,
+  );
 }
 
 ConsentTier parseConsentTier(String? raw) {

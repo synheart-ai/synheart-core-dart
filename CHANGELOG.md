@@ -7,13 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Offline-first consent FFI surface:** `Synheart.consentConfigureCloud`,
+  `consentGetEditableForm`, `consentSubmitForm`, `consentEffectiveState`,
+  `consentStatus`, `consentNeedsTokenRefresh`, `consentClearStored` — wraps the
+  new offline-first consent module from synheart-core-runtime 0.4.0. Local
+  choice is persisted immediately; cloud sync is best-effort.
+- **Typed consent form accessors:** `consentGetEditableFormTyped()` returning
+  `ConsentForm?` and `consentSubmitFormTyped({ required ConsentForm form, … })`
+  for type-safe call sites. Legacy `Map<String, dynamic>` variants remain.
+- **Consent coverage:** `vendorSync` and `research` are now surfaced through
+  `hasConsent()` / `getConsentStatusMap()` and round-tripped through the
+  granular grant API.
+
 ### Changed
+- **`ConsentForm` shape is flat** (`profile_id`, `biosignals`, `phone_context`,
+  `behavior`, `consent_tier`, `allow_cloud`, `allow_research`,
+  `allow_vendor_sync`) to mirror `synheart-core-runtime` 0.4.0. Hosts that
+  previously built `categories[] → channels[]` structures must migrate to the
+  flat form — the runtime no longer accepts the nested shape.
+- **Consent type strings now snake_case** at the runtime boundary. Flutter
+  continues to accept camelCase on its public API, but internal `grantConsent`
+  calls, `_getConsentStatusMap`, and any direct FFI passthrough now send
+  `phone_context` / `cloud_upload` / `vendor_sync` to match the runtime
+  canonical names (runtime still accepts camelCase aliases).
 - Core business logic (storage, crypto, sync, consent, artifact pipeline, cloud connector, SRM)
   migrated to synheart-core-runtime (Rust). SDK is now a thin FFI shell.
 - RuntimeBridge/RuntimeModule replaced by CoreRuntimeBridge (FFI to libsynheart_core_runtime)
 - HSI state updates delivered via native callback mechanism instead of platform-specific streams
 
 ### Removed
+- **`ConsentCategory` and `ConsentChannel` types:** removed alongside the flat
+  form rewrite. Runtime no longer exposes per-channel UI data to hosts;
+  channel-level truth is owned by the runtime and intersected against the
+  cloud default profile on submit.
 - StorageManager, ArtifactCrypto, SMK, URK, SyncEngine, SyncModule, ArtifactPipeline
 - RuntimeBridge, RuntimeModule (replaced by CoreRuntimeBridge)
 - CloudConnector, UploadQueue, UploadClient, HsiSchemaTransformer
