@@ -49,8 +49,11 @@ app.*.map.json
 # Native runtime binaries — built from synheart-core-runtime and copied
 # via `make flutter` or `make ios-watch`. Not committed to this repo.
 ios/Frameworks/SynheartCoreRuntime.xcframework/
-lib/libsynheart_runtime.dylib
+lib/libsynheart_core_runtime.dylib
 native/
+
+# Runtime artifacts installed by `synheart install runtime` (example app).
+example/synheart/vendor/
 
 # Claude Code
 .claude/
