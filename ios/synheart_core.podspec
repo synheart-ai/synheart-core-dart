@@ -25,6 +25,7 @@ Pod::Spec.new do |s|
   # Populate via:
   #   synheart install runtime                                      (registry)
   #   synheart runtime install --from <core-runtime>/build/dist/core (local build)
+  #   make flutter FLUTTER_PROJECT=<consumer-app>                    (from core-runtime Makefile)
   s.user_target_xcconfig = {
     'OTHER_LDFLAGS' => '$(inherited) -force_load "${PODS_ROOT}/../../synheart/vendor/runtime/ios/SynheartCoreRuntime.xcframework/ios-arm64/libsynheart_core_runtime.a"',
     'DEAD_CODE_STRIPPING' => 'NO',

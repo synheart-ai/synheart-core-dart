@@ -8,6 +8,7 @@ import 'core/logger.dart';
 import 'modules/base/module_manager.dart';
 import 'modules/base/synheart_module.dart';
 import 'modules/capabilities/capability_module.dart';
+import 'modules/consent/consent_effective_state.dart';
 import 'modules/consent/consent_form.dart';
 import 'modules/consent/consent_module.dart';
 import 'modules/interfaces/capability_provider.dart';
@@ -1304,8 +1305,19 @@ class Synheart {
   }
 
   /// Read runtime effective accepted state summary.
+  ///
+  /// Prefer [consentEffectiveStateTyped] for typed access.
   static Map<String, dynamic>? consentEffectiveState() {
     return _coreRuntime?.consentEffectiveState();
+  }
+
+  /// Read runtime effective accepted state as a typed [ConsentEffectiveState].
+  ///
+  /// Returns `null` when the runtime bridge is unavailable.
+  static ConsentEffectiveState? consentEffectiveStateTyped() {
+    final raw = _coreRuntime?.consentEffectiveState();
+    if (raw == null) return null;
+    return ConsentEffectiveState.fromJson(raw);
   }
 
   /// Whether consent token should be refreshed soon.
