@@ -4,6 +4,9 @@ local.properties
 .cxx/
 captures/
 
+# Gradle wrapper binary — never committed.
+gradle-wrapper.jar
+
 # Never commit signing material.
 key.properties
 **/*.keystore
