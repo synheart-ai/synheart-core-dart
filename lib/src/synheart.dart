@@ -8,6 +8,7 @@ import 'core/logger.dart';
 import 'modules/base/module_manager.dart';
 import 'modules/base/synheart_module.dart';
 import 'modules/capabilities/capability_module.dart';
+import 'modules/consent/consent_form.dart';
 import 'modules/consent/consent_module.dart';
 import 'modules/interfaces/capability_provider.dart';
 import 'modules/interfaces/consent_provider.dart';
@@ -330,7 +331,8 @@ class Synheart {
     }
     return const DeletionRequestResult(
       status: 'error',
-      message: 'Account deletion cancellation requires core-runtime network bridge.',
+      message:
+          'Account deletion cancellation requires core-runtime network bridge.',
     );
   }
 
@@ -441,10 +443,14 @@ class Synheart {
           'enabled': shared._config?.sync.enabled ?? false,
           'base_url': shared._config?.sync.baseUrl ?? '',
         },
-        'privacy': {'allow_research': shared._config?.privacy.allowResearch ?? false},
+        'privacy': {
+          'allow_research': shared._config?.privacy.allowResearch ?? false,
+        },
       });
       if (_coreRuntime != null) {
-        SynheartLogger.log('[Synheart] core runtime bridge loaded (ensureRuntimeBridge)');
+        SynheartLogger.log(
+          '[Synheart] core runtime bridge loaded (ensureRuntimeBridge)',
+        );
       }
     } catch (e) {
       SynheartLogger.log('[Synheart] core runtime bridge unavailable: $e');
@@ -533,7 +539,8 @@ class Synheart {
     _config = config ?? SynheartConfig.defaults();
 
     final resolvedCfg = _config!;
-    final effRuntimeFilter = runtimeLogEnvFilter ?? resolvedCfg.runtimeLogEnvFilter;
+    final effRuntimeFilter =
+        runtimeLogEnvFilter ?? resolvedCfg.runtimeLogEnvFilter;
     if (effRuntimeFilter != null && effRuntimeFilter.isNotEmpty) {
       CoreRuntimeBridge.defaultRuntimeLogEnvFilter = effRuntimeFilter;
     }
@@ -555,7 +562,9 @@ class Synheart {
         'client_id': resolvedCfg.subjectId,
         'api_base_url': resolvedCfg.sync.baseUrl,
         'mode': resolvedCfg.mode.name,
-        'device_id': resolvedCfg.deviceId.isNotEmpty ? resolvedCfg.deviceId : '',
+        'device_id': resolvedCfg.deviceId.isNotEmpty
+            ? resolvedCfg.deviceId
+            : '',
         'app_version': resolvedCfg.appVersion,
         'platform': resolvedCfg.platform,
         'storage': {'enabled': resolvedCfg.storage.enabled},
@@ -1215,6 +1224,100 @@ class Synheart {
     return shared._hasConsent(consentType);
   }
 
+  /// Override consent cloud endpoint routing for the active runtime.
+  static bool consentConfigureCloud({required String baseUrl, String? appId}) {
+    final rt = _coreRuntime;
+    if (rt == null) return false;
+    final resolvedAppId = appId ?? shared._config?.appId;
+    if (resolvedAppId == null || resolvedAppId.isEmpty) return false;
+    return rt.consentConfigureCloud(baseUrl, resolvedAppId);
+  }
+
+  /// Read editable consent form JSON contract from runtime.
+  ///
+  /// Prefer [consentGetEditableFormTyped] for typed access.
+  static Map<String, dynamic>? consentGetEditableForm() {
+    return _coreRuntime?.consentGetEditableForm();
+  }
+
+  /// Read editable consent form as a typed [ConsentForm].
+  ///
+  /// Returns `null` when the runtime bridge is unavailable.
+  static ConsentForm? consentGetEditableFormTyped() {
+    final raw = _coreRuntime?.consentGetEditableForm();
+    if (raw == null) return null;
+    return ConsentForm.fromJson(raw);
+  }
+
+  /// Submit consent form JSON to runtime using offline-first semantics.
+  ///
+  /// Prefer [consentSubmitFormTyped] for typed submission.
+  static Future<Map<String, dynamic>?> consentSubmitForm({
+    required Map<String, dynamic> formJson,
+    String? deviceId,
+    String? platform,
+    String? userId,
+  }) async {
+    final rt = _coreRuntime;
+    final consentCfg = shared._config?.consentConfig;
+    if (rt == null || consentCfg == null) return null;
+    final resolvedDeviceId = deviceId ?? consentCfg.deviceId;
+    final resolvedPlatform = platform ?? consentCfg.platform;
+    final resolvedUserId = userId ?? consentCfg.userId ?? shared._userId;
+    if (resolvedDeviceId == null ||
+        resolvedDeviceId.isEmpty ||
+        resolvedPlatform.isEmpty) {
+      return {
+        'error':
+            'consent_submit_form requires non-empty device_id and platform',
+      };
+    }
+    return rt.consentSubmitForm(
+      deviceId: resolvedDeviceId,
+      platform: resolvedPlatform,
+      userId: resolvedUserId,
+      formJson: formJson,
+    );
+  }
+
+  /// Submit a typed [ConsentForm] to runtime using offline-first semantics.
+  ///
+  /// Returns the raw runtime response map (`{ synced, accepted, token }` on
+  /// success, `{ error }` on failure, `null` if the bridge is unavailable).
+  static Future<Map<String, dynamic>?> consentSubmitFormTyped({
+    required ConsentForm form,
+    String? deviceId,
+    String? platform,
+    String? userId,
+  }) {
+    return consentSubmitForm(
+      formJson: form.toJson(),
+      deviceId: deviceId,
+      platform: platform,
+      userId: userId,
+    );
+  }
+
+  /// Read high-level consent status machine from runtime.
+  static Map<String, dynamic>? consentStatus() {
+    return _coreRuntime?.consentStatus();
+  }
+
+  /// Read runtime effective accepted state summary.
+  static Map<String, dynamic>? consentEffectiveState() {
+    return _coreRuntime?.consentEffectiveState();
+  }
+
+  /// Whether consent token should be refreshed soon.
+  static bool consentNeedsTokenRefresh() {
+    return _coreRuntime?.consentNeedsTokenRefresh() ?? false;
+  }
+
+  /// Clear stored consent artifacts in runtime.
+  static bool consentClearStored() {
+    return _coreRuntime?.consentClearStored() ?? false;
+  }
+
   Future<bool> _hasConsent(String consentType) async {
     if (_consentModule == null) {
       return false;
@@ -1230,8 +1333,12 @@ class Synheart {
         return consent.phoneContext;
       case 'cloudUpload':
         return consent.cloudUpload;
+      case 'syni':
+        return consent.syni;
       case 'vendorSync':
         return consent.vendorSync;
+      case 'research':
+        return consent.research;
       default:
         return false;
     }
@@ -2105,7 +2212,9 @@ class Synheart {
   static void startVendorSync(Map<String, dynamic> config) {
     final bridge = _coreRuntime;
     if (bridge == null) {
-      SynheartLogger.log('[Synheart] Cannot start vendor sync: runtime not initialized');
+      SynheartLogger.log(
+        '[Synheart] Cannot start vendor sync: runtime not initialized',
+      );
       return;
     }
 
@@ -2212,14 +2321,14 @@ class Synheart {
           ? _coreRuntime!.grantConsent('behavior')
           : _coreRuntime!.revokeConsent('behavior');
       phoneContext
-          ? _coreRuntime!.grantConsent('phoneContext')
-          : _coreRuntime!.revokeConsent('phoneContext');
+          ? _coreRuntime!.grantConsent('phone_context')
+          : _coreRuntime!.revokeConsent('phone_context');
       cloudUpload
-          ? _coreRuntime!.grantConsent('cloudUpload')
-          : _coreRuntime!.revokeConsent('cloudUpload');
+          ? _coreRuntime!.grantConsent('cloud_upload')
+          : _coreRuntime!.revokeConsent('cloud_upload');
       vendorSync
-          ? _coreRuntime!.grantConsent('vendorSync')
-          : _coreRuntime!.revokeConsent('vendorSync');
+          ? _coreRuntime!.grantConsent('vendor_sync')
+          : _coreRuntime!.revokeConsent('vendor_sync');
       research
           ? _coreRuntime!.grantConsent('research')
           : _coreRuntime!.revokeConsent('research');
@@ -2364,6 +2473,20 @@ class Synheart {
   }
 
   Map<String, bool> _getConsentStatusMap() {
+    if (_coreRuntime != null) {
+      final runtime = _coreRuntime!;
+      final syni = _consentModule?.current().syni ?? false;
+      return {
+        'biosignals': runtime.hasConsent('biosignals'),
+        'behavior': runtime.hasConsent('behavior'),
+        'phoneContext': runtime.hasConsent('phone_context'),
+        'cloudUpload': runtime.hasConsent('cloud_upload'),
+        'syni': syni,
+        'vendorSync': runtime.hasConsent('vendor_sync'),
+        'research': runtime.hasConsent('research'),
+      };
+    }
+
     if (_consentModule == null) {
       return {
         'biosignals': false,
@@ -2699,10 +2822,13 @@ class Synheart {
 
     try {
       final reg = await runtime.sdkRegisterDevice(resolvedConfig.subjectId);
-      final deviceId = reg?['device_id'] as String? ?? reg?['deviceId'] as String?;
+      final deviceId =
+          reg?['device_id'] as String? ?? reg?['deviceId'] as String?;
       final err = reg?['error']?.toString();
       if (reg == null || deviceId == null || (err != null && err.isNotEmpty)) {
-        throw StateError('Core SDK register_device failed: ${reg ?? "null result"}');
+        throw StateError(
+          'Core SDK register_device failed: ${reg ?? "null result"}',
+        );
       }
       _deviceAuthViaCoreRuntime = true;
       final idPreview = deviceId.length <= 8
@@ -2712,10 +2838,7 @@ class Synheart {
         '[Synheart] Core SDK device registration complete (device_id preview: $idPreview)',
       );
     } catch (e) {
-      SynheartLogger.log(
-        '[Synheart] Device registration failed: $e',
-        error: e,
-      );
+      SynheartLogger.log('[Synheart] Device registration failed: $e', error: e);
       if (resolvedConfig.allowUnsignedCapabilities) {
         SynheartLogger.log(
           '[Synheart] WARNING: Device registration failed, falling back to unsigned capabilities.',
@@ -2868,7 +2991,6 @@ class Synheart {
       );
     }
   }
-
 }
 
 /// Sync result from a push/pull cycle.

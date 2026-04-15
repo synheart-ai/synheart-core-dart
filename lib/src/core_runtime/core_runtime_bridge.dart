@@ -88,7 +88,8 @@ class CoreRuntimeBridge {
   static String defaultRuntimeLogEnvFilter = 'synheart_core_runtime=trace,info';
 
   static bool _loggingInstalled = false;
-  static NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>? _logCallable;
+  static NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>?
+  _logCallable;
 
   /// Initialize Runtime `tracing` once per process (call before [create] if you need
   /// a custom filter or sink). Matches [SDK_LOGGING_INIT.md] / SDK auth sequence §1b.
@@ -112,8 +113,15 @@ class CoreRuntimeBridge {
     try {
       synheartRuntimeLogForwarder = onLine;
       _synheartRuntimeLogFree = lib.coreFreeString;
-      _logCallable ??= NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>.listener(_synheartRuntimeLogTrampoline);
-      final rc = lib.initLogging(filterArg, _logCallable!.nativeFunction, nullptr);
+      _logCallable ??=
+          NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>.listener(
+            _synheartRuntimeLogTrampoline,
+          );
+      final rc = lib.initLogging(
+        filterArg,
+        _logCallable!.nativeFunction,
+        nullptr,
+      );
       if (rc == 0 || rc == 1) {
         _loggingInstalled = true;
       }
@@ -204,7 +212,7 @@ class CoreRuntimeBridge {
   Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) async {
     if (_disposed || _ffi.sdkFfi.registerDevice == null) return null;
     final handleAddr = _handle.address;
-    return await Isolate.run(() {
+    return Isolate.run(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -320,6 +328,75 @@ class CoreRuntimeBridge {
     return _callJson(() => _ffi.currentConsent(_handle));
   }
 
+  bool consentConfigureCloud(String baseUrl, String appId) {
+    final pBase = baseUrl.toNativeUtf8();
+    final pApp = appId.toNativeUtf8();
+    try {
+      return _ffi.consentConfigureCloud(_handle, pBase.cast(), pApp.cast()) ==
+          0;
+    } finally {
+      malloc.free(pBase);
+      malloc.free(pApp);
+    }
+  }
+
+  Map<String, dynamic>? consentGetEditableForm() {
+    return _callJson(() => _ffi.consentGetEditableForm(_handle));
+  }
+
+  Future<Map<String, dynamic>?> consentSubmitForm({
+    required String deviceId,
+    required String platform,
+    String? userId,
+    required Map<String, dynamic> formJson,
+  }) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    final payload = jsonEncode(formJson);
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final pDevice = deviceId.toNativeUtf8();
+      final pPlatform = platform.toNativeUtf8();
+      final pUser = userId != null ? userId.toNativeUtf8() : nullptr;
+      final pForm = payload.toNativeUtf8();
+      try {
+        final ptr = ffi.consentSubmitForm(
+          handle,
+          pDevice.cast(),
+          pPlatform.cast(),
+          pUser.cast(),
+          pForm.cast(),
+        );
+        if (ptr == nullptr) return null;
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        return jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      } finally {
+        malloc.free(pDevice);
+        malloc.free(pPlatform);
+        if (pUser != nullptr) malloc.free(pUser);
+        malloc.free(pForm);
+      }
+    });
+  }
+
+  bool consentClearStored() => _ffi.consentClearStored(_handle) == 0;
+
+  Map<String, dynamic>? consentStatus() {
+    return _callJson(() => _ffi.consentStatus(_handle));
+  }
+
+  Map<String, dynamic>? consentEffectiveState() {
+    return _callJson(() => _ffi.consentEffectiveState(_handle));
+  }
+
+  bool consentNeedsTokenRefresh() =>
+      _ffi.consentNeedsTokenRefresh(_handle) != 0;
+
   // ── Capabilities ─────────────────────────────────────────────────────
 
   bool loadCapabilityToken(String tokenJson, String secret) {
@@ -347,11 +424,16 @@ class CoreRuntimeBridge {
     });
   }
 
-  List<dynamic>? getHsiWindows(String sessionId,
-      {int startMs = 0, int endMs = 0, int limit = 0}) {
+  List<dynamic>? getHsiWindows(
+    String sessionId, {
+    int startMs = 0,
+    int endMs = 0,
+    int limit = 0,
+  }) {
     return _withCString(sessionId, (p) {
       final json = _readAndFree(
-          _ffi.getHsiWindows(_handle, p, startMs, endMs, limit));
+        _ffi.getHsiWindows(_handle, p, startMs, endMs, limit),
+      );
       if (json == null) return null;
       return jsonDecode(json) as List<dynamic>;
     });
@@ -392,7 +474,9 @@ class CoreRuntimeBridge {
   /// Ingest a canonical vendor event (JSON map from CanonicalWearableEvent.toMap()).
   bool ingestVendorEvent(String eventJson) {
     return _withCString(
-        eventJson, (p) => _ffi.ingestVendorEvent(_handle, p) == 0);
+      eventJson,
+      (p) => _ffi.ingestVendorEvent(_handle, p) == 0,
+    );
   }
 
   /// Query stored vendor events. Returns parsed JSON list, or null on error.
@@ -423,7 +507,8 @@ class CoreRuntimeBridge {
     final pType = type.toNativeUtf8();
     try {
       final json = _readAndFree(
-          _ffi.getLatestVendorEvent(_handle, pProv.cast(), pType.cast()));
+        _ffi.getLatestVendorEvent(_handle, pProv.cast(), pType.cast()),
+      );
       if (json == null) return null;
       return jsonDecode(json) as Map<String, dynamic>;
     } finally {
@@ -435,7 +520,9 @@ class CoreRuntimeBridge {
   /// Delete all vendor events for a provider. Returns deleted count, or -1 on error.
   int deleteVendorEventsForProvider(String provider) {
     return _withCString(
-        provider, (p) => _ffi.deleteVendorEventsForProvider(_handle, p));
+      provider,
+      (p) => _ffi.deleteVendorEventsForProvider(_handle, p),
+    );
   }
 
   // ── SRM / Baselines ──────────────────────────────────────────────────
@@ -483,10 +570,8 @@ class CoreRuntimeBridge {
 
   // ── Account ──────────────────────────────────────────────────────────
 
-  bool requestAccountDeletion() =>
-      _ffi.requestAccountDeletion(_handle) == 0;
-  bool cancelAccountDeletion() =>
-      _ffi.cancelAccountDeletion(_handle) == 0;
+  bool requestAccountDeletion() => _ffi.requestAccountDeletion(_handle) == 0;
+  bool cancelAccountDeletion() => _ffi.cancelAccountDeletion(_handle) == 0;
 
   // ── Stream (RAMEN vendor sync) ─────────────────────────────────────
 
@@ -517,8 +602,10 @@ class CoreRuntimeBridge {
       if (text != null) onEvent(text);
     }
 
-    _streamCallable = NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>
-        .listener(nativeCallback);
+    _streamCallable =
+        NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>.listener(
+          nativeCallback,
+        );
     _ffi.setStreamCallback(_handle, _streamCallable!.nativeFunction, nullptr);
   }
 
@@ -552,8 +639,10 @@ class CoreRuntimeBridge {
       if (text != null) onHsi(text);
     }
 
-    _hsiCallable = NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>
-        .listener(nativeCallback);
+    _hsiCallable =
+        NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>.listener(
+          nativeCallback,
+        );
     _ffi.setHsiCallback(_handle, _hsiCallable!.nativeFunction, nullptr);
   }
 
@@ -579,13 +668,24 @@ class CoreRuntimeBridge {
   }
 
   /// Open a window in the active lab session. Returns the window ID.
-  String? labOpenWindow(String? parentId, String windowType, String? label, int startedAtMs) {
+  String? labOpenWindow(
+    String? parentId,
+    String windowType,
+    String? label,
+    int startedAtMs,
+  ) {
     final pParent = (parentId ?? '').toNativeUtf8();
     final pType = windowType.toNativeUtf8();
     final pLabel = (label ?? '').toNativeUtf8();
     try {
       return _readAndFree(
-        _ffi.labOpenWindow(_handle, pParent.cast(), pType.cast(), pLabel.cast(), startedAtMs),
+        _ffi.labOpenWindow(
+          _handle,
+          pParent.cast(),
+          pType.cast(),
+          pLabel.cast(),
+          startedAtMs,
+        ),
       );
     } finally {
       malloc.free(pParent);
@@ -596,7 +696,10 @@ class CoreRuntimeBridge {
 
   /// Close a window in the active lab session.
   bool labCloseWindow(String windowId, int endedAtMs) {
-    return _withCString(windowId, (p) => _ffi.labCloseWindow(_handle, p, endedAtMs) == 0);
+    return _withCString(
+      windowId,
+      (p) => _ffi.labCloseWindow(_handle, p, endedAtMs) == 0,
+    );
   }
 
   /// Set protocol-specific values on a lab window.
@@ -659,8 +762,8 @@ class CoreRuntimeBridge {
   /// The native synheart-engine version string, or null.
   static String? version() {
     final ffi = SynheartCoreFFI.load();
-    if (ffi == null) return null;
-    final ptr = ffi.version();
+    if (ffi == null || ffi.version == null) return null;
+    final ptr = ffi.version!();
     if (ptr == nullptr) return null;
     final str = ptr.toDartString();
     ffi.coreFreeString(ptr);
@@ -671,7 +774,7 @@ class CoreRuntimeBridge {
   int frameCount() => _ffi.frameCount(_handle);
 
   /// Quality value of the last HSI frame, or 0.0 if none.
-  double lastQuality() => _ffi.lastQuality(_handle);
+  double lastQuality() => _ffi.lastQuality?.call(_handle) ?? 0.0;
 
   // ── Internal helpers ─────────────────────────────────────────────────
 
