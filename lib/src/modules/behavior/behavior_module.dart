@@ -278,6 +278,11 @@ class BehaviorModule extends BaseSynheartModule
         return BehaviorEvent.swipe(velocity: velocity, direction: direction);
       case sb.BehaviorEventType.clipboard:
         return null;
+      // Forward-compat: newer synheart_behavior versions may add variants
+      // (e.g. app_switch) that this SDK doesn't yet map. Drop them silently.
+      // ignore: unreachable_switch_default
+      default:
+        return null;
     }
   }
 
