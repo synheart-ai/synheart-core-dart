@@ -20,13 +20,15 @@ Pod::Spec.new do |s|
 
   # Force-load the Rust static library so ALL synheart_core_* symbols are
   # preserved for Dart FFI's dlsym (DynamicLibrary.process on iOS).
+  #
+  # Path: <consumer-app>/synheart/vendor/runtime/ios/SynheartCoreRuntime.xcframework/
+  # Populate via:
+  #   synheart install runtime                                      (registry)
+  #   synheart runtime install --from <core-runtime>/build/dist/core (local build)
   s.user_target_xcconfig = {
-    'OTHER_LDFLAGS' => '$(inherited) -force_load "${PODS_ROOT}/../.symlinks/plugins/synheart_core/ios/Frameworks/SynheartCoreRuntime.xcframework/ios-arm64/libsynheart_core_runtime.a"',
+    'OTHER_LDFLAGS' => '$(inherited) -force_load "${PODS_ROOT}/../../synheart/vendor/runtime/ios/SynheartCoreRuntime.xcframework/ios-arm64/libsynheart_core_runtime.a"',
     'DEAD_CODE_STRIPPING' => 'NO',
   }
-
-  # Keep the xcframework in the plugin directory (referenced by -force_load above)
-  s.preserve_paths = 'Frameworks/SynheartCoreRuntime.xcframework'
 
   s.dependency 'Flutter'
 end
