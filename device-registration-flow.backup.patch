@@ -1,0 +1,1740 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 1fa8429..6e20249 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -10,10 +10,39 @@ jobs:
+   analyze:
+     name: Analyze and Format
+     runs-on: ubuntu-latest
++    defaults:
++      run:
++        working-directory: synheart-core-dart
+ 
+     steps:
+       - name: Checkout code
+         uses: actions/checkout@v4
++        with:
++          path: synheart-core-dart
++      - name: Checkout synheart-wear-dart
++        uses: actions/checkout@v4
++        with:
++          repository: synheart-ai/synheart-wear-dart
++          path: synheart-wear-dart
++          token: ${{ secrets.synheart_secret || github.token }}
++      - name: Checkout synheart-session-dart
++        uses: actions/checkout@v4
++        with:
++          repository: synheart-ai/synheart-session-dart
++          path: synheart-session-dart
++          token: ${{ secrets.synheart_secret || github.token }}
++      - name: Checkout synheart-behavior-dart
++        uses: actions/checkout@v4
++        with:
++          repository: synheart-ai/synheart-behavior-dart
++          path: synheart-behavior-dart
++          token: ${{ secrets.synheart_secret || github.token }}
++      - name: Checkout synheart-auth-dart
++        uses: actions/checkout@v4
++        with:
++          repository: synheart-ai/synheart-auth-dart
++          path: synheart-auth-dart
++          token: ${{ secrets.synheart_secret || github.token }}
+ 
+       - name: Setup Flutter
+         uses: subosito/flutter-action@v2
+@@ -36,6 +65,9 @@ jobs:
+   test:
+     name: Test on ${{ matrix.os }}
+     runs-on: ${{ matrix.os }}
++    defaults:
++      run:
++        working-directory: synheart-core-dart
+ 
+     strategy:
+       matrix:
+@@ -45,6 +77,32 @@ jobs:
+     steps:
+       - name: Checkout code
+         uses: actions/checkout@v4
++        with:
++          path: synheart-core-dart
++      - name: Checkout synheart-wear-dart
++        uses: actions/checkout@v4
++        with:
++          repository: synheart-ai/synheart-wear-dart
++          path: synheart-wear-dart
++          token: ${{ secrets.synheart_secret || github.token }}
++      - name: Checkout synheart-session-dart
++        uses: actions/checkout@v4
++        with:
++          repository: synheart-ai/synheart-session-dart
++          path: synheart-session-dart
++          token: ${{ secrets.synheart_secret || github.token }}
++      - name: Checkout synheart-behavior-dart
++        uses: actions/checkout@v4
++        with:
++          repository: synheart-ai/synheart-behavior-dart
++          path: synheart-behavior-dart
++          token: ${{ secrets.synheart_secret || github.token }}
++      - name: Checkout synheart-auth-dart
++        uses: actions/checkout@v4
++        with:
++          repository: synheart-ai/synheart-auth-dart
++          path: synheart-auth-dart
++          token: ${{ secrets.synheart_secret || github.token }}
+ 
+       - name: Setup Flutter (pinned)
+         uses: subosito/flutter-action@v2
+diff --git a/.gitignore b/.gitignore
+index 0e710b2..0cbb23e 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -57,6 +57,8 @@ app.*.map.json
+ /#Guidelines/
+ 
+ /example/android/app/src/main/jniLibs
+-
++android/app/src/main/jniLibs
+ # Local endpoint defines (do not commit real endpoints)
+-env/*.local.json
+\ No newline at end of file
++env/*.local.json
++
++.cursor/
+\ No newline at end of file
+diff --git a/example/android/.settings/org.eclipse.buildship.core.prefs b/example/android/.settings/org.eclipse.buildship.core.prefs
+new file mode 100644
+index 0000000..4135fb5
+--- /dev/null
++++ b/example/android/.settings/org.eclipse.buildship.core.prefs
+@@ -0,0 +1,13 @@
++arguments=--init-script /var/folders/58/1p95x3gs11xb8xfx9yv1dz1m0000gn/T/db3b08fc4a9ef609cb16b96b200fa13e563f396e9bb1ed0905fdab7bc3bc513b.gradle --init-script /var/folders/58/1p95x3gs11xb8xfx9yv1dz1m0000gn/T/52cde0cfcf3e28b8b7510e992210d9614505e0911af0c190bd590d7158574963.gradle --init-script /var/folders/58/1p95x3gs11xb8xfx9yv1dz1m0000gn/T/861a75667e10803d304a058d833cb7404195ca44013d0d61d3b653eb084379b8.gradle --init-script /var/folders/58/1p95x3gs11xb8xfx9yv1dz1m0000gn/T/68eb1b6516fe21c6fbba58e63c99c3207ccfc918360613709367eecde56fa77f.gradle
++auto.sync=false
++build.scans.enabled=false
++connection.gradle.distribution=GRADLE_DISTRIBUTION(WRAPPER)
++connection.project.dir=
++eclipse.preferences.version=1
++gradle.user.home=
++java.home=/opt/homebrew/Cellar/openjdk@17/17.0.14/libexec/openjdk.jdk/Contents/Home
++jvm.arguments=
++offline.mode=false
++override.workspace.settings=true
++show.console.view=true
++show.executions.view=true
+diff --git a/example/pubspec.yaml b/example/pubspec.yaml
+index 0c73287..0c6e638 100644
+--- a/example/pubspec.yaml
++++ b/example/pubspec.yaml
+@@ -53,9 +53,9 @@ dependencies:
+ 
+ dependency_overrides:
+   synheart_wear:
+-    path: ../../synheart-wear-flutter
++    path: ../../synheart-wear-dart
+   synheart_behavior:
+-    path: ../../synheart-behavior-flutter
++    path: ../../synheart-behavior-dart
+ 
+ dev_dependencies:
+   flutter_test:
+diff --git a/lib/src/config/api_endpoints.dart b/lib/src/config/api_endpoints.dart
+index 24ac01c..5036091 100644
+--- a/lib/src/config/api_endpoints.dart
++++ b/lib/src/config/api_endpoints.dart
+@@ -1,11 +1,9 @@
+ /// Central registry of all Synheart API endpoints and default base URLs.
+ ///
+-/// 3 services behind the API gateway:
+-///   api.synheart.ai/auth/v1/...     — auth, device attestation, account
+-///   api.synheart.ai/consent/v1/...  — consent profiles, tokens
+-///   api.synheart.ai/ingest/v1/...   — HSI, platform/lab, wear, SWIP
++/// Runtime owns service postfix routing. SDK base URLs should be origin-only:
++///   https://api.synheart.ai
+ ///
+-/// Dev gateway: api-dev.synheart.io (same paths)
++/// Dev gateway: https://api-dev.synheart.io
+ abstract final class ApiEndpoints {
+   // ── Base URL ────────────────────────────────────────────────────────
+   static const String defaultBaseUrl = String.fromEnvironment(
+@@ -13,11 +11,6 @@ abstract final class ApiEndpoints {
+     defaultValue: 'https://api.synheart.ai',
+   );
+ 
+-  // ── Gateway prefixes (3 services) ─────────────────────────────────
+-  static const String _authGateway = '/auth';
+-  static const String _consentGateway = '/consent';
+-  static const String _ingestGateway = '/ingest';
+-
+   // ── Per-service base URL overrides (optional, for legacy/dev) ─────
+   static const String _authOverride = String.fromEnvironment(
+     'SYNHEART_AUTH_BASE_URL', defaultValue: '',
+@@ -39,22 +32,19 @@ abstract final class ApiEndpoints {
+   static const String defaultLabIngestBaseUrl = _ingestOverride;
+ 
+   // ── Resolved base URLs ────────────────────────────────────────────
+-  static String _resolve(String override, String gatewayPrefix) {
++  static String _resolve(String override) {
+     if (override.isNotEmpty) return override;
+-    return '$defaultBaseUrl$gatewayPrefix';
++    return defaultBaseUrl;
+   }
+ 
+-  /// Auth: api.synheart.ai/auth
+-  static String get resolvedAuthBaseUrl =>
+-      _resolve(_authOverride, _authGateway);
++  /// Auth base URL (origin only; runtime appends service postfixes).
++  static String get resolvedAuthBaseUrl => _resolve(_authOverride);
+ 
+-  /// Consent: api.synheart.ai/consent
+-  static String get resolvedConsentBaseUrl =>
+-      _resolve(_consentOverride, _consentGateway);
++  /// Consent base URL (origin only; runtime appends service postfixes).
++  static String get resolvedConsentBaseUrl => _resolve(_consentOverride);
+ 
+-  /// Ingest (HSI + platform + wear): api.synheart.ai/ingest
+-  static String get resolvedIngestBaseUrl =>
+-      _resolve(_ingestOverride, _ingestGateway);
++  /// Ingest base URL (origin only; runtime appends service postfixes).
++  static String get resolvedIngestBaseUrl => _resolve(_ingestOverride);
+ 
+   // Cloud and lab ingest both go to the ingest service
+   static String get resolvedCloudBaseUrl => resolvedIngestBaseUrl;
+diff --git a/lib/src/config/synheart_config.dart b/lib/src/config/synheart_config.dart
+index d7f4c51..98c00c1 100644
+--- a/lib/src/config/synheart_config.dart
++++ b/lib/src/config/synheart_config.dart
+@@ -7,10 +7,11 @@ import 'synheart_errors.dart';
+ /// Device authentication configuration.
+ ///
+ /// When provided, the SDK will automatically:
+-/// 1. Configure SynheartAuth with [authBaseUrl]
+-/// 2. Register the device (idempotent)
++/// 1. Register the device via core-runtime (idempotent)
+ /// 3. Fetch capability tokens from the server using device-signed requests
+-/// 4. Use [DeviceAuthProvider] for cloud/lab ingest signing
++/// 4. Use [DeviceAuthProvider] (runtime proof) for cloud/lab ingest signing
++///
++/// Runtime-only policy: SDK layers must not perform outbound auth API calls directly.
+ class DeviceAuthConfig {
+   /// Base URL for the device auth service.
+   final String authBaseUrl;
+@@ -126,6 +127,10 @@ class SynheartConfig {
+   /// streaming events and ticking every second. HSI is then only produced after stop.
+   final bool batchIngestOnStop;
+ 
++  /// Optional `tracing` `EnvFilter` for `synheart_core_init_logging` (SDK §1b).
++  /// When non-empty, overrides the bridge default filter during SDK initialization.
++  final String? rustLogEnvFilter;
++
+   SynheartConfig({
+     this.appId = '',
+     this.subjectId = '',
+@@ -150,6 +155,7 @@ class SynheartConfig {
+     this.capabilitySecret,
+     this.allowUnsignedCapabilities = false,
+     this.batchIngestOnStop = false,
++    this.rustLogEnvFilter,
+   });
+ 
+   /// Create default configuration
+diff --git a/lib/src/core_runtime/core_runtime_bridge.dart b/lib/src/core_runtime/core_runtime_bridge.dart
+index 16a5c54..bc32841 100644
+--- a/lib/src/core_runtime/core_runtime_bridge.dart
++++ b/lib/src/core_runtime/core_runtime_bridge.dart
+@@ -7,17 +7,30 @@ library;
+ 
+ import 'dart:convert';
+ import 'dart:ffi';
++import 'dart:isolate';
+ 
+ import 'package:ffi/ffi.dart';
+ 
+ import 'package:flutter/foundation.dart';
+ 
+ import 'ffi_bindings.dart';
++import 'sdk_crypto_callbacks.dart';
++import 'sdk_ffi.dart';
+ 
+-/// Top-level callback for Rust log forwarding (must be top-level for Pointer.fromFunction).
+-void _onRustLog(Pointer<Utf8> line, Pointer<Void> userData) {
++/// Forwarder installed before `synheart_core_init_logging` (top-level for FFI).
++void Function(String line)? synheartRustLogForwarder;
++
++void _synheartRustLogTrampoline(Pointer<Utf8> line, Pointer<Void> userData) {
+   if (line == nullptr) return;
+-  debugPrint('[synheart] ${line.toDartString()}');
++  final text = line.toDartString();
++  final custom = synheartRustLogForwarder;
++  if (custom != null) {
++    custom(text);
++    return;
++  }
++  if (kDebugMode) {
++    debugPrint('[synheart] $text');
++  }
+ }
+ 
+ /// Bridge to the Rust core runtime via FFI.
+@@ -40,6 +53,50 @@ class CoreRuntimeBridge {
+   final SynheartCoreFFI _ffi;
+   final Pointer<Void> _handle;
+   bool _disposed = false;
++  Pointer<SynheartSdkCryptoCallbacks>? _sdkCryptoTable;
++
++  /// Default `env_filter` when [initRustLogging] is called with a null/empty filter.
++  // static String defaultRustLogEnvFilter = 'info,synheart_core_runtime=debug';
++  static String defaultRustLogEnvFilter = 'synheart_core_runtime=trace,info';
++
++  static bool _loggingInstalled = false;
++  static NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>? _logCallable;
++
++  /// Initialize Rust `tracing` once per process (call before [create] if you need
++  /// a custom filter or sink). Matches [SDK_LOGGING_INIT.md] / SDK auth sequence §1b.
++  ///
++  /// Returns `0` on success, `1` if already initialized, negative on failure.
++  static int initRustLogging({
++    SynheartCoreFFI? ffi,
++    String? envFilter,
++    void Function(String line)? onLine,
++  }) {
++    if (_loggingInstalled) return 1;
++    final lib = ffi ?? SynheartCoreFFI.load();
++    if (lib == null) return -2;
++    final chosen = envFilter ?? defaultRustLogEnvFilter;
++    Pointer<Utf8> filterArg;
++    if (chosen.isEmpty) {
++      filterArg = nullptr;
++    } else {
++      filterArg = chosen.toNativeUtf8();
++    }
++    try {
++      synheartRustLogForwarder = onLine;
++      _logCallable ??= NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>.listener(_synheartRustLogTrampoline);
++      final rc = lib.initLogging(filterArg, _logCallable!.nativeFunction, nullptr);
++      if (rc == 0 || rc == 1) {
++        _loggingInstalled = true;
++      }
++      return rc;
++    } catch (_) {
++      return -3;
++    } finally {
++      if (filterArg != nullptr) {
++        malloc.free(filterArg);
++      }
++    }
++  }
+ 
+   /// Create a bridge from a config map. Returns null if the native
+   /// library is unavailable or config is invalid.
+@@ -47,8 +104,8 @@ class CoreRuntimeBridge {
+     final ffi = SynheartCoreFFI.load();
+     if (ffi == null) return null;
+ 
+-    // Initialize logging before any other call (no-op if already done).
+-    _initLogging(ffi);
++    // §1b: logging before `synheart_core_new` (idempotent if app called [initRustLogging]).
++    initRustLogging(ffi: ffi);
+ 
+     final json = jsonEncode(config);
+     final cJson = json.toNativeUtf8();
+@@ -61,26 +118,113 @@ class CoreRuntimeBridge {
+     }
+   }
+ 
+-  static bool _loggingDone = false;
+-  static void _initLogging(SynheartCoreFFI ffi) {
+-    if (_loggingDone) return;
+-    _loggingDone = true;
++  /// Whether the native library was loaded and the handle is valid.
++  bool get isAvailable => !_disposed;
++
++  /// True when this native build exports the full `synheart_core_sdk_*` device-auth ABI.
++  bool get sdkDeviceAuthAvailable => !_disposed && _ffi.sdkFfi.isAvailable;
++
++  /// Register host crypto callbacks (§2). Must be called before [sdkRegisterDevice] / proof APIs.
++  ///
++  /// Returns `0` on success. On failure, frees the allocated callback table.
++  int setSdkCryptoCallbacks(SynheartCoreCryptoCallbacks callbacks) {
++    if (_disposed) return -1;
++    if (!_ffi.sdkFfi.isAvailable) return -2;
++    synheartSdkCryptoAttach(callbacks);
++    if (_sdkCryptoTable != null) {
++      calloc.free(_sdkCryptoTable!);
++      _sdkCryptoTable = null;
++    }
++    final table = calloc<SynheartSdkCryptoCallbacks>();
++    synheartFillSdkCryptoStruct(table);
++    final rc = _ffi.sdkFfi.setCryptoCallbacksInvoke(_handle, table);
++    if (rc != 0) {
++      calloc.free(table);
++      synheartSdkCryptoAttach(null);
++      return rc;
++    }
++    _sdkCryptoTable = table;
++    return 0;
++  }
++
++  /// Register host crypto callbacks natively bypassing Dart trampolines.
++  int setSdkCryptoCallbacksRaw(Pointer<SynheartSdkCryptoCallbacks> table) {
++    if (_disposed) return -1;
++    if (!_ffi.sdkFfi.isAvailable) return -2;
++    synheartSdkCryptoAttach(null);
++    if (_sdkCryptoTable != null) {
++      calloc.free(_sdkCryptoTable!);
++    }
++    final rc = _ffi.sdkFfi.setCryptoCallbacksInvoke(_handle, table);
++    if (rc != 0) {
++      calloc.free(table);
++      return rc;
++    }
++    _sdkCryptoTable = table;
++    return 0;
++  }
++
++  /// §3 — device registration (attestation). [clientId] is the app user id for this session.
++  /// Runs on a background isolate so the blocking FFI call doesn't ANR the UI thread.
++  Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) async {
++    if (_disposed || _ffi.sdkFfi.registerDevice == null) return null;
++    final handleAddr = _handle.address;
++    return await Isolate.run(() {
++      final ffi = SynheartCoreFFI.load();
++      if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
++      final handle = Pointer<Void>.fromAddress(handleAddr);
++      final p = clientId.toNativeUtf8();
++      try {
++        final resPtr = ffi.sdkFfi.registerDevice!(handle, p.cast());
++        if (resPtr == nullptr) return null;
++        final str = resPtr.toDartString();
++        ffi.coreFreeString(resPtr);
++        return jsonDecode(str) as Map<String, dynamic>;
++      } catch (_) {
++        return null;
++      } finally {
++        malloc.free(p);
++      }
++    });
++  }
++
++  /// §3 / §5 — JSON snapshot from `synheart_core_sdk_device_auth_status`.
++  Map<String, dynamic>? sdkDeviceAuthStatus() {
++    if (_disposed || _ffi.sdkFfi.deviceAuthStatus == null) return null;
++    final out = _readAndFree(_ffi.sdkFfi.deviceAuthStatus!(_handle));
++    if (out == null) return null;
+     try {
+-      final cb = Pointer.fromFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>(_onRustLog);
+-      final filter = 'info,synheart_core_runtime=debug'.toNativeUtf8();
+-      ffi.initLogging(filter.cast(), cb, nullptr);
+-      malloc.free(filter);
+-    } catch (_) {}
++      return jsonDecode(out) as Map<String, dynamic>;
++    } catch (_) {
++      return null;
++    }
+   }
+ 
+-  /// Whether the native library was loaded and the handle is valid.
+-  bool get isAvailable => !_disposed;
++  /// §4 — compact JWS value for `X-Synheart-Proof` (non-ingest APIs). Use uppercase [method].
++  String? buildProofHeader(String method, String absoluteUrl) {
++    if (_disposed || _ffi.sdkFfi.buildProofHeader == null) return null;
++    final m = method.toNativeUtf8();
++    final u = absoluteUrl.toNativeUtf8();
++    try {
++      return _readAndFree(
++        _ffi.sdkFfi.buildProofHeader!(_handle, m.cast(), u.cast()),
++      );
++    } finally {
++      malloc.free(m);
++      malloc.free(u);
++    }
++  }
+ 
+   /// Release the native handle. Must be called when done.
+   void dispose() {
+     if (!_disposed) {
+       clearHsiCallback();
+       _ffi.coreFree(_handle);
++      if (_sdkCryptoTable != null) {
++        calloc.free(_sdkCryptoTable!);
++        _sdkCryptoTable = null;
++      }
++      synheartSdkCryptoAttach(null);
+       _disposed = true;
+     }
+   }
+diff --git a/lib/src/core_runtime/ffi_bindings.dart b/lib/src/core_runtime/ffi_bindings.dart
+index f464180..6163bbf 100644
+--- a/lib/src/core_runtime/ffi_bindings.dart
++++ b/lib/src/core_runtime/ffi_bindings.dart
+@@ -9,6 +9,8 @@ import 'dart:io';
+ 
+ import 'package:ffi/ffi.dart';
+ 
++import 'sdk_ffi.dart';
++
+ // ── C function typedefs (native + Dart) ─────────────────────────────────
+ 
+ // Handle lifecycle
+@@ -125,10 +127,13 @@ typedef _DoubleReturnDart = double Function(Pointer<Void> h);
+ 
+ /// Resolved FFI bindings for `synheart_core_runtime`.
+ class SynheartCoreFFI {
+-  SynheartCoreFFI._(this._lib);
++  SynheartCoreFFI._(this._lib) : sdkFfi = SynheartSdkFfi.tryBind(_lib);
+ 
+   final DynamicLibrary _lib;
+ 
++  /// Optional `synheart_core_sdk_*` device-auth symbols (null fields if absent).
++  final SynheartSdkFfi sdkFfi;
++
+   static SynheartCoreFFI? _instance;
+ 
+   /// Load the native library. Returns null if not found.
+diff --git a/lib/src/core_runtime/platform_native_sdk_crypto_callbacks.dart b/lib/src/core_runtime/platform_native_sdk_crypto_callbacks.dart
+new file mode 100644
+index 0000000..1c1d53f
+--- /dev/null
++++ b/lib/src/core_runtime/platform_native_sdk_crypto_callbacks.dart
+@@ -0,0 +1,198 @@
++import 'dart:ffi';
++import 'dart:io' show Platform;
++import 'dart:typed_data';
++
++import 'package:ffi/ffi.dart';
++
++import 'sdk_crypto_callbacks.dart';
++import 'sdk_ffi.dart';
++
++typedef _NativeGenerateKey = Pointer<Utf8> Function(Pointer<Utf8> deviceId);
++typedef _NativeSignBytes = Pointer<Utf8> Function(
++  Pointer<Utf8> deviceId,
++  Pointer<Uint8> data,
++  IntPtr dataLen,
++);
++typedef _NativeGetAttestation = Pointer<Utf8> Function(
++  Pointer<Utf8> deviceId,
++  Pointer<Uint8> challengeHash,
++  IntPtr hashLen,
++);
++typedef _NativeKeyExists = Int32 Function(Pointer<Utf8> deviceId);
++typedef _NativeDeleteKey = Int32 Function(Pointer<Utf8> deviceId);
++
++/// SDK-owned bridge to process-exported native crypto callbacks.
++///
++/// Expected native symbols:
++/// - `synheart_native_generate_key`
++/// - `synheart_native_sign_bytes`
++/// - `synheart_native_get_attestation`
++/// - `synheart_native_key_exists`
++/// - `synheart_native_delete_key`
++class PlatformNativeSdkCryptoCallbacks extends SynheartCoreCryptoCallbacks {
++  PlatformNativeSdkCryptoCallbacks._({
++    required Pointer<Utf8> Function(Pointer<Utf8>) generateKey,
++    required Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Uint8>, int) signBytes,
++    required Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Uint8>, int)
++    getAttestation,
++    required int Function(Pointer<Utf8>) keyExists,
++    required int Function(Pointer<Utf8>) deleteKey,
++  }) : _generateKey = generateKey,
++       _signBytes = signBytes,
++       _getAttestation = getAttestation,
++       _keyExists = keyExists,
++       _deleteKey = deleteKey;
++
++  final Pointer<Utf8> Function(Pointer<Utf8>) _generateKey;
++  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Uint8>, int) _signBytes;
++  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Uint8>, int)
++  _getAttestation;
++  final int Function(Pointer<Utf8>) _keyExists;
++  final int Function(Pointer<Utf8>) _deleteKey;
++
++  /// Optional direct C-struct pointer generation, bypassing Dart entirely.
++  /// Resolves the symbols and populates [SynheartSdkCryptoCallbacks] natively.
++  static Pointer<SynheartSdkCryptoCallbacks>? tryCreateRawTable() {
++    try {
++      final lib = _openNativeLib();
++      final table = calloc<SynheartSdkCryptoCallbacks>();
++      table.ref.generate_key = lib.lookup<NativeFunction<SynheartGenerateKeyNative>>('synheart_native_generate_key');
++      table.ref.sign_bytes = lib.lookup<NativeFunction<SynheartSignBytesNative>>('synheart_native_sign_bytes');
++      table.ref.get_attestation = lib.lookup<NativeFunction<SynheartGetAttestationNative>>('synheart_native_get_attestation');
++      table.ref.key_exists = lib.lookup<NativeFunction<SynheartKeyExistsNative>>('synheart_native_key_exists');
++      table.ref.delete_key = lib.lookup<NativeFunction<SynheartDeleteKeyNative>>('synheart_native_delete_key');
++      return table;
++    } catch (_) {
++      return null;
++    }
++  }
++
++  /// Returns null when required process symbols are unavailable.
++  ///
++  /// On Android, symbols live in a separate .so loaded via System.loadLibrary,
++  /// so we must use DynamicLibrary.open(). On iOS, @_cdecl symbols are in the
++  /// main binary, so DynamicLibrary.process() works.
++  static PlatformNativeSdkCryptoCallbacks? tryCreate() {
++    try {
++      final lib = _openNativeLib();
++      final generateKey = lib.lookupFunction<_NativeGenerateKey,
++          Pointer<Utf8> Function(Pointer<Utf8>)>('synheart_native_generate_key');
++      final signBytes = lib.lookupFunction<_NativeSignBytes,
++          Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Uint8>, int)>(
++        'synheart_native_sign_bytes',
++      );
++      final getAttestation = lib.lookupFunction<_NativeGetAttestation,
++          Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Uint8>, int)>(
++        'synheart_native_get_attestation',
++      );
++      final keyExists = lib.lookupFunction<_NativeKeyExists,
++          int Function(Pointer<Utf8>)>('synheart_native_key_exists');
++      final deleteKey = lib.lookupFunction<_NativeDeleteKey,
++          int Function(Pointer<Utf8>)>('synheart_native_delete_key');
++      return PlatformNativeSdkCryptoCallbacks._(
++        generateKey: generateKey,
++        signBytes: signBytes,
++        getAttestation: getAttestation,
++        keyExists: keyExists,
++        deleteKey: deleteKey,
++      );
++    } catch (_) {
++      return null;
++    }
++  }
++
++  /// Open the native library containing synheart_native_* symbols.
++  ///
++  /// Android: symbols are in libsynheart_native_crypto.so (loaded by
++  /// System.loadLibrary in SynheartAuthPlugin). DynamicLibrary.process()
++  /// can't see them because they're in a separate linker namespace.
++  ///
++  /// iOS: @_cdecl symbols are linked into the main binary, so
++  /// DynamicLibrary.process() finds them directly.
++  static DynamicLibrary _openNativeLib() {
++    if (Platform.isAndroid) {
++      return DynamicLibrary.open('libsynheart_native_crypto.so');
++    }
++    return DynamicLibrary.process();
++  }
++
++  @override
++  String generateKeyJwk(String deviceId) {
++    final idPtr = deviceId.toNativeUtf8();
++    try {
++      final outPtr = _generateKey(idPtr);
++      if (outPtr == nullptr) {
++        throw StateError('native generate_key returned null');
++      }
++      try {
++        return outPtr.toDartString();
++      } finally {
++        calloc.free(outPtr);
++      }
++    } finally {
++      calloc.free(idPtr);
++    }
++  }
++
++  @override
++  String signBytesBase64Url(String deviceId, Uint8List data) {
++    final idPtr = deviceId.toNativeUtf8();
++    final dataPtr = calloc<Uint8>(data.length);
++    try {
++      dataPtr.asTypedList(data.length).setAll(0, data);
++      final outPtr = _signBytes(idPtr, dataPtr, data.length);
++      if (outPtr == nullptr) {
++        throw StateError('native sign_bytes returned null');
++      }
++      try {
++        return outPtr.toDartString();
++      } finally {
++        calloc.free(outPtr);
++      }
++    } finally {
++      calloc.free(dataPtr);
++      calloc.free(idPtr);
++    }
++  }
++
++  @override
++  String getAttestationJson(String deviceId, Uint8List challengeHash) {
++    final idPtr = deviceId.toNativeUtf8();
++    final hashPtr = calloc<Uint8>(challengeHash.length);
++    try {
++      hashPtr.asTypedList(challengeHash.length).setAll(0, challengeHash);
++      final outPtr = _getAttestation(idPtr, hashPtr, challengeHash.length);
++      if (outPtr == nullptr) {
++        throw StateError('native get_attestation returned null');
++      }
++      try {
++        return outPtr.toDartString();
++      } finally {
++        calloc.free(outPtr);
++      }
++    } finally {
++      calloc.free(hashPtr);
++      calloc.free(idPtr);
++    }
++  }
++
++  @override
++  bool keyExists(String deviceId) {
++    final idPtr = deviceId.toNativeUtf8();
++    try {
++      return _keyExists(idPtr) != 0;
++    } finally {
++      calloc.free(idPtr);
++    }
++  }
++
++  @override
++  bool deleteKey(String deviceId) {
++    final idPtr = deviceId.toNativeUtf8();
++    try {
++      return _deleteKey(idPtr) == 0;
++    } finally {
++      calloc.free(idPtr);
++    }
++  }
++}
+diff --git a/lib/src/core_runtime/sdk_crypto_callbacks.dart b/lib/src/core_runtime/sdk_crypto_callbacks.dart
+new file mode 100644
+index 0000000..3dd94c7
+--- /dev/null
++++ b/lib/src/core_runtime/sdk_crypto_callbacks.dart
+@@ -0,0 +1,144 @@
++/// Synchronous platform crypto hooks for [CoreRuntimeBridge.setSdkCryptoCallbacks].
++///
++/// Rust invokes these from worker threads during device registration and proof
++/// assembly. Implementations must not block on async platform channels; use a
++/// native FFI plugin or other synchronous bridge.
++library;
++
++import 'dart:developer' as developer;
++import 'dart:ffi';
++import 'dart:typed_data';
++
++import 'package:ffi/ffi.dart';
++
++import 'sdk_ffi.dart';
++
++/// Host-provided crypto for core-runtime device auth (`synheart_core_sdk_*`).
++abstract class SynheartCoreCryptoCallbacks {
++  /// Returns JWK JSON: `{ "x": "<b64url>", "y": "<b64url>" }`.
++  String generateKeyJwk(String deviceId);
++
++  /// Returns base64url (or base64) signature bytes for [data].
++  String signBytesBase64Url(String deviceId, Uint8List data);
++
++  /// Returns `{ "format": "...", "blob": "..." }` for [challengeHash].
++  ///
++  /// For Android Play Integrity, `blob` must be the raw compact JOSE token
++  /// from the client API (do not re-encode/wrap/truncate).
++  String getAttestationJson(String deviceId, Uint8List challengeHash);
++
++  bool keyExists(String deviceId);
++
++  /// Returns true on success.
++  bool deleteKey(String deviceId);
++}
++
++SynheartCoreCryptoCallbacks? _synheartCoreCrypto;
++
++/// Set the global delegate used by FFI trampolines (call before [CoreRuntimeBridge.setSdkCryptoCallbacks]).
++void synheartSdkCryptoAttach(SynheartCoreCryptoCallbacks? callbacks) {
++  _synheartCoreCrypto = callbacks;
++}
++
++Pointer<Utf8> synheartTrampolineGenerateKey(Pointer<Utf8> deviceIdPtr) {
++  final cb = _synheartCoreCrypto;
++  if (cb == null || deviceIdPtr == nullptr) return nullptr;
++  try {
++    final json = cb.generateKeyJwk(deviceIdPtr.toDartString());
++    return json.toNativeUtf8();
++  } catch (e, st) {
++    developer.log(
++      'generateKeyJwk callback failed: $e',
++      name: 'synheart_core.sdk_crypto',
++      stackTrace: st,
++    );
++    return nullptr;
++  }
++}
++
++Pointer<Utf8> synheartTrampolineSignBytes(
++  Pointer<Utf8> deviceIdPtr,
++  Pointer<Uint8> dataPtr,
++  int dataLen,
++) {
++  final cb = _synheartCoreCrypto;
++  if (cb == null || deviceIdPtr == nullptr) return nullptr;
++  try {
++    final bytes = dataLen <= 0
++        ? Uint8List(0)
++        : Uint8List.fromList(dataPtr.asTypedList(dataLen));
++    final sig = cb.signBytesBase64Url(deviceIdPtr.toDartString(), bytes);
++    return sig.toNativeUtf8();
++  } catch (e, st) {
++    developer.log(
++      'signBytesBase64Url callback failed: $e',
++      name: 'synheart_core.sdk_crypto',
++      stackTrace: st,
++    );
++    return nullptr;
++  }
++}
++
++Pointer<Utf8> synheartTrampolineGetAttestation(
++  Pointer<Utf8> deviceIdPtr,
++  Pointer<Uint8> hashPtr,
++  int hashLen,
++) {
++  final cb = _synheartCoreCrypto;
++  if (cb == null || deviceIdPtr == nullptr) return nullptr;
++  try {
++    final hash = hashLen <= 0
++        ? Uint8List(0)
++        : Uint8List.fromList(hashPtr.asTypedList(hashLen));
++    final json = cb.getAttestationJson(deviceIdPtr.toDartString(), hash);
++    return json.toNativeUtf8();
++  } catch (e, st) {
++    developer.log(
++      'getAttestationJson callback failed: $e',
++      name: 'synheart_core.sdk_crypto',
++      stackTrace: st,
++    );
++    return nullptr;
++  }
++}
++
++int synheartTrampolineKeyExists(Pointer<Utf8> deviceIdPtr) {
++  final cb = _synheartCoreCrypto;
++  if (cb == null || deviceIdPtr == nullptr) return 0;
++  try {
++    return cb.keyExists(deviceIdPtr.toDartString()) ? 1 : 0;
++  } catch (e, st) {
++    developer.log(
++      'keyExists callback failed: $e',
++      name: 'synheart_core.sdk_crypto',
++      stackTrace: st,
++    );
++    return 0;
++  }
++}
++
++int synheartTrampolineDeleteKey(Pointer<Utf8> deviceIdPtr) {
++  final cb = _synheartCoreCrypto;
++  if (cb == null || deviceIdPtr == nullptr) return 1;
++  try {
++    return cb.deleteKey(deviceIdPtr.toDartString()) ? 0 : 1;
++  } catch (e, st) {
++    developer.log(
++      'deleteKey callback failed: $e',
++      name: 'synheart_core.sdk_crypto',
++      stackTrace: st,
++    );
++    return 1;
++  }
++}
++
++/// Fills [out] with native function pointers; [out] must remain allocated for
++/// the lifetime of the core handle after [set_crypto_callbacks] is called.
++void synheartFillSdkCryptoStruct(Pointer<SynheartSdkCryptoCallbacks> out) {
++  out.ref
++    ..generate_key = Pointer.fromFunction(synheartTrampolineGenerateKey)
++    ..sign_bytes = Pointer.fromFunction(synheartTrampolineSignBytes)
++    ..get_attestation = Pointer.fromFunction(synheartTrampolineGetAttestation)
++    ..key_exists = Pointer.fromFunction(synheartTrampolineKeyExists, 0)
++    ..delete_key = Pointer.fromFunction(synheartTrampolineDeleteKey, 1);
++}
+diff --git a/lib/src/core_runtime/sdk_ffi.dart b/lib/src/core_runtime/sdk_ffi.dart
+new file mode 100644
+index 0000000..fc9549e
+--- /dev/null
++++ b/lib/src/core_runtime/sdk_ffi.dart
+@@ -0,0 +1,139 @@
++// Struct fields mirror C symbol names (`generate_key`, …).
++// ignore_for_file: non_constant_identifier_names
++
++/// FFI types and optional symbol resolution for `synheart_core_sdk_*` (device auth).
++///
++/// Older `libsynheart_core_runtime` builds may omit these symbols; resolution is
++/// best-effort and leaves fields null when missing.
++library;
++
++import 'dart:ffi';
++
++import 'package:ffi/ffi.dart';
++
++// ── C callback typedefs (native) ─────────────────────────────────────────
++
++typedef SynheartGenerateKeyNative = Pointer<Utf8> Function(Pointer<Utf8> deviceId);
++typedef SynheartSignBytesNative = Pointer<Utf8> Function(
++  Pointer<Utf8> deviceId,
++  Pointer<Uint8> data,
++  IntPtr dataLen,
++);
++typedef SynheartGetAttestationNative = Pointer<Utf8> Function(
++  Pointer<Utf8> deviceId,
++  Pointer<Uint8> challengeHash,
++  IntPtr hashLen,
++);
++typedef SynheartKeyExistsNative = Int32 Function(Pointer<Utf8> deviceId);
++typedef SynheartDeleteKeyNative = Int32 Function(Pointer<Utf8> deviceId);
++
++// ── Host crypto callback table (must match Rust `SynheartSdkCryptoCallbacks`) ─
++
++final class SynheartSdkCryptoCallbacks extends Struct {
++  external Pointer<NativeFunction<SynheartGenerateKeyNative>> generate_key;
++
++  external Pointer<NativeFunction<SynheartSignBytesNative>> sign_bytes;
++
++  external Pointer<NativeFunction<SynheartGetAttestationNative>> get_attestation;
++
++  external Pointer<NativeFunction<SynheartKeyExistsNative>> key_exists;
++
++  external Pointer<NativeFunction<SynheartDeleteKeyNative>> delete_key;
++}
++
++// ── Optional SDK entry points ───────────────────────────────────────────
++
++/// Resolved optional `synheart_core_sdk_*` symbols.
++class SynheartSdkFfi {
++  SynheartSdkFfi._();
++
++  int Function(Pointer<Void> handle, Pointer<SynheartSdkCryptoCallbacks> callbacks)?
++      setCryptoCallbacks;
++
++  int Function(Pointer<Void> handle, Pointer<SynheartSdkCryptoCallbacks> callbacks)?
++      setCryptoCallbacksAlt;
++
++  Pointer<Utf8> Function(Pointer<Void> handle, Pointer<Utf8> clientId)?
++      registerDevice;
++
++  Pointer<Utf8> Function(Pointer<Void> handle)? deviceAuthStatus;
++
++  Pointer<Utf8> Function(
++    Pointer<Void> handle,
++    Pointer<Utf8> method,
++    Pointer<Utf8> url,
++  )? buildProofHeader;
++
++  bool get _hasCryptoSetter =>
++      setCryptoCallbacks != null || setCryptoCallbacksAlt != null;
++
++  /// All symbols required for the documented init → callbacks → register → proof flow.
++  bool get isAvailable =>
++      _hasCryptoSetter &&
++      registerDevice != null &&
++      deviceAuthStatus != null &&
++      buildProofHeader != null;
++
++  /// Binds symbols from [lib]. Swallows lookup failures.
++  static SynheartSdkFfi tryBind(DynamicLibrary lib) {
++    final o = SynheartSdkFfi._();
++
++    try {
++      o.setCryptoCallbacks = lib.lookupFunction<
++          Int32 Function(Pointer<Void>, Pointer<SynheartSdkCryptoCallbacks>),
++          int Function(Pointer<Void>, Pointer<SynheartSdkCryptoCallbacks>)>(
++        'synheart_core_sdk_set_crypto_callbacks',
++      );
++    } catch (_) {}
++
++    // Some builds may use a different name — try common alternates.
++    if (o.setCryptoCallbacks == null) {
++      try {
++        o.setCryptoCallbacksAlt = lib.lookupFunction<
++            Int32 Function(Pointer<Void>, Pointer<SynheartSdkCryptoCallbacks>),
++            int Function(Pointer<Void>, Pointer<SynheartSdkCryptoCallbacks>)>(
++          'synheart_sdk_set_crypto_callbacks',
++        );
++      } catch (_) {}
++    }
++
++    try {
++      o.registerDevice = lib.lookupFunction<
++          Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>),
++          Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)>(
++        'synheart_core_sdk_register_device',
++      );
++    } catch (_) {}
++
++    try {
++      o.deviceAuthStatus = lib.lookupFunction<
++          Pointer<Utf8> Function(Pointer<Void>),
++          Pointer<Utf8> Function(Pointer<Void>)>(
++        'synheart_core_sdk_device_auth_status',
++      );
++    } catch (_) {}
++
++    try {
++      o.buildProofHeader = lib.lookupFunction<
++          Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>),
++          Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>)>(
++        'synheart_core_sdk_build_proof_header',
++      );
++    } catch (_) {}
++
++    return o;
++  }
++
++  int setCryptoCallbacksInvoke(
++    Pointer<Void> handle,
++    Pointer<SynheartSdkCryptoCallbacks> callbacks,
++  ) {
++    if (setCryptoCallbacks != null) {
++      return setCryptoCallbacks!(handle, callbacks);
++    }
++    if (setCryptoCallbacksAlt != null) {
++      return setCryptoCallbacksAlt!(handle, callbacks);
++    }
++    return -1;
++  }
++}
+diff --git a/lib/src/modules/cloud/device_auth_provider.dart b/lib/src/modules/cloud/device_auth_provider.dart
+index 63e1f4b..dad70e2 100644
+--- a/lib/src/modules/cloud/device_auth_provider.dart
++++ b/lib/src/modules/cloud/device_auth_provider.dart
+@@ -1,22 +1,21 @@
+ import 'dart:typed_data';
+-import 'package:synheart_auth/synheart_auth.dart';
+ import '../../core/logger.dart';
++import '../../core_runtime/core_runtime_bridge.dart';
+ import '../interfaces/auth_provider.dart';
+ 
+-/// [AuthProvider] backed by SynheartAuth device-identity signing.
++/// [AuthProvider] backed by core-runtime proof generation.
+ ///
+-/// Wraps [SynheartAuth.signRequest] to produce the signed header set
+-/// (X-App-ID, X-Device-ID, X-Synheart-Signature, etc.) for every
+-/// outgoing request to cloud and platform ingest services.
++/// Runtime-only policy: this provider must not call platform SDK/API code
++/// for outbound auth. It only asks core-runtime to build `X-Synheart-Proof`.
+ class DeviceAuthProvider implements AuthProvider {
+-  final SynheartAuth _auth;
+-  final String _appId;
++  final CoreRuntimeBridge _coreRuntime;
++  final String _baseUrl;
+ 
+   DeviceAuthProvider({
+-    required String appId,
+-    SynheartAuth? auth,
+-  })  : _appId = appId,
+-        _auth = auth ?? SynheartAuth.instance;
++    required CoreRuntimeBridge coreRuntime,
++    required String baseUrl,
++  })  : _coreRuntime = coreRuntime,
++        _baseUrl = baseUrl;
+ 
+   @override
+   Future<Map<String, String>> signRequest({
+@@ -24,13 +23,16 @@ class DeviceAuthProvider implements AuthProvider {
+     required String path,
+     required Uint8List bodyBytes,
+   }) async {
+-    final signed = await _auth.signRequest(
+-      appId: _appId,
+-      method: method,
+-      path: path,
+-      bodyBytes: bodyBytes,
+-    );
+-    return signed.toMap();
++    final normalizedPath = path.startsWith('/') ? path : '/$path';
++    final absoluteUrl = '${_baseUrl.replaceAll(RegExp(r'/+$'), '')}$normalizedPath';
++    final proof = _coreRuntime.buildProofHeader(method.toUpperCase(), absoluteUrl);
++    if (proof == null || proof.isEmpty) {
++      SynheartLogger.log(
++        '[DeviceAuth] Failed to build runtime proof header for $method $normalizedPath',
++      );
++      return <String, String>{};
++    }
++    return <String, String>{'X-Synheart-Proof': proof};
+   }
+ 
+   @override
+@@ -38,31 +40,8 @@ class DeviceAuthProvider implements AuthProvider {
+     required int statusCode,
+     required Map<String, String> responseHeaders,
+   }) async {
+-    // Handle clock skew — server sends its timestamp so we can correct drift.
+-    final serverTs = responseHeaders['x-server-timestamp'];
+-    if (serverTs != null) {
+-      final ts = double.tryParse(serverTs);
+-      if (ts != null) {
+-        await _auth.correctClockSkew(ts);
+-        SynheartLogger.log('[DeviceAuth] Clock skew corrected, retrying');
+-        return true;
+-      }
+-    }
+-
+-    // Handle key invalidation — rotate and retry.
+-    final errorCode = responseHeaders['x-synheart-error'];
+-    if (errorCode == 'KEY_INVALIDATED') {
+-      try {
+-        final result = await _auth.rotateKey(_appId);
+-        if (result.status == RotationStatus.success) {
+-          SynheartLogger.log('[DeviceAuth] Key rotated, retrying');
+-          return true;
+-        }
+-      } catch (e) {
+-        SynheartLogger.log('[DeviceAuth] Key rotation failed: $e', error: e);
+-      }
+-    }
+-
++    // Runtime-only auth path: recovery is handled by core-runtime/device-auth state.
++    // Keep this hook non-throwing for caller compatibility.
+     return false;
+   }
+ }
+diff --git a/lib/src/synheart.dart b/lib/src/synheart.dart
+index b1b8482..0f816cd 100644
+--- a/lib/src/synheart.dart
++++ b/lib/src/synheart.dart
+@@ -1,10 +1,8 @@
+ import 'dart:async';
+ import 'dart:convert';
+ import 'dart:typed_data';
+-import 'package:http/http.dart' as http;
+ import 'package:flutter/material.dart';
+ import 'package:rxdart/rxdart.dart';
+-import 'config/api_endpoints.dart';
+ import 'config/synheart_config.dart';
+ import 'core/logger.dart';
+ import 'modules/base/module_manager.dart';
+@@ -18,7 +16,6 @@ import 'modules/wear/wear_source_handler.dart';
+ import 'modules/phone/phone_module.dart';
+ import 'modules/behavior/behavior_module.dart';
+ import 'modules/behavior/behavior_events.dart';
+-import 'modules/interfaces/feature_providers.dart';
+ import 'models/behavior_session_results.dart';
+ import 'package:synheart_behavior/synheart_behavior.dart' as sb;
+ import 'config/synheart_mode.dart';
+@@ -27,9 +24,11 @@ import 'models/hsi_state.dart';
+ import 'models/metric_event.dart';
+ import 'config/synheart_feature.dart';
+ import 'config/activation_manager.dart';
+-import 'package:synheart_auth/synheart_auth.dart';
+ import 'modules/cloud/device_auth_provider.dart';
+ import 'core_runtime/core_runtime_bridge.dart';
++import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
++import 'core_runtime/sdk_crypto_callbacks.dart';
++
+ import 'modules/consent/consent_profile.dart';
+ import 'modules/consent/consent_token.dart';
+ import 'modules/consent/consent_ui.dart';
+@@ -87,6 +86,13 @@ class Synheart {
+   BehaviorModule? _behaviorModule;
+   DeviceAuthProvider? _deviceAuthProvider;
+ 
++  /// Optional host crypto for `synheart_core_sdk_*` (set via [Synheart.registerCoreDeviceAuthCrypto]).
++  static SynheartCoreCryptoCallbacks? _coreDeviceCrypto;
++
++  /// True when [sdkRegisterDevice] succeeded for this process (core-runtime auth path).
++  static bool _deviceAuthViaCoreRuntime = false;
++  static bool _sdkCryptoCallbacksAttached = false;
++
+   // Watch session module
+   WatchSessionModule? _watchSessionModule;
+ 
+@@ -244,8 +250,11 @@ class Synheart {
+       if (result != null) {
+         return StorageUsage(
+           totalBytes: result['total_bytes'] as int? ?? 0,
+-          bySessionBytes: (result['by_session_bytes'] as Map<String, dynamic>?)
+-              ?.map((k, v) => MapEntry(k, v as int)) ?? {},
++          bySessionBytes:
++              (result['by_session_bytes'] as Map<String, dynamic>?)?.map(
++                (k, v) => MapEntry(k, v as int),
++              ) ??
++              {},
+         );
+       }
+     }
+@@ -300,26 +309,9 @@ class Synheart {
+             : 'Account deletion request failed.',
+       );
+     }
+-    final token = shared._consentModule?.getCurrentToken();
+-    if (token != null && token.isValid) {
+-      try {
+-        await http.post(
+-          shared._buildAccountApiUri(ApiEndpoints.accountDeletePath),
+-          headers: {
+-            'Content-Type': 'application/json',
+-            'Authorization': 'Bearer ${token.token}',
+-          },
+-          body: jsonEncode({'confirmation': 'DELETE_MY_ACCOUNT'}),
+-        );
+-      } catch (_) {
+-        // Server deletion request failed — still wipe locally
+-      }
+-    }
+-
+-    await wipeLocalData();
+     return const DeletionRequestResult(
+-      status: 'accepted',
+-      message: 'Local data wiped. Server deletion pending.',
++      status: 'error',
++      message: 'Account deletion requires core-runtime network bridge.',
+     );
+   }
+ 
+@@ -334,40 +326,10 @@ class Synheart {
+             : 'Account deletion cancellation failed.',
+       );
+     }
+-    final token = shared._consentModule?.getCurrentToken();
+-    if (token == null || !token.isValid) {
+-      return const DeletionRequestResult(
+-        status: 'error',
+-        message: 'No valid consent token',
+-      );
+-    }
+-
+-    try {
+-      final response = await http.post(
+-        shared._buildAccountApiUri(ApiEndpoints.accountDeleteCancelPath),
+-        headers: {
+-          'Content-Type': 'application/json',
+-          'Authorization': 'Bearer ${token.token}',
+-        },
+-      );
+-
+-      if (response.statusCode == 200) {
+-        return const DeletionRequestResult(
+-          status: 'cancelled',
+-          message: 'Account deletion cancelled.',
+-        );
+-      }
+-
+-      return DeletionRequestResult(
+-        status: 'error',
+-        message: 'Cancel failed: ${response.statusCode}',
+-      );
+-    } catch (e) {
+-      return DeletionRequestResult(
+-        status: 'error',
+-        message: 'Cancel failed: $e',
+-      );
+-    }
++    return const DeletionRequestResult(
++      status: 'error',
++      message: 'Account deletion cancellation requires core-runtime network bridge.',
++    );
+   }
+ 
+   // --- Phase 3: Auth ---
+@@ -377,7 +339,9 @@ class Synheart {
+     if (_coreRuntime != null) {
+       _coreRuntime!.wipeLocalData();
+     }
+-    try { await shared._consentModule?.revokeConsent(); } catch (_) {}
++    try {
++      await shared._consentModule?.revokeConsent();
++    } catch (_) {}
+   }
+ 
+   // --- Phase 3: Sync API ---
+@@ -467,6 +431,8 @@ class Synheart {
+     SynheartConfig? config,
+     String? userId,
+     bool autoStart = false,
++    String? rustLogEnvFilter,
++    void Function(String line)? rustLogForwarder,
+   }) async {
+     if (config != null) {
+       config.validate();
+@@ -476,14 +442,57 @@ class Synheart {
+       userId: userId ?? config?.subjectId ?? '',
+       config: config,
+       autoStart: autoStart,
++      rustLogEnvFilter: rustLogEnvFilter,
++      rustLogForwarder: rustLogForwarder,
+     );
+   }
+ 
++  /// §1b — Initialize Rust `tracing` once per process (optional if you rely on [CoreRuntimeBridge.create]).
++  ///
++  /// Returns `0` success, `1` already initialized, negative on failure.
++  static int initRustLogging({
++    String? envFilter,
++    void Function(String line)? onLine,
++  }) {
++    return CoreRuntimeBridge.initRustLogging(
++      envFilter: envFilter,
++      onLine: onLine,
++    );
++  }
++
++  /// §2 — Register synchronous platform crypto before core-driven device registration.
++  ///
++  /// Call **before** [initialize] (or before cloud consent triggers device auth). Implementations
++  /// must not use async platform channels from Rust callback threads.
++  static void registerCoreDeviceAuthCrypto(SynheartCoreCryptoCallbacks? callbacks) {
++    _coreDeviceCrypto = callbacks;
++    _sdkCryptoCallbacksAttached = false;
++  }
++
++  /// §3 / §5 — JSON from `synheart_core_sdk_device_auth_status`, or null if unavailable.
++  static Map<String, dynamic>? coreDeviceAuthStatus() {
++    return _coreRuntime?.sdkDeviceAuthStatus();
++  }
++
++  /// §4 — Compact JWS for `X-Synheart-Proof` (non-ingest APIs). Use uppercase [method].
++  static String? buildProofHeader(String method, String absoluteUrl) {
++    return _coreRuntime?.buildProofHeader(method, absoluteUrl);
++  }
++
++  /// Whether the loaded native library exports the full core SDK device-auth ABI.
++  static bool get coreSdkDeviceAuthAvailable =>
++      _coreRuntime?.sdkDeviceAuthAvailable ?? false;
++
++  /// True after a successful [sdkRegisterDevice] via the core runtime in this session.
++  static bool get deviceAuthUsedCoreRuntime => _deviceAuthViaCoreRuntime;
++
+   Future<void> _configure({
+     required String appKey,
+     required String userId,
+     SynheartConfig? config,
+     bool autoStart = false,
++    String? rustLogEnvFilter,
++    void Function(String line)? rustLogForwarder,
+   }) async {
+     // Already done — no-op.
+     if (_isConfigured) return;
+@@ -498,25 +507,93 @@ class Synheart {
+     _userId = userId;
+     _config = config ?? SynheartConfig.defaults();
+ 
++    final resolvedCfg = _config!;
++    final effRustFilter = rustLogEnvFilter ?? resolvedCfg.rustLogEnvFilter;
++    if (effRustFilter != null && effRustFilter.isNotEmpty) {
++      CoreRuntimeBridge.defaultRustLogEnvFilter = effRustFilter;
++    }
++    final logRc = CoreRuntimeBridge.initRustLogging(
++      envFilter: effRustFilter,
++      onLine: rustLogForwarder,
++    );
++    if (logRc < 0) {
++      SynheartLogger.log(
++        '[Synheart] synheart_core_init_logging returned $logRc (Rust diagnostics may be limited)',
++      );
++    }
++
+     // Initialize Rust core runtime bridge (best-effort; null if native lib absent)
+     try {
+-      final resolvedCfg = _config!;
+-      _coreRuntime = CoreRuntimeBridge.create({
++      final coreJson = <String, dynamic>{
+         'app_id': resolvedCfg.appId,
+         'subject_id': resolvedCfg.subjectId,
++        'client_id': resolvedCfg.subjectId,
++        'api_base_url': resolvedCfg.sync.baseUrl,
+         'mode': resolvedCfg.mode.name,
+-        'device_id': resolvedCfg.deviceId ?? '',
+-        'app_version': resolvedCfg.appVersion ?? '0.0.0',
+-        'platform': 'flutter',
++        'device_id': resolvedCfg.deviceId.isNotEmpty ? resolvedCfg.deviceId : '',
++        'app_version': resolvedCfg.appVersion,
++        'platform': resolvedCfg.platform,
+         'storage': {'enabled': resolvedCfg.storage.enabled},
+         'sync': {
+           'enabled': resolvedCfg.sync.enabled,
+           'base_url': resolvedCfg.sync.baseUrl,
+         },
+         'privacy': {'allow_research': resolvedCfg.privacy.allowResearch},
+-      });
++      };
++      if (resolvedCfg.deviceAuthConfig != null) {
++        coreJson['device_auth'] = {
++          'enabled': true,
++          'auth_base_url': resolvedCfg.deviceAuthConfig!.authBaseUrl,
++        };
++      }
++      _coreRuntime = CoreRuntimeBridge.create(coreJson);
+       if (_coreRuntime != null) {
+         SynheartLogger.log('[Synheart] Rust core runtime bridge loaded');
++        if (_coreRuntime!.sdkDeviceAuthAvailable) {
++          // Attach crypto callbacks before any core SDK registration/proof
++          // API is used (SDK auth sequence §2).
++          //
++          // Priority: host-registered > native process symbols.
++          // No software fallback — if neither is available, device auth
++          // will fail fast at registration time.
++          final nativeBridgeTable = _coreDeviceCrypto == null
++              ? PlatformNativeSdkCryptoCallbacks.tryCreateRawTable()
++              : null;
++          
++          if (_coreDeviceCrypto == null && nativeBridgeTable == null) {
++            SynheartLogger.log(
++              '[Synheart] ⚠️ No native crypto callbacks available — '
++              'device auth will fail. Ensure synheart_auth plugin is '
++              'registered and libsynheart_native_crypto.so is bundled.',
++            );
++          } else {
++            final crc = _coreDeviceCrypto != null 
++                ? _coreRuntime!.setSdkCryptoCallbacks(_coreDeviceCrypto!)
++                : _coreRuntime!.setSdkCryptoCallbacksRaw(nativeBridgeTable!);
++
++            if (crc != 0) {
++              SynheartLogger.log(
++                '[Synheart] synheart_core_sdk_set_crypto_callbacks failed: $crc',
++              );
++            } else {
++              _sdkCryptoCallbacksAttached = true;
++              if (_coreDeviceCrypto != null) {
++                SynheartLogger.log(
++                  '[Synheart] Using host-registered crypto callbacks.',
++                );
++              } else {
++                SynheartLogger.log(
++                  '[Synheart] Using SDK-owned native crypto callback bridge '
++                  '(synheart_native_* symbols found natively, bypassing Dart).',
++                );
++              }
++            }
++          }
++        } else if (_coreDeviceCrypto != null && !_coreRuntime!.sdkDeviceAuthAvailable) {
++          SynheartLogger.log(
++            '[Synheart] Core device auth crypto registered but native lib lacks synheart_core_sdk_* symbols.',
++          );
++        }
+       }
+     } catch (e) {
+       SynheartLogger.log('[Synheart] Rust core runtime bridge unavailable: $e');
+@@ -562,16 +639,18 @@ class Synheart {
+       // Wire device signing into consent module so all consent-token requests
+       // are signed with device identity (X-Synheart-* headers).
+       // Uses lazy binding — resolves _deviceAuthProvider at call time.
+-      _consentModule!.setDeviceSigner(
+-        ({required String method, required String path, required List<int> bodyBytes}) async {
+-          if (_deviceAuthProvider == null) return <String, String>{};
+-          return await _deviceAuthProvider!.signRequest(
+-            method: method,
+-            path: path,
+-            bodyBytes: Uint8List.fromList(bodyBytes),
+-          );
+-        },
+-      );
++      _consentModule!.setDeviceSigner(({
++        required String method,
++        required String path,
++        required List<int> bodyBytes,
++      }) async {
++        if (_deviceAuthProvider == null) return <String, String>{};
++        return await _deviceAuthProvider!.signRequest(
++          method: method,
++          path: path,
++          bodyBytes: Uint8List.fromList(bodyBytes),
++        );
++      });
+ 
+       _moduleManager.registerModule(_capabilityModule!);
+       _moduleManager.registerModule(_consentModule!);
+@@ -626,11 +705,13 @@ class Synheart {
+       }
+ 
+       // Wire wearable event processor for vendor sync (RAMEN → pipeline)
+-      _wearModule!.setEventProcessor(WearableEventProcessor(
+-        bridge: _coreRuntime,
+-        subjectId: runtimeSubjectId,
+-        deviceInstallId: runtimeSessionId,
+-      ));
++      _wearModule!.setEventProcessor(
++        WearableEventProcessor(
++          bridge: _coreRuntime,
++          subjectId: runtimeSubjectId,
++          deviceInstallId: runtimeSessionId,
++        ),
++      );
+ 
+       // Push all behavior events (notification, app_switch, touch, etc.) to the runtime
+       if (_coreRuntime != null) {
+@@ -662,7 +743,9 @@ class Synheart {
+           if (sid == null || _mainSession == null) return;
+           try {
+             final parsed = jsonDecode(hsiJson) as Map<String, dynamic>;
+-            _mainSession!.ingestHsiMetrics(sid, parsed);
++            // `ingestHsiMetrics` was removed from newer synheart_session API.
++            // Keep runtime HSI callback active; session-level ingestion happens in runtime path.
++            if (parsed.isEmpty || sid.isEmpty) return;
+           } catch (_) {}
+         });
+       }
+@@ -670,18 +753,7 @@ class Synheart {
+       _activationManager = ActivationManager();
+       _activationManager!.activateFromConfig(resolvedConfig);
+ 
+-      // Phase 3: Initialize auth
+-      final appId = resolvedConfig.appId;
+-      if (appId.isNotEmpty) {
+-        // Configure synheart-auth for device attestation + signing.
+-        final authBaseUrl = resolvedConfig.deviceAuthConfig?.authBaseUrl
+-            ?? 'https://auth.synheart.ai';
+-        try {
+-          await SynheartAuth.instance.configure(authBaseUrl);
+-        } catch (e) {
+-          SynheartLogger.log('[Synheart] SynheartAuth configure failed (non-fatal): $e');
+-        }
+-      }
++      // Runtime-only policy: no SDK-side auth API configuration/networking here.
+ 
+       if (autoStart) {
+         SynheartLogger.log('[Synheart] Starting all modules...');
+@@ -1263,8 +1335,7 @@ class Synheart {
+   // ── synheart-lab session API ──
+ 
+   /// Whether the lab C ABI symbols are available in the loaded native library.
+-  static bool get isLabAvailable =>
+-      _coreRuntime?.isLabAvailable ?? false;
++  static bool get isLabAvailable => _coreRuntime?.isLabAvailable ?? false;
+ 
+   /// Start a lab session. Returns `null` on success, or an error string.
+   static String? labStart(String protocolJson, int startedAtMs) {
+@@ -1279,7 +1350,10 @@ class Synheart {
+     required int startedAtMs,
+   }) {
+     return _coreRuntime?.labOpenWindow(
+-      parentId, windowType, label, startedAtMs,
++      parentId,
++      windowType,
++      label,
++      startedAtMs,
+     );
+   }
+ 
+@@ -2074,7 +2148,9 @@ class Synheart {
+         _config?.deviceAuthConfig != null &&
+         _deviceAuthProvider == null) {
+       try {
+-        SynheartLogger.log('[Synheart] Cloud consent granted — activating device auth...');
++        SynheartLogger.log(
++          '[Synheart] Cloud consent granted — activating device auth...',
++        );
+         await _initDeviceAuth(_config!);
+         SynheartLogger.log('[Synheart] Device auth activated successfully.');
+       } catch (e) {
+@@ -2087,9 +2163,7 @@ class Synheart {
+     }
+ 
+     // If cloud or platform-ingest is configured and cloudUpload is true, issue token.
+-    if (_config?.cloudConfig != null &&
+-        cloudUpload &&
+-        profileId != null) {
++    if (_config?.cloudConfig != null && cloudUpload && profileId != null) {
+       try {
+         // Request token directly with known profile id.
+         await _consentModule!.requestConsentByProfileId(
+@@ -2119,7 +2193,8 @@ class Synheart {
+       cloudUpload: cloudUpload,
+       syni: false,
+       focusEstimation: grantedChannels?.interpretation.focusEstimation ?? false,
+-      emotionEstimation: grantedChannels?.interpretation.emotionEstimation ?? false,
++      emotionEstimation:
++          grantedChannels?.interpretation.emotionEstimation ?? false,
+       vendorSync: vendorSync,
+       timestamp: DateTime.now(),
+       explicitlyDenied: false,
+@@ -2462,6 +2537,26 @@ class Synheart {
+   Future<void> _initDeviceAuth(SynheartConfig resolvedConfig) async {
+     final dac = resolvedConfig.deviceAuthConfig!;
+     SynheartLogger.log('[Synheart] Configuring device authentication...');
++
++    final runtime = _coreRuntime;
++    if (runtime == null) {
++      throw StateError(
++        'Device registration requires core-runtime. Native runtime bridge is unavailable.',
++      );
++    }
++    if (!runtime.sdkDeviceAuthAvailable) {
++      throw StateError(
++        'Device registration requires synheart_core_sdk_* symbols in the native runtime.',
++      );
++    }
++    if (!_sdkCryptoCallbacksAttached) {
++      throw StateError(
++        'Device registration requires SDK crypto callbacks to be attached. '
++        'Register synchronous platform crypto via Synheart.registerCoreDeviceAuthCrypto(...) '
++        'before initialize().',
++      );
++    }
++
+     SynheartLogger.log(
+       '[Synheart] DeviceAuthConfig: authBaseUrl=${dac.authBaseUrl} '
+       'capabilityBaseUrl=${dac.capabilityBaseUrl ?? "(default=authBaseUrl)"} '
+@@ -2469,25 +2564,25 @@ class Synheart {
+       'appId=${resolvedConfig.appId}',
+     );
+ 
+-    // 1. Configure SynheartAuth
+-    await SynheartAuth.instance.configure(dac.authBaseUrl);
+-
+-    // Optional: surface current registration state before attempting registration.
+     try {
+-      final already = await SynheartAuth.instance.isRegistered(resolvedConfig.appId);
+-      SynheartLogger.log('[Synheart] Device already registered? $already');
++      final reg = await runtime.sdkRegisterDevice(resolvedConfig.subjectId);
++      final deviceId = reg?['device_id'] as String? ?? reg?['deviceId'] as String?;
++      final err = reg?['error']?.toString();
++      if (reg == null || deviceId == null || (err != null && err.isNotEmpty)) {
++        throw StateError('Core SDK register_device failed: ${reg ?? "null result"}');
++      }
++      _deviceAuthViaCoreRuntime = true;
++      final idPreview = deviceId.length <= 8
++          ? deviceId
++          : '${deviceId.substring(0, 8)}...';
++      SynheartLogger.log(
++        '[Synheart] Core SDK device registration complete (device_id preview: $idPreview)',
++      );
+     } catch (e) {
+-      SynheartLogger.log('[Synheart] isRegistered() check failed (non-fatal): $e', error: e);
+-    }
+-
+-    // 2. Register device (idempotent — returns alreadyRegistered if done)
+-    final regResult = await SynheartAuth.instance.registerDevice(
+-      resolvedConfig.appId,
+-    );
+-    SynheartLogger.log(
+-      '[Synheart] registerDevice result: status=${regResult.status} deviceId=${regResult.deviceId}',
+-    );
+-    if (regResult.status == RegistrationStatus.failed) {
++      SynheartLogger.log(
++        '[Synheart] Device registration failed: $e',
++        error: e,
++      );
+       if (resolvedConfig.allowUnsignedCapabilities) {
+         SynheartLogger.log(
+           '[Synheart] WARNING: Device registration failed, falling back to unsigned capabilities.',
+@@ -2495,17 +2590,15 @@ class Synheart {
+         await _capabilityModule!.loadDefaults();
+         return;
+       }
+-      throw StateError(
+-        'Device registration failed. Set allowUnsignedCapabilities: true for dev mode.',
+-      );
++      rethrow;
+     }
+-    SynheartLogger.log(
+-      '[Synheart] Device registered: ${regResult.deviceId}',
+-    );
+ 
+     try {
+       if (resolvedConfig.capabilitySecret != null) {
+-        _coreRuntime?.loadCapabilityToken('{}', resolvedConfig.capabilitySecret!);
++        _coreRuntime?.loadCapabilityToken(
++          '{}',
++          resolvedConfig.capabilitySecret!,
++        );
+       }
+       _capabilityModule?.loadDefaults();
+     } catch (e) {
+@@ -2524,7 +2617,10 @@ class Synheart {
+     }
+ 
+     // 4. Create DeviceAuthProvider for cloud/platform signing
+-    _deviceAuthProvider = DeviceAuthProvider(appId: resolvedConfig.appId);
++    _deviceAuthProvider = DeviceAuthProvider(
++      coreRuntime: runtime,
++      baseUrl: dac.authBaseUrl,
++    );
+   }
+ 
+   /// Check whether the CapabilityModule allows a given feature.
+@@ -2629,6 +2725,8 @@ class Synheart {
+       _isConfigured = false;
+       _isRunning = false;
+       _initCompleter = null;
++      _deviceAuthViaCoreRuntime = false;
++      _sdkCryptoCallbacksAttached = false;
+ 
+       SynheartLogger.log('[Synheart] Disposed');
+       // Allow re-initialization by creating a fresh instance next time.
+@@ -2642,18 +2740,6 @@ class Synheart {
+     }
+   }
+ 
+-  String _accountApiBaseUrl() {
+-    final configured = _config?.sync.baseUrl.trim();
+-    if (configured != null && configured.isNotEmpty) {
+-      return configured;
+-    }
+-    return ApiEndpoints.defaultAuthBaseUrl;
+-  }
+-
+-  Uri _buildAccountApiUri(String path) {
+-    final base = Uri.parse(_accountApiBaseUrl());
+-    return base.resolve(path);
+-  }
+ }
+ 
+ /// Sync result from a push/pull cycle.
+diff --git a/lib/synheart_core.dart b/lib/synheart_core.dart
+index 340ac5f..2cde3fa 100644
+--- a/lib/synheart_core.dart
++++ b/lib/synheart_core.dart
+@@ -77,6 +77,7 @@ export 'src/modules/cloud/cloud_exceptions.dart';
+ 
+ // Core Runtime Bridge (FFI to synheart-core-runtime for HSI, baselines, lab, sync)
+ export 'src/core_runtime/core_runtime_bridge.dart';
++export 'src/core_runtime/sdk_crypto_callbacks.dart';
+ 
+ // Watch Session (adapter around synheart_session for watch relay)
+ export 'src/modules/session/watch_session_module.dart';
+diff --git a/pubspec.lock b/pubspec.lock
+index 023a4b6..ca95c5a 100644
+--- a/pubspec.lock
++++ b/pubspec.lock
+@@ -489,7 +489,7 @@ packages:
+     source: hosted
+     version: "2.1.8"
+   pointycastle:
+-    dependency: transitive
++    dependency: "direct main"
+     description:
+       name: pointycastle
+       sha256: "4be0097fcf3fd3e8449e53730c631200ebc7b88016acecab2b0da2f0149222fe"
+diff --git a/pubspec.yaml b/pubspec.yaml
+index 9c10f01..344f5a2 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -24,15 +24,15 @@ dependencies:
+ 
+   # Synheart interpretation SDKs (local)
+   synheart_wear:
+-    path: ../synheart-wear-flutter
++    path: ../synheart-wear-dart
+   synheart_session:
+-    path: ../synheart-session-flutter
++    path: ../synheart-session-dart
+   # synheart_emotion and synheart_focus removed — HSV heads now computed by
+   # synheart-runtime and accessed via RuntimeBridge.lastHsv().
+   synheart_behavior:
+-    path: ../synheart-behavior-flutter
++    path: ../synheart-behavior-dart
+   synheart_auth:
+-    path: ../synheart-auth-flutter
++    path: ../synheart-auth-dart
+ 
+   # FFI for synheart-runtime native library
+   ffi: ^2.1.0
+@@ -40,6 +40,7 @@ dependencies:
+   # Core dependencies
+   rxdart: ^0.28.0
+   collection: ^1.18.0
++  pointycastle: ^3.9.1
+ 
+   # Cryptography for HMAC verification and artifact SHA-256
+   crypto: ^3.0.3
+@@ -69,11 +70,11 @@ dependencies:
+ 
+ dependency_overrides:
+   synheart_wear:
+-    path: ../synheart-wear-flutter
++    path: ../synheart-wear-dart
+   synheart_behavior:
+-    path: ../synheart-behavior-flutter
++    path: ../synheart-behavior-dart
+   synheart_auth:
+-    path: ../synheart-auth-flutter
++    path: ../synheart-auth-dart
+ 
+ dev_dependencies:
+   flutter_test:
