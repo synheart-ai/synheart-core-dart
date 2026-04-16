@@ -29,6 +29,7 @@ import 'config/activation_manager.dart';
 import 'modules/cloud/device_auth_provider.dart';
 import 'core_runtime/core_runtime_bridge.dart';
 import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
+import 'core_runtime/session_ingest_buffer.dart';
 
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
@@ -74,6 +75,12 @@ class Synheart {
 
   /// core runtime bridge (FFI). Null when native lib unavailable.
   static CoreRuntimeBridge? _coreRuntime;
+
+  /// Batched event ingest buffer — accumulates events and flushes every 5s.
+  static SessionIngestBuffer? _ingestBuffer;
+
+  /// Callback for HSI output from the ingest buffer.
+  static void Function(String hsiJson)? onHsi;
 
   Synheart._();
 
@@ -743,8 +750,7 @@ class Synheart {
         );
       } else {
         SynheartLogger.log(
-          '[Synheart] Core runtime bridge loaded. isLabAvailable=${_coreRuntime!.isLabAvailable} '
-          '(Lab requires synheart-engine built with: cargo build --release --features lab)',
+          '[Synheart] Core runtime bridge loaded. lab=${_coreRuntime!.isLabAvailable ? "ready" : "not built"}',
         );
       }
 
@@ -856,6 +862,14 @@ class Synheart {
           mode: shared._config?.mode ?? SynheartMode.personal,
         );
         shared._isRunning = true;
+
+        // Start batched ingest buffer (5s flush cycle).
+        _ingestBuffer?.stop();
+        _ingestBuffer = SessionIngestBuffer(
+          bridge: _coreRuntime!,
+          onHsi: onHsi,
+        )..start();
+
         return shared._currentSessionHandle;
       }
     }
@@ -872,6 +886,10 @@ class Synheart {
   /// clear ephemeral buffers, and prevent further HSI export.
   static Future<void> stopSession() async {
     if (_coreRuntime != null) {
+      // Stop ingest buffer (final flush drains remaining events).
+      _ingestBuffer?.stop();
+      _ingestBuffer = null;
+
       _coreRuntime!.stopSession();
       shared._currentSessionHandle = null;
       shared._isRunning = false;
@@ -1435,13 +1453,80 @@ class Synheart {
   }
 
   /// Push a wear HR event into runtime and optionally synthesize RR.
-  /// Use when HR is coming from external/watch channels not wired to WearModule.
-  static void pushWearHr(int tsMs, double bpm) {
-    _coreRuntime?.pushHr(tsMs, bpm);
+  /// Push a heart rate sample. Routes through the ingest buffer when a
+  /// session is active; falls back to direct FFI otherwise.
+  static void pushWearHr(int tsMs, double bpm, {String provider = 'default_sensor'}) {
+    if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
+      _ingestBuffer!.addHr(tsMs, bpm, provider: provider);
+    } else {
+      _coreRuntime?.pushHr(tsMs, bpm);
+    }
   }
 
-  static void pushRr(int tsMs, double rrMs) {
-    _coreRuntime?.pushRr(tsMs, rrMs);
+  /// Push an RR interval. Routes through the ingest buffer when active.
+  static void pushRr(int tsMs, double rrMs, {String provider = 'default_sensor'}) {
+    if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
+      _ingestBuffer!.addRr(tsMs, rrMs, provider: provider);
+    } else {
+      _coreRuntime?.pushRr(tsMs, rrMs);
+    }
+  }
+
+  /// Push vendor-reported HRV metrics (Tier 2).
+  static void pushVendorHrv(int tsMs, {
+    double rmssd = -1.0,
+    double sdnn = -1.0,
+    double stress = -1.0,
+    double recovery = -1.0,
+    String provider = 'default_sensor',
+  }) {
+    if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
+      _ingestBuffer!.addVendorHrv(tsMs,
+        rmssd: rmssd > 0 ? rmssd : null,
+        sdnn: sdnn > 0 ? sdnn : null,
+        stress: stress >= 0 ? stress : null,
+        recovery: recovery >= 0 ? recovery : null,
+        provider: provider,
+      );
+    } else {
+      _coreRuntime?.pushVendorHrv(tsMs,
+          rmssd: rmssd, sdnn: sdnn, stress: stress, recovery: recovery);
+    }
+  }
+
+  /// Start the batched ingest buffer and ensure the runtime pipeline is created.
+  /// Use when the app manages its own session lifecycle but still wants
+  /// batched event ingestion and HSI production.
+  static void startIngestBuffer() {
+    if (_coreRuntime == null) return;
+
+    // Create the pipeline without the background tick task.
+    // The ingest buffer's 5s flush handles ticking via ingestBatch.
+    _coreRuntime!.ensurePipeline();
+
+    _ingestBuffer?.stop();
+    _ingestBuffer = SessionIngestBuffer(
+      bridge: _coreRuntime!,
+      onHsi: onHsi,
+    )..start();
+  }
+
+  /// Stop the ingest buffer (final flush drains remaining events).
+  static void stopIngestBuffer() {
+    _ingestBuffer?.stop();
+    _ingestBuffer = null;
+  }
+
+  /// Advance the engine pipeline clock directly. Prefer the ingest buffer
+  /// pattern for mobile — this is exposed for watch engine / advanced use.
+  static String? tick(int nowMs) {
+    return _coreRuntime?.tick(nowMs);
+  }
+
+  /// Ingest a pre-built event batch. Prefer [pushWearHr]/[pushRr] +
+  /// automatic buffer flush for mobile — this is for watch engine / advanced use.
+  static String? ingestBatch(String batchJson, int nowMs) {
+    return _coreRuntime?.ingestBatch(batchJson, nowMs);
   }
 
   /// Last preprocessed features from the engine (HRV, motion, quality, SRM context).

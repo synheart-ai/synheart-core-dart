@@ -7,7 +7,6 @@ library;
 
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:io' show Platform;
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
@@ -102,16 +101,6 @@ class CoreRuntimeBridge {
     void Function(String line)? onLine,
   }) {
     if (_loggingInstalled) return 1;
-    // Skip native logging on Android — the Rust tracing subscriber retains
-    // a stale NativeCallable.listener pointer across Flutter hot restarts
-    // (the .so is not unloaded), causing "Cannot invoke native callback from
-    // a leaf call" crashes during synheart_core_new.  Rust logs still go to
-    // Android logcat via tracing-android; this only disables the Dart
-    // forwarder.
-    if (Platform.isAndroid) {
-      _loggingInstalled = true;
-      return 1;
-    }
     final lib = ffi ?? SynheartCoreFFI.load();
     if (lib == null) return -2;
     final chosen = envFilter ?? defaultRuntimeLogEnvFilter;
@@ -301,10 +290,27 @@ class CoreRuntimeBridge {
   /// Whether a session is running.
   bool get isRunning => _ffi.isRunning(_handle) != 0;
 
+  /// Create the engine pipeline without starting a background tick task.
+  /// Used by the ingest buffer which handles ticking via ingestBatch.
+  void ensurePipeline() => _ffi.ensurePipeline(_handle);
+
   // ── Sensor push ──────────────────────────────────────────────────────
 
   void pushRr(int tsMs, double rrMs) => _ffi.pushRr(_handle, tsMs, rrMs);
   void pushHr(int tsMs, double bpm) => _ffi.pushHr(_handle, tsMs, bpm);
+
+  /// Advance the pipeline clock. Returns HSI JSON if a window completed.
+  String? tick(int nowMs) => _readAndFree(_ffi.tick(_handle, nowMs));
+
+  /// Push vendor-reported HRV metrics (Tier 2).
+  /// Pass -1.0 for unavailable fields.
+  void pushVendorHrv(int tsMs, {
+    double rmssd = -1.0,
+    double sdnn = -1.0,
+    double stress = -1.0,
+    double recovery = -1.0,
+  }) => _ffi.pushVendorHrv(_handle, tsMs, rmssd, sdnn, stress, recovery);
+
   void pushAccel(int tsMs, double x, double y, double z) =>
       _ffi.pushAccel(_handle, tsMs, x, y, z);
   void pushBehavior(int tsMs, int eventType, double value) =>
