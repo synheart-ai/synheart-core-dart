@@ -67,6 +67,8 @@ export 'src/modules/interfaces/feature_providers.dart';
 export 'src/modules/capabilities/capability_module.dart';
 export 'src/modules/capabilities/capability_token.dart';
 export 'src/modules/consent/consent_module.dart';
+export 'src/modules/consent/consent_effective_state.dart';
+export 'src/modules/consent/consent_form.dart';
 export 'src/modules/consent/consent_profile.dart';
 export 'src/modules/consent/consent_token.dart';
 export 'src/modules/consent/consent_ui.dart';

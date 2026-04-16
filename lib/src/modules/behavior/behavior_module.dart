@@ -70,10 +70,10 @@ class BehaviorModule extends BaseSynheartModule
   /// ```
   sb.SynheartBehavior? get synheartBehavior => _synheartBehavior;
 
-
   @override
   List<BehaviorEvent> rawEvents(WindowType window) {
-    if (!_consent.current().allowsChannel('behavior.digital_activity')) return [];
+    if (!_consent.current().allowsChannel('behavior.digital_activity'))
+      return [];
     return _aggregator.getEvents(window);
   }
 
@@ -188,7 +188,8 @@ class BehaviorModule extends BaseSynheartModule
       // Subscribe to manual event stream only when consent is granted.
       _eventSubscription = _eventStream.events.listen(
         (event) {
-          if (!_consent.current().allowsChannel('behavior.digital_activity')) return;
+          if (!_consent.current().allowsChannel('behavior.digital_activity'))
+            return;
           _aggregator.addEvent(event);
         },
         onError: (e, st) => SynheartLogger.log(
@@ -275,9 +276,12 @@ class BehaviorModule extends BaseSynheartModule
             ? event.metrics['direction'] as String
             : null;
         return BehaviorEvent.swipe(velocity: velocity, direction: direction);
-      case sb.BehaviorEventType.app_switch:
-        return BehaviorEvent.appSwitch();
       case sb.BehaviorEventType.clipboard:
+        return null;
+      // Forward-compat: newer synheart_behavior versions may add variants
+      // (e.g. app_switch) that this SDK doesn't yet map. Drop them silently.
+      // ignore: unreachable_switch_default
+      default:
         return null;
     }
   }

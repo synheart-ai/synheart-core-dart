@@ -681,6 +681,15 @@ The Core SDK requires platform-specific configuration for data collection module
 
 #### Android Configuration
 
+> **Migration note (plugin rewrite):** Earlier versions of this package
+> shipped an Android *application* scaffold whose manifest was merged into
+> consumer apps at build time. Starting with the plugin-module rewrite,
+> `synheart_core` ships only a library manifest — **no permissions are
+> merged in automatically anymore**. Consumer apps must declare every
+> permission and component below themselves, or the corresponding module
+> will silently fail at runtime (Health Connect reads return empty, the
+> notification listener won't bind, phone-call state events won't fire).
+
 **AndroidManifest.xml** - Add the following permissions and services:
 
 ```xml

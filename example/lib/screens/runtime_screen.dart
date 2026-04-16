@@ -624,7 +624,7 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
       return;
     }
     // Access bridge directly via the runtime module
-    final bridge = Synheart.shared.runtimeModule?.bridge;
+    final bridge = Synheart.shared.coreRuntime;
     if (bridge == null) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -636,7 +636,7 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
   }
 
   void _pushSyntheticHR() {
-    final bridge = Synheart.shared.runtimeModule?.bridge;
+    final bridge = Synheart.shared.coreRuntime;
     if (bridge == null) {
       _showSnackBar('Runtime not available');
       return;
@@ -648,7 +648,7 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
   }
 
   void _pushSyntheticBehavior() {
-    final bridge = Synheart.shared.runtimeModule?.bridge;
+    final bridge = Synheart.shared.coreRuntime;
     if (bridge == null) {
       _showSnackBar('Runtime not available');
       return;
@@ -660,22 +660,17 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
   }
 
   void _manualTick() {
-    final bridge = Synheart.shared.runtimeModule?.bridge;
-    if (bridge == null) {
-      _showSnackBar('Runtime not available');
-      return;
-    }
-
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final hsi = bridge.tick(now);
+    // Core runtime no longer exposes a single-step `tick`; snapshot the latest
+    // HSI string the engine has published (same source as [onHSIUpdate]).
+    final hsi = Synheart.shared.currentState;
     if (hsi != null) {
       setState(() {
         _hsiLog.insert(0, hsi);
         if (_hsiLog.length > 50) _hsiLog.removeLast();
       });
-      _showSnackBar('Tick produced HSI frame');
+      _showSnackBar('Logged latest HSI frame');
     } else {
-      _showSnackBar('Tick returned null (not enough data yet)');
+      _showSnackBar('No HSI frame yet (start a session and wait for updates)');
     }
   }
 

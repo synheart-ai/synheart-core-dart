@@ -64,24 +64,21 @@ Future<void> main() async {
 
   // 7. Pre-processed data access (internal — R&D / training only)
   print('[Runtime] Internal diagnostics example:');
-  final runtimeModule = Synheart.shared.runtimeModule;
-  if (runtimeModule != null) {
-    final json = runtimeModule.bridge?.lastPreprocessed();
-    if (json != null) {
-      try {
-        final parsed = jsonDecode(json) as Map<String, dynamic>;
-        final window = PreprocessedWindow.fromJson(parsed);
-        print('  Quality score: ${window.quality.score}');
-        if (window.derivedFeatures.hrv != null) {
-          print('  HRV RMSSD: ${window.derivedFeatures.hrv!.rmssdMs}ms');
-        }
-        print('  Embeddings dimension: ${window.embeddings.signalEmbedding.dimension}');
-        print(
-          'SRM ready count: ${window.srmContext.readyCount}/${window.srmContext.totalCount}',
-        );
-      } catch (e) {
-        print('  Error parsing pre-processed data: $e'        );
+  final json = Synheart.lastFeatures;
+  if (json != null) {
+    try {
+      final parsed = jsonDecode(json) as Map<String, dynamic>;
+      final window = PreprocessedWindow.fromJson(parsed);
+      print('  Quality score: ${window.quality.score}');
+      if (window.derivedFeatures.hrv != null) {
+        print('  HRV RMSSD: ${window.derivedFeatures.hrv!.rmssdMs}ms');
       }
+      print('  Embeddings dimension: ${window.embeddings.signalEmbedding.dimension}');
+      print(
+        'SRM ready count: ${window.srmContext.readyCount}/${window.srmContext.totalCount}',
+      );
+    } catch (e) {
+      print('  Error parsing pre-processed data: $e');
     }
   }
 
