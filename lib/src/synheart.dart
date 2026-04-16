@@ -545,17 +545,10 @@ class Synheart {
     if (effRuntimeFilter != null && effRuntimeFilter.isNotEmpty) {
       CoreRuntimeBridge.defaultRuntimeLogEnvFilter = effRuntimeFilter;
     }
-    final logRc = CoreRuntimeBridge.initRuntimeLogging(
-      envFilter: effRuntimeFilter,
-      onLine: runtimeLogForwarder,
-    );
-    if (logRc < 0) {
-      SynheartLogger.log(
-        '[Synheart] synheart_core_init_logging returned $logRc (Core Runtime diagnostics may be limited)',
-      );
-    }
-
-    // Initialize core runtime bridge (best-effort; null if native lib absent)
+    // Initialize core runtime bridge (best-effort; null if native lib absent).
+    // NOTE: logging is deferred until AFTER coreNew — the Rust init emits
+    // logs synchronously which crashes the async NativeCallable.listener
+    // trampoline if it's already registered.
     try {
       final coreJson = <String, dynamic>{
         'app_id': resolvedCfg.appId,
@@ -582,6 +575,16 @@ class Synheart {
         };
       }
       _coreRuntime = CoreRuntimeBridge.create(coreJson);
+      // Now safe to register the logging callback — coreNew has returned.
+      final logRc = CoreRuntimeBridge.initRuntimeLogging(
+        envFilter: effRuntimeFilter,
+        onLine: runtimeLogForwarder,
+      );
+      if (logRc < 0) {
+        SynheartLogger.log(
+          '[Synheart] synheart_core_init_logging returned $logRc (Core Runtime diagnostics may be limited)',
+        );
+      }
       if (_coreRuntime != null) {
         SynheartLogger.log('[Synheart] core runtime bridge loaded');
         if (_coreRuntime!.sdkDeviceAuthAvailable) {

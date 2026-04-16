@@ -7,6 +7,7 @@ library;
 
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:io' show Platform;
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
@@ -101,6 +102,16 @@ class CoreRuntimeBridge {
     void Function(String line)? onLine,
   }) {
     if (_loggingInstalled) return 1;
+    // Skip native logging on Android — the Rust tracing subscriber retains
+    // a stale NativeCallable.listener pointer across Flutter hot restarts
+    // (the .so is not unloaded), causing "Cannot invoke native callback from
+    // a leaf call" crashes during synheart_core_new.  Rust logs still go to
+    // Android logcat via tracing-android; this only disables the Dart
+    // forwarder.
+    if (Platform.isAndroid) {
+      _loggingInstalled = true;
+      return 1;
+    }
     final lib = ffi ?? SynheartCoreFFI.load();
     if (lib == null) return -2;
     final chosen = envFilter ?? defaultRuntimeLogEnvFilter;
@@ -141,14 +152,14 @@ class CoreRuntimeBridge {
     final ffi = SynheartCoreFFI.load();
     if (ffi == null) return null;
 
-    // §1b: logging before core runtime bridge is created (idempotent if app called [initRuntimeLogging]).
-    initRuntimeLogging(ffi: ffi);
-
     final json = jsonEncode(config);
     final cJson = json.toNativeUtf8();
     try {
       final handle = ffi.coreNew(cJson.cast());
       if (handle == nullptr) return null;
+      // §1b: logging after core creation — avoids crash from async
+      // NativeCallable.listener trampoline during synchronous coreNew.
+      initRuntimeLogging(ffi: ffi);
       return CoreRuntimeBridge._(ffi, handle);
     } finally {
       malloc.free(cJson);
