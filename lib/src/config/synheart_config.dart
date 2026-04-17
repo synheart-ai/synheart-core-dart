@@ -1,8 +1,22 @@
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
+
 import '../modules/capabilities/capability_token.dart';
 import '../modules/interfaces/auth_provider.dart';
 import 'api_endpoints.dart';
 import 'synheart_mode.dart';
 import 'synheart_errors.dart';
+
+String _defaultPlatformId() {
+  if (kIsWeb) return 'web';
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.android:
+      return 'android';
+    case TargetPlatform.iOS:
+      return 'ios';
+    default:
+      return 'flutter';
+  }
+}
 
 /// Device authentication configuration.
 ///
@@ -141,7 +155,7 @@ class SynheartConfig {
     this.developer = '',
     this.additionalAppMetadata = const {},
     this.deviceId = '',
-    this.platform = 'flutter',
+    String? platform,
     this.storage = const StorageConfig(),
     this.sync = const SyncConfig(),
     this.privacy = const PrivacyConfig(),
@@ -156,7 +170,7 @@ class SynheartConfig {
     this.allowUnsignedCapabilities = false,
     this.batchIngestOnStop = false,
     this.runtimeLogEnvFilter,
-  });
+  }) : platform = platform ?? _defaultPlatformId();
 
   /// Create default configuration
   factory SynheartConfig.defaults() {
@@ -345,10 +359,11 @@ class ConsentConfig {
     this.appId,
     this.appApiKey,
     this.deviceId,
-    this.platform = 'flutter',
+    String? platform,
     this.userId,
     this.region,
-  }) : consentServiceUrl = (consentServiceUrl != null && consentServiceUrl.isNotEmpty)
+  }) : platform = platform ?? _defaultPlatformId(),
+       consentServiceUrl = (consentServiceUrl != null && consentServiceUrl.isNotEmpty)
            ? consentServiceUrl
            : ApiEndpoints.resolvedConsentBaseUrl;
 
