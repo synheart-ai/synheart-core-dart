@@ -155,10 +155,47 @@ class SessionIngestBuffer {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     _buffer.clear();
 
-    debugPrint('[IngestBuffer] flushing $count events ($types), json=${batchJson.length} bytes');
+    debugPrint('[IngestBuffer] flushing $count events ($types)');
     final hsi = _bridge.ingestBatch(batchJson, nowMs);
-    debugPrint('[IngestBuffer] result: ${hsi != null ? "HSI (${hsi.length} chars)" : "null"}');
-    if (hsi != null) onHsi?.call(hsi);
+    if (hsi != null) {
+      try {
+        final parsed = jsonDecode(hsi) as Map<String, dynamic>;
+        final axes = parsed['axes'] as Map<String, dynamic>? ?? {};
+        final readings = <String>[];
+        for (final body in axes.values) {
+          final list = (body is Map ? body['readings'] : body) as List? ?? [];
+          for (final r in list) {
+            if (r is Map) {
+              final a = r['axis'] ?? r['name'] ?? '?';
+              final s = r['score'];
+              final c = r['confidence'];
+              final t = r['source_tier'];
+              final m = (r['model_id'] as String?)?.split('://').last ?? '?';
+              final scoreStr = s is num
+                  ? s.toStringAsFixed(3)
+                  : s is Map
+                      ? s.entries.map((e) => '${e.key}=${(e.value as num).toStringAsFixed(2)}').join(',')
+                      : '$s';
+              readings.add('$a=$scoreStr(c=${(c as num).toStringAsFixed(2)},t$t,$m)');
+            }
+          }
+        }
+        debugPrint('[HSI] ${readings.join(" | ")}');
+      } catch (e) {
+        debugPrint('[IngestBuffer] HSI (${hsi.length} chars)');
+      }
+      // Dump feature diagnostics for tier debugging
+      try {
+        final features = _bridge.lastFeatures();
+        if (features != null) {
+          final preview = features.length > 300 ? features.substring(0, 300) : features;
+          debugPrint('[Features] ${features.length} chars: $preview');
+        }
+      } catch (_) {}
+      onHsi?.call(hsi);
+    } else {
+      debugPrint('[IngestBuffer] result: null');
+    }
     return hsi;
   }
 }

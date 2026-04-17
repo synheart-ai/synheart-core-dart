@@ -85,7 +85,7 @@ class CoreRuntimeBridge {
 
   /// Default `env_filter` when [initRuntimeLogging] is called with a null/empty filter.
   // static String defaultRuntimeLogEnvFilter = 'info,synheart_core_runtime=debug';
-  static String defaultRuntimeLogEnvFilter = 'synheart_core_runtime=trace,info';
+  static String defaultRuntimeLogEnvFilter = 'info';
 
   static bool _loggingInstalled = false;
   static NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>?
