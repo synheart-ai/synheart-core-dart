@@ -167,14 +167,14 @@ class SessionIngestBuffer {
           for (final r in list) {
             if (r is Map) {
               final a = r['axis'] ?? r['name'] ?? '?';
-              final s = r['score'];
+              final s = r['score'] ?? r['value'];
               final c = r['confidence'];
               final t = r['source_tier'];
               final m = (r['model_id'] as String?)?.split('://').last ?? '?';
               final scoreStr = s is num
                   ? s.toStringAsFixed(3)
                   : s is Map
-                      ? s.entries.map((e) => '${e.key}=${(e.value as num).toStringAsFixed(2)}').join(',')
+                      ? s.entries.where((e) => e.value is num).map((e) => '${e.key}=${(e.value as num).toStringAsFixed(2)}').join(',')
                       : '$s';
               readings.add('$a=$scoreStr(c=${(c as num).toStringAsFixed(2)},t$t,$m)');
             }
