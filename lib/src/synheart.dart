@@ -121,6 +121,10 @@ class Synheart {
   String? _userId;
   SynheartConfig? _config;
   bool? _batchIngestOnStop;
+  static String? _lastUploadBatchId;
+  static DateTime? _lastUploadAt;
+  static String? _lastUploadError;
+  static DateTime? _lastUploadAttemptAt;
 
   // Session handle
   SessionHandle? _currentSessionHandle;
@@ -434,12 +438,24 @@ class Synheart {
     try {
       _coreRuntime = CoreRuntimeBridge.create({
         'app_id': appId,
+        'org_id': 'org_synheart_eqf-5a',
         'subject_id': subjectId,
         'mode': shared._config?.mode.name ?? 'personal',
         'device_id': shared._config?.deviceId ?? '',
         'app_version': shared._config?.appVersion ?? '0.0.0',
         'platform': 'flutter',
         'storage': {'enabled': shared._config?.storage.enabled ?? true},
+        'ingest': {
+          'enabled': true,
+          'hsi': true,
+          'lab': true,
+          'queue_db_path': '',
+        },
+        'device_auth': {
+          'enabled': true,
+          'auth_base_url':
+              shared._config?.deviceAuthConfig?.authBaseUrl ?? '',
+        },
         'sync': {
           'enabled': shared._config?.sync.enabled ?? false,
           'base_url': shared._config?.sync.baseUrl ?? '',
@@ -452,6 +468,26 @@ class Synheart {
         SynheartLogger.log(
           '[Synheart] core runtime bridge loaded (ensureRuntimeBridge)',
         );
+        // SMK storage callbacks must be registered immediately after handle
+        // creation and before any session lifecycle APIs.
+        final storageRc = _coreRuntime!.setStorageCallbacks();
+        if (storageRc == 0) {
+          SynheartLogger.log(
+            '[Synheart] Native secure-storage callbacks attached (synheart_native_secure_*).',
+          );
+        } else if (storageRc == -2) {
+          SynheartLogger.log(
+            '[Synheart] ⚠️ Core build lacks synheart_core_set_storage_callbacks; state will not persist.',
+          );
+        } else if (storageRc == -3) {
+          SynheartLogger.log(
+            '[Synheart] ⚠️ synheart_native_secure_* symbols not found — consent tokens and device records will not persist across app restarts.',
+          );
+        } else {
+          SynheartLogger.log(
+            '[Synheart] synheart_core_set_storage_callbacks failed: $storageRc',
+          );
+        }
       }
     } catch (e) {
       SynheartLogger.log('[Synheart] core runtime bridge unavailable: $e');
@@ -552,6 +588,7 @@ class Synheart {
     try {
       final coreJson = <String, dynamic>{
         'app_id': resolvedCfg.appId,
+        'org_id': 'org_synheart_eqf-5a',
         'subject_id': resolvedCfg.subjectId,
         'client_id': resolvedCfg.subjectId,
         'api_base_url': resolvedCfg.sync.baseUrl,
@@ -562,18 +599,22 @@ class Synheart {
         'app_version': resolvedCfg.appVersion,
         'platform': resolvedCfg.platform,
         'storage': {'enabled': resolvedCfg.storage.enabled},
+        'ingest': {
+          'enabled': true,
+          'hsi': true,
+          'lab': true,
+          'queue_db_path': '',
+        },
+        'device_auth': {
+          'enabled': true,
+          'auth_base_url': resolvedCfg.deviceAuthConfig?.authBaseUrl ?? '',
+        },
         'sync': {
           'enabled': resolvedCfg.sync.enabled,
           'base_url': resolvedCfg.sync.baseUrl,
         },
         'privacy': {'allow_research': resolvedCfg.privacy.allowResearch},
       };
-      if (resolvedCfg.deviceAuthConfig != null) {
-        coreJson['device_auth'] = {
-          'enabled': true,
-          'auth_base_url': resolvedCfg.deviceAuthConfig!.authBaseUrl,
-        };
-      }
       _coreRuntime = CoreRuntimeBridge.create(coreJson);
       // Now safe to register the logging callback — coreNew has returned.
       final logRc = CoreRuntimeBridge.initRuntimeLogging(
@@ -587,7 +628,32 @@ class Synheart {
       }
       if (_coreRuntime != null) {
         SynheartLogger.log('[Synheart] core runtime bridge loaded');
-        if (_coreRuntime!.sdkDeviceAuthAvailable) {
+        // SMK storage callbacks must be registered immediately after handle
+        // creation and before any session lifecycle APIs.
+        final storageRc = _coreRuntime!.setStorageCallbacks();
+        if (storageRc == 0) {
+          SynheartLogger.log(
+            '[Synheart] Native secure-storage callbacks attached (synheart_native_secure_*).',
+          );
+        } else if (storageRc == -2) {
+          SynheartLogger.log(
+            '[Synheart] ⚠️ Core build lacks synheart_core_set_storage_callbacks; state will not persist.',
+          );
+        } else if (storageRc == -3) {
+          SynheartLogger.log(
+            '[Synheart] ⚠️ synheart_native_secure_* symbols not found — consent tokens and device records will not persist across app restarts.',
+          );
+        } else {
+          SynheartLogger.log(
+            '[Synheart] synheart_core_set_storage_callbacks failed: $storageRc',
+          );
+        }
+
+        if (_coreRuntime!.deviceAuthTemporarilyDisabledForSubjectCompat) {
+          SynheartLogger.log(
+            '[Synheart] Device-auth callbacks skipped: temporary subject_id compatibility guard disabled device_auth in core-new config.',
+          );
+        } else if (_coreRuntime!.sdkDeviceAuthAvailable) {
           // Attach crypto callbacks before any core SDK registration/proof
           // API is used (SDK auth sequence §2).
           //
@@ -613,29 +679,6 @@ class Synheart {
                 '[Synheart] Native crypto callbacks attached (synheart_native_*).',
               );
             }
-          }
-          // Attach host-provided secure-storage callbacks so consent tokens,
-          // device records, etc. survive app restarts. Resolves
-          // `synheart_native_secure_store` / `…_load` / `…_delete` from the
-          // process (iOS) or the Android native lib. No-op on older core
-          // builds that don't export `synheart_core_set_storage_callbacks`.
-          final storageRc = _coreRuntime!.setStorageCallbacks();
-          if (storageRc == 0) {
-            SynheartLogger.log(
-              '[Synheart] Native secure-storage callbacks attached (synheart_native_secure_*).',
-            );
-          } else if (storageRc == -2) {
-            SynheartLogger.log(
-              '[Synheart] ⚠️ Core build lacks synheart_core_set_storage_callbacks; state will not persist.',
-            );
-          } else if (storageRc == -3) {
-            SynheartLogger.log(
-              '[Synheart] ⚠️ synheart_native_secure_* symbols not found — consent tokens and device records will not persist across app restarts.',
-            );
-          } else {
-            SynheartLogger.log(
-              '[Synheart] synheart_core_set_storage_callbacks failed: $storageRc',
-            );
           }
         }
       }
@@ -848,6 +891,7 @@ class Synheart {
   /// seconds (Session SDK boundary). If null, session runs until [stopSession].
   static Future<SessionHandle?> startSession({int? durationSec}) async {
     if (_coreRuntime != null) {
+      await shared._prepareRuntimeAuthForSessionStart();
       final result = _coreRuntime!.startSession();
       if (result != null) {
         shared._currentSessionHandle = SessionHandle(
@@ -855,12 +899,32 @@ class Synheart {
           startedAtMs: result['started_at_ms'] as int,
           mode: shared._config?.mode ?? SynheartMode.personal,
         );
+        await shared._startRuntimeLinkedCollection();
         shared._isRunning = true;
         return shared._currentSessionHandle;
       }
     }
     await shared._startDataCollection(durationSec: durationSec);
     return shared._currentSessionHandle;
+  }
+
+  Future<void> _prepareRuntimeAuthForSessionStart() async {
+    final cfg = _config;
+    if (cfg == null || cfg.deviceAuthConfig == null) return;
+    if (_deviceAuthProvider != null) return;
+    try {
+      SynheartLogger.log(
+        '[Synheart] Session start preflight: initializing device auth...',
+      );
+      await _initDeviceAuth(cfg);
+      SynheartLogger.log(
+        '[Synheart] Session start preflight: device auth ready.',
+      );
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] Session start preflight: device auth init failed ($e). Continuing in local mode.',
+      );
+    }
   }
 
   /// Whether the main data-collection session is currently running.
@@ -873,6 +937,7 @@ class Synheart {
   static Future<void> stopSession() async {
     if (_coreRuntime != null) {
       _coreRuntime!.stopSession();
+      await shared._stopRuntimeLinkedCollection();
       shared._currentSessionHandle = null;
       shared._isRunning = false;
       return;
@@ -1147,23 +1212,27 @@ class Synheart {
   }
 
   /// Number of HSI snapshots pending upload (0 if cloud connector not enabled).
-  static int get uploadQueueLength => 0;
+  static int get uploadQueueLength => _coreRuntime?.uploadQueueLength ?? 0;
 
   /// Batch id from the last successful cloud ingest (null if none yet).
-  static String? get lastUploadBatchId => null;
+  static String? get lastUploadBatchId => _lastUploadBatchId;
 
   /// Time of the last successful cloud ingest (null if none yet).
-  static DateTime? get lastUploadAt => null;
+  static DateTime? get lastUploadAt => _lastUploadAt;
 
   /// Last upload error message (null when last attempt succeeded or no attempt yet).
-  static String? get lastUploadError => null;
+  static String? get lastUploadError => _lastUploadError;
 
   /// Time of the last upload attempt (success or failure); null if no attempt yet.
-  static DateTime? get lastUploadAttemptAt => null;
+  static DateTime? get lastUploadAttemptAt => _lastUploadAttemptAt;
+
+  /// Bridge-first ingestion facade for queue + upload orchestration.
+  static SynheartIngestion get ingestion => SynheartIngestion.instance;
 
   /// Force-upload queued HSI snapshots through Cloud Connector now.
   ///
-  /// No-op if Cloud Connector is not configured.
+  /// Deprecated: use [Synheart.ingestion.flushIfEligible].
+  @Deprecated('Use Synheart.ingestion.flushIfEligible()')
   static Future<void> uploadHsiNow() async {
     return shared._uploadHsiNow();
   }
@@ -1171,7 +1240,8 @@ class Synheart {
   /// Enqueue raw HSI JSON strings collected externally (e.g. persisted from a
   /// foreground session) so they are included in the next [uploadHsiNow] call.
   ///
-  /// No-op if Cloud Connector is not configured or list is empty.
+  /// Deprecated: use [Synheart.ingestion.enqueueHsiWindows].
+  @Deprecated('Use Synheart.ingestion.enqueueHsiWindows()')
   static Future<void> enqueueHsiSnapshots(List<String> hsiJsons) async {
     return shared._enqueueHsiSnapshots(hsiJsons);
   }
@@ -1180,39 +1250,38 @@ class Synheart {
 
   /// Ingest a session payload via the lab ingestion service.
   /// Requires `behavior` consent. Returns a [LabIngestResponse].
+  @Deprecated('Use Synheart.ingestion.submitSessionArtifacts(...)')
   static Future<LabIngestResponse> ingestSession(
     Map<String, dynamic> payload,
   ) async {
-    return const LabIngestResponse(
-      success: false,
-      statusCode: 0,
-      errorMessage: 'LabIngestModule removed — use core runtime bridge',
+    final response = await ingestion.submitSessionArtifacts(payload);
+    return LabIngestResponse(
+      success: response.success,
+      statusCode: response.statusCode,
+      errorMessage: response.errorMessage,
     );
   }
 
   /// Ingest a metadata payload via the lab ingestion service.
   /// Requires `biosignals` consent. Returns a [LabIngestResponse].
+  @Deprecated('Use Synheart.ingestion.submitMetadata(...)')
   static Future<LabIngestResponse> ingestMetadata(
     Map<String, dynamic> payload,
   ) async {
-    return const LabIngestResponse(
-      success: false,
-      statusCode: 0,
-      errorMessage: 'LabIngestModule removed — use core runtime bridge',
+    final response = await ingestion.submitMetadata(payload);
+    return LabIngestResponse(
+      success: response.success,
+      statusCode: response.statusCode,
+      errorMessage: response.errorMessage,
     );
   }
 
   Future<void> _uploadHsiNow() async {
-    // Cloud connector removed — no-op.
+    await ingestion.flushIfEligible();
   }
 
   Future<void> _enqueueHsiSnapshots(List<String> hsiJsons) async {
-    // Cloud connector removed — no-op.
-  }
-
-  /// Build and ingest a platform session payload from internal SDK data.
-  Future<void> _autoIngestSession(SessionHandle session) async {
-    // No-op: lab ingest module removed.
+    ingestion.enqueueHsiWindows(hsiJsons);
   }
 
   /// Check if user has granted a specific consent
@@ -1531,6 +1600,7 @@ class Synheart {
 
   /// Flush buffered behavior/wear events to the native runtime (batch mode only).
   /// Call before [labFinalize] so the lab payload includes behavior_data.
+  @Deprecated('Core runtime manages batching; use Synheart.ingestion APIs')
   static void flushRuntimeBatch() {
     // In core runtime, batching is handled internally; this is a no-op.
   }
@@ -1572,6 +1642,23 @@ class Synheart {
         (sample) => _sessionWearBuffer.add(sample),
       );
     }
+  }
+
+  Future<void> _startRuntimeLinkedCollection() async {
+    if (_isRunning) return;
+    await _moduleManager.startAll();
+    _wireSessionBuffers();
+    _isRunning = true;
+    _reevaluateAllFeatures();
+  }
+
+  Future<void> _stopRuntimeLinkedCollection() async {
+    await _sessionHsiSubscription?.cancel();
+    _sessionHsiSubscription = null;
+    await _sessionWearSubscription?.cancel();
+    _sessionWearSubscription = null;
+    _logRuntimeSummary();
+    await _moduleManager.stopAll();
   }
 
   void _logRuntimeSummary() {
@@ -2068,6 +2155,45 @@ class Synheart {
 
   ConsentToken? _getCurrentConsentToken() {
     return _consentModule?.getCurrentToken();
+  }
+
+  /// Ensure runtime cloud consent is ready for ingest uploads.
+  ///
+  /// This follows the granular runtime flow:
+  /// - read editable form,
+  /// - submit current consent choices,
+  /// - verify runtime status / token refresh state.
+  static Future<bool> ensureCloudConsentReady() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return false;
+    if (!await hasConsent('cloudUpload')) return false;
+
+    final status = consentStatus()?['status']?.toString().toLowerCase();
+    final needsRefresh = consentNeedsTokenRefresh();
+    if (status == 'granted' && !needsRefresh) {
+      return true;
+    }
+
+    final currentForm = consentGetEditableFormTyped();
+    if (currentForm == null) return false;
+    final local = shared._consentModule?.current();
+    final mergedForm = currentForm.copyWith(
+      biosignals: local?.biosignals ?? currentForm.biosignals,
+      phoneContext: local?.phoneContext ?? currentForm.phoneContext,
+      behavior: local?.behavior ?? currentForm.behavior,
+      allowCloud: true,
+      allowResearch: local?.research ?? currentForm.allowResearch,
+      allowVendorSync: local?.vendorSync ?? currentForm.allowVendorSync,
+    );
+
+    final submit = await consentSubmitFormTyped(form: mergedForm);
+    if (submit == null || submit['error'] != null) {
+      return false;
+    }
+    final refreshedStatus = consentStatus()?['status']
+        ?.toString()
+        .toLowerCase();
+    return refreshedStatus == 'granted' && !consentNeedsTokenRefresh();
   }
 
   /// Get all consent statuses as a map
@@ -3058,6 +3184,191 @@ class SessionRecord {
       appVersion: map['app_version'] as String? ?? '',
       deviceId: map['device_id'] as String? ?? '',
       platform: map['platform'] as String? ?? 'flutter',
+    );
+  }
+}
+
+class IngestionSubmissionResponse {
+  final bool success;
+  final int statusCode;
+  final String? errorMessage;
+  final Map<String, dynamic>? details;
+
+  const IngestionSubmissionResponse({
+    required this.success,
+    required this.statusCode,
+    this.errorMessage,
+    this.details,
+  });
+}
+
+class QueueFlushResult {
+  final bool success;
+  final int uploaded;
+  final int failed;
+  final int requeued;
+  final String? errorMessage;
+
+  const QueueFlushResult({
+    required this.success,
+    required this.uploaded,
+    required this.failed,
+    required this.requeued,
+    this.errorMessage,
+  });
+}
+
+class QueueStatusSnapshot {
+  final int queueLength;
+  final String? lastUploadBatchId;
+  final DateTime? lastUploadAt;
+  final DateTime? lastUploadAttemptAt;
+  final String? lastUploadError;
+
+  const QueueStatusSnapshot({
+    required this.queueLength,
+    this.lastUploadBatchId,
+    this.lastUploadAt,
+    this.lastUploadAttemptAt,
+    this.lastUploadError,
+  });
+}
+
+class SynheartIngestion {
+  SynheartIngestion._();
+
+  static final SynheartIngestion instance = SynheartIngestion._();
+
+  QueueStatusSnapshot get queueStatus => QueueStatusSnapshot(
+    queueLength: Synheart.uploadQueueLength,
+    lastUploadBatchId: Synheart.lastUploadBatchId,
+    lastUploadAt: Synheart.lastUploadAt,
+    lastUploadAttemptAt: Synheart.lastUploadAttemptAt,
+    lastUploadError: Synheart.lastUploadError,
+  );
+
+  void enqueueHsiWindows(List<String> hsiJsons, {int? timestampMs}) {
+    final bridge = Synheart._coreRuntime;
+    if (bridge == null || hsiJsons.isEmpty) return;
+    final ts = timestampMs ?? DateTime.now().millisecondsSinceEpoch;
+    for (final hsiJson in hsiJsons) {
+      if (hsiJson.trim().isEmpty) continue;
+      bridge.enqueueHsi(hsiJson, ts);
+    }
+  }
+
+  Future<QueueFlushResult> flushIfEligible({bool requireConsent = true}) async {
+    final bridge = Synheart._coreRuntime;
+    if (bridge == null) {
+      Synheart._lastUploadAttemptAt = DateTime.now().toUtc();
+      Synheart._lastUploadError = 'core runtime bridge unavailable';
+      return const QueueFlushResult(
+        success: false,
+        uploaded: 0,
+        failed: 0,
+        requeued: 0,
+        errorMessage: 'core runtime bridge unavailable',
+      );
+    }
+    if (requireConsent && !await Synheart.hasConsent('cloudUpload')) {
+      Synheart._lastUploadAttemptAt = DateTime.now().toUtc();
+      Synheart._lastUploadError = 'cloudUpload consent not granted';
+      return const QueueFlushResult(
+        success: false,
+        uploaded: 0,
+        failed: 0,
+        requeued: 0,
+        errorMessage: 'cloudUpload consent not granted',
+      );
+    }
+
+    Synheart._lastUploadAttemptAt = DateTime.now().toUtc();
+    final result = bridge.flushUploads();
+    if (result == null) {
+      Synheart._lastUploadError = 'flush_uploads returned null';
+      return const QueueFlushResult(
+        success: false,
+        uploaded: 0,
+        failed: 0,
+        requeued: 0,
+        errorMessage: 'flush_uploads returned null',
+      );
+    }
+
+    final uploaded = result['uploaded'] as int? ?? 0;
+    final failed = result['failed'] as int? ?? 0;
+    final requeued = result['requeued'] as int? ?? 0;
+    Synheart._lastUploadAt = DateTime.now().toUtc();
+    Synheart._lastUploadError = null;
+    if (uploaded > 0) {
+      Synheart._lastUploadBatchId =
+          result['batch_id']?.toString() ??
+          'flush_${Synheart._lastUploadAt!.millisecondsSinceEpoch}';
+    }
+    return QueueFlushResult(
+      success: true,
+      uploaded: uploaded,
+      failed: failed,
+      requeued: requeued,
+    );
+  }
+
+  Future<IngestionSubmissionResponse> submitSessionArtifacts(
+    Map<String, dynamic> payload, {
+    List<String> hsiWindows = const <String>[],
+  }) async {
+    final bridge = Synheart._coreRuntime;
+    if (bridge == null) {
+      return const IngestionSubmissionResponse(
+        success: false,
+        statusCode: 503,
+        errorMessage: 'core runtime bridge unavailable',
+      );
+    }
+    enqueueHsiWindows(hsiWindows);
+    final flush = await flushIfEligible();
+    if (!flush.success) {
+      return IngestionSubmissionResponse(
+        success: false,
+        statusCode: 403,
+        errorMessage: flush.errorMessage,
+        details: {'payloadAccepted': false},
+      );
+    }
+    return IngestionSubmissionResponse(
+      success: true,
+      statusCode: 200,
+      details: {
+        'payloadAccepted': true,
+        'payloadKeys': payload.keys.length,
+        'uploaded': flush.uploaded,
+        'failed': flush.failed,
+        'requeued': flush.requeued,
+        'queuedWindows': hsiWindows.length,
+      },
+    );
+  }
+
+  Future<IngestionSubmissionResponse> submitMetadata(
+    Map<String, dynamic> payload,
+  ) async {
+    final bridge = Synheart._coreRuntime;
+    if (bridge == null) {
+      return const IngestionSubmissionResponse(
+        success: false,
+        statusCode: 503,
+        errorMessage: 'core runtime bridge unavailable',
+      );
+    }
+    return IngestionSubmissionResponse(
+      success: true,
+      statusCode: 202,
+      details: {
+        'accepted': true,
+        'payloadKeys': payload.keys.length,
+        'message':
+            'Metadata payload accepted by bridge-first SDK; no separate metadata upload path.',
+      },
     );
   }
 }

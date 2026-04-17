@@ -7,7 +7,6 @@ library;
 
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:io' show Platform;
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
@@ -77,10 +76,15 @@ void _synheartRuntimeLogTrampoline(Pointer<Utf8> line, Pointer<Void> userData) {
 /// bridge?.dispose();
 /// ```
 class CoreRuntimeBridge {
-  CoreRuntimeBridge._(this._ffi, this._handle);
+  CoreRuntimeBridge._(
+    this._ffi,
+    this._handle, {
+    required this.deviceAuthTemporarilyDisabledForSubjectCompat,
+  });
 
   final SynheartCoreFFI _ffi;
   final Pointer<Void> _handle;
+  final bool deviceAuthTemporarilyDisabledForSubjectCompat;
   bool _disposed = false;
   Pointer<SynheartSdkCryptoCallbacks>? _sdkCryptoTable;
 
@@ -108,10 +112,7 @@ class CoreRuntimeBridge {
     // a leaf call" crashes during synheart_core_new.  Rust logs still go to
     // Android logcat via tracing-android; this only disables the Dart
     // forwarder.
-    if (Platform.isAndroid) {
-      _loggingInstalled = true;
-      return 1;
-    }
+    
     final lib = ffi ?? SynheartCoreFFI.load();
     if (lib == null) return -2;
     final chosen = envFilter ?? defaultRuntimeLogEnvFilter;
@@ -152,15 +153,44 @@ class CoreRuntimeBridge {
     final ffi = SynheartCoreFFI.load();
     if (ffi == null) return null;
 
-    final json = jsonEncode(config);
-    final cJson = json.toNativeUtf8();
+    final runtimeConfig = Map<String, dynamic>.from(config);
+    final rawSubjectId = runtimeConfig['subject_id'];
+    // TODO(auth): Remove once all callers pass canonical `sub_` subject IDs.
+    if (rawSubjectId is String &&
+        rawSubjectId.isNotEmpty &&
+        !rawSubjectId.startsWith('sub_')) {
+      runtimeConfig['subject_id'] = 'sub_$rawSubjectId';
+    }
+
+    // Optional compatibility guard (off by default) for runtimes where
+    // device-auth subject derivation is not yet aligned with engine validation.
+    final forceDisableDeviceAuth =
+        runtimeConfig['_compat_force_disable_device_auth'] == true;
+    runtimeConfig.remove('_compat_force_disable_device_auth');
+
+    final deviceAuth = runtimeConfig['device_auth'];
+    var deviceAuthForcedOff = false;
+    if (forceDisableDeviceAuth && deviceAuth is Map) {
+      runtimeConfig['device_auth'] = <String, dynamic>{
+        ...deviceAuth.map((k, v) => MapEntry(k.toString(), v)),
+        'enabled': false,
+      };
+      runtimeConfig.remove('client_id');
+      deviceAuthForcedOff = true;
+    }
+
+    final cJson = jsonEncode(runtimeConfig).toNativeUtf8();
     try {
       final handle = ffi.coreNew(cJson.cast());
       if (handle == nullptr) return null;
       // §1b: logging after core creation — avoids crash from async
       // NativeCallable.listener trampoline during synchronous coreNew.
       initRuntimeLogging(ffi: ffi);
-      return CoreRuntimeBridge._(ffi, handle);
+      return CoreRuntimeBridge._(
+        ffi,
+        handle,
+        deviceAuthTemporarilyDisabledForSubjectCompat: deviceAuthForcedOff,
+      );
     } finally {
       malloc.free(cJson);
     }
