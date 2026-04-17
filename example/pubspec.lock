@@ -672,11 +672,9 @@ packages:
   synheart_auth:
     dependency: transitive
     description:
-      path: "."
-      ref: "v0.1.0"
-      resolved-ref: "29501ccbd3b87bc42c30be5ddfc300d00e83b4e3"
-      url: "https://github.com/synheart-ai/synheart-auth-flutter.git"
-    source: git
+      path: "../../synheart-auth-flutter"
+      relative: true
+    source: path
     version: "0.1.0"
   synheart_behavior:
     dependency: "direct main"
@@ -695,11 +693,9 @@ packages:
   synheart_session:
     dependency: transitive
     description:
-      path: "."
-      ref: "v0.2.0"
-      resolved-ref: e39203954142002ab0c39a1dfc3a803b5f9a066b
-      url: "https://github.com/synheart-ai/synheart-session-flutter.git"
-    source: git
+      path: "../../synheart-session-flutter"
+      relative: true
+    source: path
     version: "0.2.0"
   synheart_wear:
     dependency: "direct overridden"

@@ -36,6 +36,14 @@ typedef _PushRrC = Void Function(Pointer<Void> h, Int64 ts, Double rr);
 typedef _PushRrDart = void Function(Pointer<Void> h, int ts, double rr);
 typedef _PushHrC = Void Function(Pointer<Void> h, Int64 ts, Double bpm);
 typedef _PushHrDart = void Function(Pointer<Void> h, int ts, double bpm);
+typedef _EnsurePipelineC = Void Function(Pointer<Void> h);
+typedef _EnsurePipelineDart = void Function(Pointer<Void> h);
+typedef _TickC = Pointer<Utf8> Function(Pointer<Void> h, Int64 nowMs);
+typedef _TickDart = Pointer<Utf8> Function(Pointer<Void> h, int nowMs);
+typedef _PushVendorHrvC = Void Function(
+    Pointer<Void> h, Int64 ts, Double rmssd, Double sdnn, Double stress, Double recovery);
+typedef _PushVendorHrvDart = void Function(
+    Pointer<Void> h, int ts, double rmssd, double sdnn, double stress, double recovery);
 typedef _PushAccelC =
     Void Function(Pointer<Void> h, Int64 ts, Double x, Double y, Double z);
 typedef _PushAccelDart =
@@ -369,6 +377,17 @@ class SynheartCoreFFI {
   late final pushHr = _lib.lookupFunction<_PushHrC, _PushHrDart>(
     'synheart_core_push_hr',
   );
+  late final ensurePipeline =
+      _lib.lookupFunction<_EnsurePipelineC, _EnsurePipelineDart>(
+        'synheart_core_ensure_pipeline',
+      );
+  late final tick = _lib.lookupFunction<_TickC, _TickDart>(
+    'synheart_core_tick',
+  );
+  late final pushVendorHrv =
+      _lib.lookupFunction<_PushVendorHrvC, _PushVendorHrvDart>(
+        'synheart_core_push_vendor_hrv',
+      );
   late final pushAccel = _lib.lookupFunction<_PushAccelC, _PushAccelDart>(
     'synheart_core_push_accel',
   );

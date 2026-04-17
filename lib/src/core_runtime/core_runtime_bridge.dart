@@ -7,7 +7,6 @@ library;
 
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:io' show Platform;
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
@@ -77,16 +76,21 @@ void _synheartRuntimeLogTrampoline(Pointer<Utf8> line, Pointer<Void> userData) {
 /// bridge?.dispose();
 /// ```
 class CoreRuntimeBridge {
-  CoreRuntimeBridge._(this._ffi, this._handle);
+  CoreRuntimeBridge._(
+    this._ffi,
+    this._handle, {
+    required this.deviceAuthTemporarilyDisabledForSubjectCompat,
+  });
 
   final SynheartCoreFFI _ffi;
   final Pointer<Void> _handle;
+  final bool deviceAuthTemporarilyDisabledForSubjectCompat;
   bool _disposed = false;
   Pointer<SynheartSdkCryptoCallbacks>? _sdkCryptoTable;
 
   /// Default `env_filter` when [initRuntimeLogging] is called with a null/empty filter.
   // static String defaultRuntimeLogEnvFilter = 'info,synheart_core_runtime=debug';
-  static String defaultRuntimeLogEnvFilter = 'synheart_core_runtime=trace,info';
+  static String defaultRuntimeLogEnvFilter = 'info';
 
   static bool _loggingInstalled = false;
   static NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>?
@@ -102,16 +106,7 @@ class CoreRuntimeBridge {
     void Function(String line)? onLine,
   }) {
     if (_loggingInstalled) return 1;
-    // Skip native logging on Android — the Rust tracing subscriber retains
-    // a stale NativeCallable.listener pointer across Flutter hot restarts
-    // (the .so is not unloaded), causing "Cannot invoke native callback from
-    // a leaf call" crashes during synheart_core_new.  Rust logs still go to
-    // Android logcat via tracing-android; this only disables the Dart
-    // forwarder.
-    if (Platform.isAndroid) {
-      _loggingInstalled = true;
-      return 1;
-    }
+
     final lib = ffi ?? SynheartCoreFFI.load();
     if (lib == null) return -2;
     final chosen = envFilter ?? defaultRuntimeLogEnvFilter;
@@ -152,15 +147,44 @@ class CoreRuntimeBridge {
     final ffi = SynheartCoreFFI.load();
     if (ffi == null) return null;
 
-    final json = jsonEncode(config);
-    final cJson = json.toNativeUtf8();
+    final runtimeConfig = Map<String, dynamic>.from(config);
+    final rawSubjectId = runtimeConfig['subject_id'];
+    // TODO(auth): Remove once all callers pass canonical `sub_` subject IDs.
+    if (rawSubjectId is String &&
+        rawSubjectId.isNotEmpty &&
+        !rawSubjectId.startsWith('sub_')) {
+      runtimeConfig['subject_id'] = 'sub_$rawSubjectId';
+    }
+
+    // Optional compatibility guard (off by default) for runtimes where
+    // device-auth subject derivation is not yet aligned with engine validation.
+    final forceDisableDeviceAuth =
+        runtimeConfig['_compat_force_disable_device_auth'] == true;
+    runtimeConfig.remove('_compat_force_disable_device_auth');
+
+    final deviceAuth = runtimeConfig['device_auth'];
+    var deviceAuthForcedOff = false;
+    if (forceDisableDeviceAuth && deviceAuth is Map) {
+      runtimeConfig['device_auth'] = <String, dynamic>{
+        ...deviceAuth.map((k, v) => MapEntry(k.toString(), v)),
+        'enabled': false,
+      };
+      runtimeConfig.remove('client_id');
+      deviceAuthForcedOff = true;
+    }
+
+    final cJson = jsonEncode(runtimeConfig).toNativeUtf8();
     try {
       final handle = ffi.coreNew(cJson.cast());
       if (handle == nullptr) return null;
       // §1b: logging after core creation — avoids crash from async
       // NativeCallable.listener trampoline during synchronous coreNew.
       initRuntimeLogging(ffi: ffi);
-      return CoreRuntimeBridge._(ffi, handle);
+      return CoreRuntimeBridge._(
+        ffi,
+        handle,
+        deviceAuthTemporarilyDisabledForSubjectCompat: deviceAuthForcedOff,
+      );
     } finally {
       malloc.free(cJson);
     }
@@ -301,10 +325,27 @@ class CoreRuntimeBridge {
   /// Whether a session is running.
   bool get isRunning => _ffi.isRunning(_handle) != 0;
 
+  /// Create the engine pipeline without starting a background tick task.
+  /// Used by the ingest buffer which handles ticking via ingestBatch.
+  void ensurePipeline() => _ffi.ensurePipeline(_handle);
+
   // ── Sensor push ──────────────────────────────────────────────────────
 
   void pushRr(int tsMs, double rrMs) => _ffi.pushRr(_handle, tsMs, rrMs);
   void pushHr(int tsMs, double bpm) => _ffi.pushHr(_handle, tsMs, bpm);
+
+  /// Advance the pipeline clock. Returns HSI JSON if a window completed.
+  String? tick(int nowMs) => _readAndFree(_ffi.tick(_handle, nowMs));
+
+  /// Push vendor-reported HRV metrics (Tier 2).
+  /// Pass -1.0 for unavailable fields.
+  void pushVendorHrv(int tsMs, {
+    double rmssd = -1.0,
+    double sdnn = -1.0,
+    double stress = -1.0,
+    double recovery = -1.0,
+  }) => _ffi.pushVendorHrv(_handle, tsMs, rmssd, sdnn, stress, recovery);
+
   void pushAccel(int tsMs, double x, double y, double z) =>
       _ffi.pushAccel(_handle, tsMs, x, y, z);
   void pushBehavior(int tsMs, int eventType, double value) =>
