@@ -561,6 +561,69 @@ class Synheart {
   /// True after a successful [sdkRegisterDevice] via the core runtime in this session.
   static bool get deviceAuthUsedCoreRuntime => _deviceAuthViaCoreRuntime;
 
+  /// Idempotently ensures the device is registered with the auth server and
+  /// that the Dart-side [DeviceAuthProvider] is wired for request signing.
+  ///
+  /// Safe to call from anywhere after [initialize] has been invoked. Useful
+  /// for apps that want to eagerly recover from a lost registration on cold
+  /// start (e.g. keychain wipe, fresh install after prior consent) without
+  /// waiting for the next [grantConsent] or [startSession] to trigger it.
+  ///
+  /// Returns `true` if the device is registered after the call completes,
+  /// `false` if device auth is not configured or registration failed.
+  /// No-ops if already registered in this process.
+  static Future<bool> ensureDeviceAuthRegistered() async {
+    final cfg = shared._config;
+    if (cfg?.deviceAuthConfig == null) return false;
+    if (shared._deviceAuthProvider != null) {
+      // Provider wired — make sure the consent JWT is also ready so the
+      // ingest connector can actually flush. Cheap: ensureCloudConsentReady
+      // short-circuits when the runtime reports granted+fresh.
+      await _maybeEnsureCloudConsentReady();
+      return true;
+    }
+    try {
+      await shared._initDeviceAuth(cfg!);
+      final registered = shared._deviceAuthProvider != null;
+      if (registered) {
+        // Registration without a signed consent token leaves the ingest
+        // connector stuck with "ERR_AUTH: ingest requires non-empty
+        // X-Consent-Token" on every tick. Chain the consent-token flow so
+        // callers only need one entry point.
+        await _maybeEnsureCloudConsentReady();
+      }
+      return registered;
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] ensureDeviceAuthRegistered failed: $e',
+        error: e,
+      );
+      return false;
+    }
+  }
+
+  /// Best-effort consent-token issuance used to chain off device-auth
+  /// registration paths. Swallows errors so device-auth success isn't
+  /// reported as failure just because the consent HTTP call flaked —
+  /// the ingest connector will retry on its next tick once the token lands.
+  static Future<void> _maybeEnsureCloudConsentReady() async {
+    try {
+      final ready = await ensureCloudConsentReady();
+      if (!ready) {
+        SynheartLogger.log(
+          '[Synheart] ensureCloudConsentReady returned false — '
+          'ingest will stay blocked until consent token is issued.',
+        );
+      }
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] ensureCloudConsentReady threw: $e — '
+        'continuing; connector will retry on next tick.',
+        error: e,
+      );
+    }
+  }
+
   Future<void> _configure({
     required String appKey,
     required String userId,
@@ -870,6 +933,43 @@ class Synheart {
           grantedChannels: pc.grantedChannels,
           research: pc.research,
         );
+      }
+
+      // Cold-start auto-heal: if the runtime already has persisted cloud
+      // consent (e.g. a prior session's grant) and device auth is configured
+      // but not yet wired in this process, trigger registration AND refresh
+      // the consent JWT so the Rust ingest connector can flush immediately
+      // on its next tick — otherwise it logs "ERR_AUTH: device not registered"
+      // (pre-fix) or "ERR_AUTH: ingest requires non-empty X-Consent-Token"
+      // (post-fix) every 60s until a session starts. Non-fatal.
+      if (resolvedConfig.deviceAuthConfig != null &&
+          _coreRuntime != null) {
+        final effective = _coreRuntime!.consentEffectiveState();
+        final cloudGranted = effective?['cloud_upload'] == true ||
+            effective?['cloudUpload'] == true;
+        if (cloudGranted) {
+          if (_deviceAuthProvider == null) {
+            try {
+              SynheartLogger.log(
+                '[Synheart] Persisted cloud consent detected — auto-activating device auth...',
+              );
+              await _initDeviceAuth(resolvedConfig);
+            } catch (e) {
+              SynheartLogger.log(
+                '[Synheart] Auto device-auth activation failed: $e — '
+                'will retry on session start or next consent grant.',
+                error: e,
+              );
+            }
+          }
+          // Even if registration is cached from a prior session, the consent
+          // JWT in the Rust ingest slot is in-memory state that does not
+          // survive a process restart. Re-issue on every cold start when
+          // cloud consent is persisted.
+          if (_deviceAuthProvider != null) {
+            await _maybeEnsureCloudConsentReady();
+          }
+        }
       }
     } catch (e, stack) {
       _initCompleter?.completeError(e, stack);
@@ -1363,6 +1463,21 @@ class Synheart {
             'consent_submit_form requires non-empty device_id and platform',
       };
     }
+
+    // Direct-submit path is used by runtime UI toggles that bypass
+    // [grantConsent]. If the form grants cloud upload and device auth is
+    // configured but not yet wired, register the device first so the ingest
+    // connector can authenticate its next flush tick. Non-fatal on failure.
+    final allowCloud = formJson['allow_cloud'] == true ||
+        formJson['allowCloud'] == true ||
+        formJson['cloud_upload'] == true ||
+        formJson['cloudUpload'] == true;
+    if (allowCloud &&
+        shared._config?.deviceAuthConfig != null &&
+        shared._deviceAuthProvider == null) {
+      await ensureDeviceAuthRegistered();
+    }
+
     return rt.consentSubmitForm(
       deviceId: resolvedDeviceId,
       platform: resolvedPlatform,
@@ -2652,6 +2767,14 @@ class Synheart {
         );
         // Continue with local consent even if token issuance fails
       }
+    } else if (_config?.cloudConfig != null && cloudUpload && profileId == null) {
+      // Caller granted cloud but didn't supply a profile id. Without a token
+      // the Rust ingest connector fails every flush tick with
+      // "ERR_AUTH: ingest requires non-empty X-Consent-Token". Route through
+      // the runtime's editable-form submission path, which derives the
+      // profile id from the runtime's current form (offline default when no
+      // profile has been selected) and issues the JWT end-to-end.
+      await _maybeEnsureCloudConsentReady();
     }
 
     // Update local consent snapshot
