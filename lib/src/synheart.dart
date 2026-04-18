@@ -460,8 +460,7 @@ class Synheart {
         },
         'device_auth': {
           'enabled': true,
-          'auth_base_url':
-              shared._config?.deviceAuthConfig?.authBaseUrl ?? '',
+          'auth_base_url': shared._config?.deviceAuthConfig?.authBaseUrl ?? '',
         },
         'sync': {
           'enabled': shared._config?.sync.enabled ?? false,
@@ -910,10 +909,8 @@ class Synheart {
 
         // Start batched ingest buffer (5s flush cycle).
         _ingestBuffer?.stop();
-        _ingestBuffer = SessionIngestBuffer(
-          bridge: _coreRuntime!,
-          onHsi: onHsi,
-        )..start();
+        _ingestBuffer = SessionIngestBuffer(bridge: _coreRuntime!, onHsi: onHsi)
+          ..start();
 
         return shared._currentSessionHandle;
       }
@@ -1524,16 +1521,29 @@ class Synheart {
   /// Push a wear HR event into runtime and optionally synthesize RR.
   /// Push a heart rate sample. Routes through the ingest buffer when a
   /// session is active; falls back to direct FFI otherwise.
-  static void pushWearHr(int tsMs, double bpm, {String provider = 'default_sensor'}) {
+  static void pushWearHr(
+    int tsMs,
+    double bpm, {
+    String provider = 'default_sensor',
+  }) {
     if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
       _ingestBuffer!.addHr(tsMs, bpm, provider: provider);
+      print(
+        "------------------------------------------------------------------",
+      );
+      print('add hr');
     } else {
       _coreRuntime?.pushHr(tsMs, bpm);
+      print('push hr');
     }
   }
 
   /// Push an RR interval. Routes through the ingest buffer when active.
-  static void pushRr(int tsMs, double rrMs, {String provider = 'default_sensor'}) {
+  static void pushRr(
+    int tsMs,
+    double rrMs, {
+    String provider = 'default_sensor',
+  }) {
     if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
       _ingestBuffer!.addRr(tsMs, rrMs, provider: provider);
     } else {
@@ -1542,7 +1552,8 @@ class Synheart {
   }
 
   /// Push vendor-reported HRV metrics (Tier 2).
-  static void pushVendorHrv(int tsMs, {
+  static void pushVendorHrv(
+    int tsMs, {
     double rmssd = -1.0,
     double sdnn = -1.0,
     double stress = -1.0,
@@ -1550,7 +1561,8 @@ class Synheart {
     String provider = 'default_sensor',
   }) {
     if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
-      _ingestBuffer!.addVendorHrv(tsMs,
+      _ingestBuffer!.addVendorHrv(
+        tsMs,
         rmssd: rmssd > 0 ? rmssd : null,
         sdnn: sdnn > 0 ? sdnn : null,
         stress: stress >= 0 ? stress : null,
@@ -1558,8 +1570,13 @@ class Synheart {
         provider: provider,
       );
     } else {
-      _coreRuntime?.pushVendorHrv(tsMs,
-          rmssd: rmssd, sdnn: sdnn, stress: stress, recovery: recovery);
+      _coreRuntime?.pushVendorHrv(
+        tsMs,
+        rmssd: rmssd,
+        sdnn: sdnn,
+        stress: stress,
+        recovery: recovery,
+      );
     }
   }
 
@@ -1574,10 +1591,8 @@ class Synheart {
     _coreRuntime!.ensurePipeline();
 
     _ingestBuffer?.stop();
-    _ingestBuffer = SessionIngestBuffer(
-      bridge: _coreRuntime!,
-      onHsi: onHsi,
-    )..start();
+    _ingestBuffer = SessionIngestBuffer(bridge: _coreRuntime!, onHsi: onHsi)
+      ..start();
   }
 
   /// Stop the ingest buffer (final flush drains remaining events).
