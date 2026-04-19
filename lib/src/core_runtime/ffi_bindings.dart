@@ -44,6 +44,10 @@ typedef _PushVendorHrvC = Void Function(
     Pointer<Void> h, Int64 ts, Double rmssd, Double sdnn, Double stress, Double recovery);
 typedef _PushVendorHrvDart = void Function(
     Pointer<Void> h, int ts, double rmssd, double sdnn, double stress, double recovery);
+typedef _PushVendorVitalsC = Void Function(
+    Pointer<Void> h, Int64 ts, Double spo2, Double respiration);
+typedef _PushVendorVitalsDart = void Function(
+    Pointer<Void> h, int ts, double spo2, double respiration);
 typedef _PushAccelC =
     Void Function(Pointer<Void> h, Int64 ts, Double x, Double y, Double z);
 typedef _PushAccelDart =
@@ -96,6 +100,13 @@ typedef _LoadCapDart =
 // Queries
 typedef _JsonReturnC = Pointer<Utf8> Function(Pointer<Void> h);
 typedef _JsonReturnDart = Pointer<Utf8> Function(Pointer<Void> h);
+
+// hsi_history list: (handle, since_unix_ms, limit) -> char* (JSON array)
+typedef _HsiHistoryListC = Pointer<Utf8> Function(
+    Pointer<Void> h, Int64 sinceMs, Int64 limit);
+typedef _HsiHistoryListDart = Pointer<Utf8> Function(
+    Pointer<Void> h, int sinceMs, int limit);
+// hsi_history count: (handle) -> int64 uses the existing _Int64Return* typedefs.
 typedef _SessionIdC =
     Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> sid);
 typedef _SessionIdDart =
@@ -388,6 +399,10 @@ class SynheartCoreFFI {
       _lib.lookupFunction<_PushVendorHrvC, _PushVendorHrvDart>(
         'synheart_core_push_vendor_hrv',
       );
+  late final pushVendorVitals =
+      _lib.lookupFunction<_PushVendorVitalsC, _PushVendorVitalsDart>(
+        'synheart_core_push_vendor_vitals',
+      );
   late final pushAccel = _lib.lookupFunction<_PushAccelC, _PushAccelDart>(
     'synheart_core_push_accel',
   );
@@ -530,6 +545,22 @@ class SynheartCoreFFI {
   late final flushUploads = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
     'synheart_core_flush_uploads',
   );
+
+  // hsi_history: on-device mirror of successfully uploaded HSI payloads.
+  // Populated automatically by the ingest connector on HTTP 200; pruned
+  // by age (default 30 days). See connector.rs::HSI_HISTORY_RETENTION_MS.
+  late final hsiHistoryList = _lib
+      .lookupFunction<_HsiHistoryListC, _HsiHistoryListDart>(
+        'synheart_core_hsi_history_list',
+      );
+  late final hsiHistoryCount = _lib
+      .lookupFunction<_Int64ReturnC, _Int64ReturnDart>(
+        'synheart_core_hsi_history_count',
+      );
+  late final hsiHistoryClear = _lib
+      .lookupFunction<_IntReturnC, _IntReturnDart>(
+        'synheart_core_hsi_history_clear',
+      );
   late final uploadMetadata = _lib
       .lookupFunction<_JsonReturnC, _JsonReturnDart>(
         'synheart_core_upload_metadata',
