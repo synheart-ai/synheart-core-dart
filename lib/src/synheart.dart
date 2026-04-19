@@ -460,8 +460,7 @@ class Synheart {
         },
         'device_auth': {
           'enabled': true,
-          'auth_base_url':
-              shared._config?.deviceAuthConfig?.authBaseUrl ?? '',
+          'auth_base_url': shared._config?.deviceAuthConfig?.authBaseUrl ?? '',
         },
         'sync': {
           'enabled': shared._config?.sync.enabled ?? false,
@@ -560,6 +559,69 @@ class Synheart {
 
   /// True after a successful [sdkRegisterDevice] via the core runtime in this session.
   static bool get deviceAuthUsedCoreRuntime => _deviceAuthViaCoreRuntime;
+
+  /// Idempotently ensures the device is registered with the auth server and
+  /// that the Dart-side [DeviceAuthProvider] is wired for request signing.
+  ///
+  /// Safe to call from anywhere after [initialize] has been invoked. Useful
+  /// for apps that want to eagerly recover from a lost registration on cold
+  /// start (e.g. keychain wipe, fresh install after prior consent) without
+  /// waiting for the next [grantConsent] or [startSession] to trigger it.
+  ///
+  /// Returns `true` if the device is registered after the call completes,
+  /// `false` if device auth is not configured or registration failed.
+  /// No-ops if already registered in this process.
+  static Future<bool> ensureDeviceAuthRegistered() async {
+    final cfg = shared._config;
+    if (cfg?.deviceAuthConfig == null) return false;
+    if (shared._deviceAuthProvider != null) {
+      // Provider wired — make sure the consent JWT is also ready so the
+      // ingest connector can actually flush. Cheap: ensureCloudConsentReady
+      // short-circuits when the runtime reports granted+fresh.
+      await _maybeEnsureCloudConsentReady();
+      return true;
+    }
+    try {
+      await shared._initDeviceAuth(cfg!);
+      final registered = shared._deviceAuthProvider != null;
+      if (registered) {
+        // Registration without a signed consent token leaves the ingest
+        // connector stuck with "ERR_AUTH: ingest requires non-empty
+        // X-Consent-Token" on every tick. Chain the consent-token flow so
+        // callers only need one entry point.
+        await _maybeEnsureCloudConsentReady();
+      }
+      return registered;
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] ensureDeviceAuthRegistered failed: $e',
+        error: e,
+      );
+      return false;
+    }
+  }
+
+  /// Best-effort consent-token issuance used to chain off device-auth
+  /// registration paths. Swallows errors so device-auth success isn't
+  /// reported as failure just because the consent HTTP call flaked —
+  /// the ingest connector will retry on its next tick once the token lands.
+  static Future<void> _maybeEnsureCloudConsentReady() async {
+    try {
+      final ready = await ensureCloudConsentReady();
+      if (!ready) {
+        SynheartLogger.log(
+          '[Synheart] ensureCloudConsentReady returned false — '
+          'ingest will stay blocked until consent token is issued.',
+        );
+      }
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] ensureCloudConsentReady threw: $e — '
+        'continuing; connector will retry on next tick.',
+        error: e,
+      );
+    }
+  }
 
   Future<void> _configure({
     required String appKey,
@@ -871,6 +933,43 @@ class Synheart {
           research: pc.research,
         );
       }
+
+      // Cold-start auto-heal: if the runtime already has persisted cloud
+      // consent (e.g. a prior session's grant) and device auth is configured
+      // but not yet wired in this process, trigger registration AND refresh
+      // the consent JWT so the Rust ingest connector can flush immediately
+      // on its next tick — otherwise it logs "ERR_AUTH: device not registered"
+      // (pre-fix) or "ERR_AUTH: ingest requires non-empty X-Consent-Token"
+      // (post-fix) every 60s until a session starts. Non-fatal.
+      if (resolvedConfig.deviceAuthConfig != null &&
+          _coreRuntime != null) {
+        final effective = _coreRuntime!.consentEffectiveState();
+        final cloudGranted = effective?['cloud_upload'] == true ||
+            effective?['cloudUpload'] == true;
+        if (cloudGranted) {
+          if (_deviceAuthProvider == null) {
+            try {
+              SynheartLogger.log(
+                '[Synheart] Persisted cloud consent detected — auto-activating device auth...',
+              );
+              await _initDeviceAuth(resolvedConfig);
+            } catch (e) {
+              SynheartLogger.log(
+                '[Synheart] Auto device-auth activation failed: $e — '
+                'will retry on session start or next consent grant.',
+                error: e,
+              );
+            }
+          }
+          // Even if registration is cached from a prior session, the consent
+          // JWT in the Rust ingest slot is in-memory state that does not
+          // survive a process restart. Re-issue on every cold start when
+          // cloud consent is persisted.
+          if (_deviceAuthProvider != null) {
+            await _maybeEnsureCloudConsentReady();
+          }
+        }
+      }
     } catch (e, stack) {
       _initCompleter?.completeError(e, stack);
       SynheartLogger.log(
@@ -910,10 +1009,8 @@ class Synheart {
 
         // Start batched ingest buffer (5s flush cycle).
         _ingestBuffer?.stop();
-        _ingestBuffer = SessionIngestBuffer(
-          bridge: _coreRuntime!,
-          onHsi: onHsi,
-        )..start();
+        _ingestBuffer = SessionIngestBuffer(bridge: _coreRuntime!, onHsi: onHsi)
+          ..start();
 
         return shared._currentSessionHandle;
       }
@@ -1232,6 +1329,42 @@ class Synheart {
   /// Number of HSI snapshots pending upload (0 if cloud connector not enabled).
   static int get uploadQueueLength => _coreRuntime?.uploadQueueLength ?? 0;
 
+  // ── HSI history (on-device mirror of uploaded payloads) ──────────────
+  //
+  // The Rust ingest connector deletes rows from the outbound upload queue
+  // on HTTP 200 — that table is pure "pending uploads". `hsi_history` is a
+  // separate on-device table that keeps a copy of each successfully
+  // uploaded HSI payload so apps can render offline timelines and users
+  // keep access to their data after cloud storage.
+  //
+  // Retention is age-based (default 30 days, enforced by the Rust side on
+  // each archive pass). Returns empty / 0 when no cloud connector is
+  // configured. These are pure on-device operations — no network I/O.
+
+  /// List archived HSI payloads (oldest first).
+  ///
+  /// - [since] filters rows by upload timestamp; `null` returns all.
+  /// - [limit] caps the result count; `null` or `0` means unbounded.
+  ///
+  /// Each map is a parsed HSI JSON object (schema depends on the producer's
+  /// `hsi_version`). Returns empty when the cloud connector is not wired.
+  static List<Map<String, dynamic>> listHsiHistory({
+    DateTime? since,
+    int? limit,
+  }) {
+    return _coreRuntime?.hsiHistoryList(since: since, limit: limit) ??
+        const [];
+  }
+
+  /// Number of archived HSI payloads currently on-device.
+  static int hsiHistoryCount() => _coreRuntime?.hsiHistoryCount() ?? 0;
+
+  /// Wipe the on-device HSI history. Intended for user-initiated
+  /// "delete my data" flows. Does NOT clear the outbound upload queue —
+  /// pending uploads will still be sent to the cloud unless stopped.
+  /// Returns true on success, false if the runtime is unavailable.
+  static bool clearHsiHistory() => _coreRuntime?.hsiHistoryClear() ?? false;
+
   /// Batch id from the last successful cloud ingest (null if none yet).
   static String? get lastUploadBatchId => _lastUploadBatchId;
 
@@ -1363,6 +1496,21 @@ class Synheart {
             'consent_submit_form requires non-empty device_id and platform',
       };
     }
+
+    // Direct-submit path is used by runtime UI toggles that bypass
+    // [grantConsent]. If the form grants cloud upload and device auth is
+    // configured but not yet wired, register the device first so the ingest
+    // connector can authenticate its next flush tick. Non-fatal on failure.
+    final allowCloud = formJson['allow_cloud'] == true ||
+        formJson['allowCloud'] == true ||
+        formJson['cloud_upload'] == true ||
+        formJson['cloudUpload'] == true;
+    if (allowCloud &&
+        shared._config?.deviceAuthConfig != null &&
+        shared._deviceAuthProvider == null) {
+      await ensureDeviceAuthRegistered();
+    }
+
     return rt.consentSubmitForm(
       deviceId: resolvedDeviceId,
       platform: resolvedPlatform,
@@ -1524,16 +1672,29 @@ class Synheart {
   /// Push a wear HR event into runtime and optionally synthesize RR.
   /// Push a heart rate sample. Routes through the ingest buffer when a
   /// session is active; falls back to direct FFI otherwise.
-  static void pushWearHr(int tsMs, double bpm, {String provider = 'default_sensor'}) {
+  static void pushWearHr(
+    int tsMs,
+    double bpm, {
+    String provider = 'default_sensor',
+  }) {
     if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
       _ingestBuffer!.addHr(tsMs, bpm, provider: provider);
+      print(
+        "------------------------------------------------------------------",
+      );
+      print('add hr');
     } else {
       _coreRuntime?.pushHr(tsMs, bpm);
+      print('push hr');
     }
   }
 
   /// Push an RR interval. Routes through the ingest buffer when active.
-  static void pushRr(int tsMs, double rrMs, {String provider = 'default_sensor'}) {
+  static void pushRr(
+    int tsMs,
+    double rrMs, {
+    String provider = 'default_sensor',
+  }) {
     if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
       _ingestBuffer!.addRr(tsMs, rrMs, provider: provider);
     } else {
@@ -1542,7 +1703,8 @@ class Synheart {
   }
 
   /// Push vendor-reported HRV metrics (Tier 2).
-  static void pushVendorHrv(int tsMs, {
+  static void pushVendorHrv(
+    int tsMs, {
     double rmssd = -1.0,
     double sdnn = -1.0,
     double stress = -1.0,
@@ -1550,7 +1712,8 @@ class Synheart {
     String provider = 'default_sensor',
   }) {
     if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
-      _ingestBuffer!.addVendorHrv(tsMs,
+      _ingestBuffer!.addVendorHrv(
+        tsMs,
         rmssd: rmssd > 0 ? rmssd : null,
         sdnn: sdnn > 0 ? sdnn : null,
         stress: stress >= 0 ? stress : null,
@@ -1558,9 +1721,20 @@ class Synheart {
         provider: provider,
       );
     } else {
-      _coreRuntime?.pushVendorHrv(tsMs,
-          rmssd: rmssd, sdnn: sdnn, stress: stress, recovery: recovery);
+      _coreRuntime?.pushVendorHrv(
+        tsMs,
+        rmssd: rmssd,
+        sdnn: sdnn,
+        stress: stress,
+        recovery: recovery,
+      );
     }
+  }
+
+  /// Push vendor vital signs (SpO2, respiration) to lab windows.
+  /// Pass -1.0 for unavailable fields.
+  static void pushVendorVitals(int tsMs, {double spo2 = -1.0, double respiration = -1.0}) {
+    _coreRuntime?.pushVendorVitals(tsMs, spo2: spo2, respiration: respiration);
   }
 
   /// Start the batched ingest buffer and ensure the runtime pipeline is created.
@@ -1574,10 +1748,8 @@ class Synheart {
     _coreRuntime!.ensurePipeline();
 
     _ingestBuffer?.stop();
-    _ingestBuffer = SessionIngestBuffer(
-      bridge: _coreRuntime!,
-      onHsi: onHsi,
-    )..start();
+    _ingestBuffer = SessionIngestBuffer(bridge: _coreRuntime!, onHsi: onHsi)
+      ..start();
   }
 
   /// Stop the ingest buffer (final flush drains remaining events).
@@ -2652,6 +2824,14 @@ class Synheart {
         );
         // Continue with local consent even if token issuance fails
       }
+    } else if (_config?.cloudConfig != null && cloudUpload && profileId == null) {
+      // Caller granted cloud but didn't supply a profile id. Without a token
+      // the Rust ingest connector fails every flush tick with
+      // "ERR_AUTH: ingest requires non-empty X-Consent-Token". Route through
+      // the runtime's editable-form submission path, which derives the
+      // profile id from the runtime's current form (offline default when no
+      // profile has been selected) and issues the JWT end-to-end.
+      await _maybeEnsureCloudConsentReady();
     }
 
     // Update local consent snapshot

@@ -346,6 +346,10 @@ class CoreRuntimeBridge {
     double recovery = -1.0,
   }) => _ffi.pushVendorHrv(_handle, tsMs, rmssd, sdnn, stress, recovery);
 
+  /// Push vendor vitals (SpO2, respiration) to lab windows.
+  void pushVendorVitals(int tsMs, {double spo2 = -1.0, double respiration = -1.0}) =>
+      _ffi.pushVendorVitals(_handle, tsMs, spo2, respiration);
+
   void pushAccel(int tsMs, double x, double y, double z) =>
       _ffi.pushAccel(_handle, tsMs, x, y, z);
   void pushBehavior(int tsMs, int eventType, double value) =>
@@ -604,6 +608,47 @@ class CoreRuntimeBridge {
 
   Map<String, dynamic>? uploadMetadata() {
     return _callJson(() => _ffi.uploadMetadata(_handle));
+  }
+
+  // ── HSI history (on-device mirror of uploaded payloads) ─────────────
+  //
+  // Populated by the ingest connector on HTTP 200; see
+  // `connector.rs::archive_hsi_chunk_to_history`. Retention is age-based
+  // (default 30 days). Returns empty / 0 when the runtime has no cloud
+  // connector configured.
+
+  /// List archived HSI payloads in upload order (oldest first).
+  ///
+  /// - [since]: filter rows uploaded at or after this instant.
+  /// - [limit]: cap the returned count; `null` or `0` means unbounded.
+  List<Map<String, dynamic>> hsiHistoryList({DateTime? since, int? limit}) {
+    if (_disposed) return const [];
+    final sinceMs = since?.millisecondsSinceEpoch ?? 0;
+    final lim = (limit ?? 0).clamp(0, 1 << 31);
+    final ptr = _ffi.hsiHistoryList(_handle, sinceMs, lim);
+    final raw = _readAndFree(ptr);
+    if (raw == null) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded.whereType<Map<String, dynamic>>().toList(growable: false);
+      }
+    } catch (_) {}
+    return const [];
+  }
+
+  /// Number of archived HSI payloads on-device. Returns `0` on error.
+  int hsiHistoryCount() {
+    if (_disposed) return 0;
+    final n = _ffi.hsiHistoryCount(_handle);
+    return n < 0 ? 0 : n;
+  }
+
+  /// Wipe on-device HSI history. Intended for user-initiated
+  /// "delete my data" flows. Returns true on success.
+  bool hsiHistoryClear() {
+    if (_disposed) return false;
+    return _ffi.hsiHistoryClear(_handle) == 0;
   }
 
   // ── Wellness Score ───────────────────────────────────────────────────
