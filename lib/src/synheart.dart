@@ -1329,6 +1329,42 @@ class Synheart {
   /// Number of HSI snapshots pending upload (0 if cloud connector not enabled).
   static int get uploadQueueLength => _coreRuntime?.uploadQueueLength ?? 0;
 
+  // ── HSI history (on-device mirror of uploaded payloads) ──────────────
+  //
+  // The Rust ingest connector deletes rows from the outbound upload queue
+  // on HTTP 200 — that table is pure "pending uploads". `hsi_history` is a
+  // separate on-device table that keeps a copy of each successfully
+  // uploaded HSI payload so apps can render offline timelines and users
+  // keep access to their data after cloud storage.
+  //
+  // Retention is age-based (default 30 days, enforced by the Rust side on
+  // each archive pass). Returns empty / 0 when no cloud connector is
+  // configured. These are pure on-device operations — no network I/O.
+
+  /// List archived HSI payloads (oldest first).
+  ///
+  /// - [since] filters rows by upload timestamp; `null` returns all.
+  /// - [limit] caps the result count; `null` or `0` means unbounded.
+  ///
+  /// Each map is a parsed HSI JSON object (schema depends on the producer's
+  /// `hsi_version`). Returns empty when the cloud connector is not wired.
+  static List<Map<String, dynamic>> listHsiHistory({
+    DateTime? since,
+    int? limit,
+  }) {
+    return _coreRuntime?.hsiHistoryList(since: since, limit: limit) ??
+        const [];
+  }
+
+  /// Number of archived HSI payloads currently on-device.
+  static int hsiHistoryCount() => _coreRuntime?.hsiHistoryCount() ?? 0;
+
+  /// Wipe the on-device HSI history. Intended for user-initiated
+  /// "delete my data" flows. Does NOT clear the outbound upload queue —
+  /// pending uploads will still be sent to the cloud unless stopped.
+  /// Returns true on success, false if the runtime is unavailable.
+  static bool clearHsiHistory() => _coreRuntime?.hsiHistoryClear() ?? false;
+
   /// Batch id from the last successful cloud ingest (null if none yet).
   static String? get lastUploadBatchId => _lastUploadBatchId;
 
@@ -1693,6 +1729,12 @@ class Synheart {
         recovery: recovery,
       );
     }
+  }
+
+  /// Push vendor vital signs (SpO2, respiration) to lab windows.
+  /// Pass -1.0 for unavailable fields.
+  static void pushVendorVitals(int tsMs, {double spo2 = -1.0, double respiration = -1.0}) {
+    _coreRuntime?.pushVendorVitals(tsMs, spo2: spo2, respiration: respiration);
   }
 
   /// Start the batched ingest buffer and ensure the runtime pipeline is created.
