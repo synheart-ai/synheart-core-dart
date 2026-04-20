@@ -54,7 +54,7 @@ class WearModule extends BaseSynheartModule
   final StreamController<CanonicalWearableEvent> _canonicalEventController =
       StreamController<CanonicalWearableEvent>.broadcast();
 
-  /// Bridge to Rust runtime for vendor event storage.
+  /// Bridge to native runtime for vendor event storage.
   CoreRuntimeBridge? _bridge;
 
   // Wearable event processor — bridges RAMEN events to the SRM pipeline.
@@ -420,14 +420,14 @@ class WearModule extends BaseSynheartModule
     required int seq,
   }) async {
     if (!_lastVendorSyncState) {
-      SynheartLogger.log(
-        '[WearModule] Vendor sync consent not granted — dropping $provider/$eventType',
+      SynheartLogger.stream(
+        'vendor_sync consent not granted — dropping $provider/$eventType',
       );
       return;
     }
     if (_eventProcessor == null) {
-      SynheartLogger.log(
-        '[WearModule] Event processor not configured — dropping $provider/$eventType',
+      SynheartLogger.stream(
+        'event processor not configured — dropping $provider/$eventType',
       );
       return;
     }
@@ -440,13 +440,11 @@ class WearModule extends BaseSynheartModule
     );
 
     if (event != null) {
-      // Store in Rust SQLite via runtime bridge.
+      // Store in native SQLite via runtime bridge.
       try {
         _bridge?.ingestVendorEvent(jsonEncode(event.toMap()));
       } catch (e) {
-        SynheartLogger.log(
-          '[WearModule] Vendor event storage failed: $e',
-        );
+        SynheartLogger.stream('event storage failed: $e', error: e);
       }
 
       // Emit for UI subscribers.

@@ -17,6 +17,12 @@ library synheart_core;
 // Core SDK Entry Point (PRD-compliant Architecture)
 export 'src/synheart.dart';
 
+// SDK version constant (string literal kept in sync with pubspec.yaml)
+export 'src/version.dart';
+
+// Domain-tagged logger for consumer apps.
+export 'src/core/logger.dart' show SynheartLogger;
+
 // Configuration
 export 'src/config/api_endpoints.dart';
 export 'src/config/synheart_config.dart';
@@ -41,9 +47,12 @@ export 'src/models/metric_event.dart';
 // Wearable Events
 export 'src/models/canonical_wearable_event.dart';
 
-// Vendor Providers (cloud OAuth + data fetch)
-export 'src/modules/vendor/whoop_provider.dart';
-export 'src/modules/vendor/garmin_provider.dart';
+// Cloud vendor providers — moved to synheart_wear (link flows belong with
+// the source layer; Stream service in Core consumes handles from Wear).
+// Re-exported here for backwards compatibility; new code should import from
+// synheart_wear directly.
+export 'package:synheart_wear/synheart_wear.dart'
+    show WhoopProvider, GarminProvider;
 
 // Data Models
 export 'src/models/behavior.dart';

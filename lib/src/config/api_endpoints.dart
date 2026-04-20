@@ -1,9 +1,7 @@
 /// Central registry of all Synheart API endpoints and default base URLs.
 ///
-/// Runtime owns service postfix routing. SDK base URLs should be origin-only:
-///   https://api.synheart.ai
-///
-/// Dev gateway: https://api-dev.synheart.io
+/// Runtime owns service postfix routing. SDK base URLs should be origin-only.
+/// Override via `SYNHEART_BASE_URL` and the per-service `_*_OVERRIDE` keys.
 abstract final class ApiEndpoints {
   // ── Base URL ────────────────────────────────────────────────────────
   static const String defaultBaseUrl = String.fromEnvironment(

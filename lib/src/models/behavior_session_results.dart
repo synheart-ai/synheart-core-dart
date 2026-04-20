@@ -45,7 +45,7 @@ class BehaviorSessionResults {
 
   /// Create from BehaviorSessionSummary.
   ///
-  /// Raw rates are passed through without normalization. The Rust runtime
+  /// Raw rates are passed through without normalization. The native runtime
   /// is the authoritative source for normalized behavioral metrics.
   factory BehaviorSessionResults.fromSummary(
     sb.BehaviorSessionSummary summary,

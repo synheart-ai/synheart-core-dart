@@ -443,9 +443,17 @@ class Synheart {
   }) {
     if (_coreRuntime != null) return;
     try {
+      final orgId = shared._config?.cloudConfig?.orgId ?? '';
+      if (orgId.isEmpty) {
+        SynheartLogger.log(
+          '[Synheart] ⚠️ ensureRuntimeBridge: cloudConfig.orgId is empty — '
+          'ingest rows will be tagged with empty org_id. '
+          'Set CloudConfig.orgId in SynheartConfig before initialize().',
+        );
+      }
       _coreRuntime = CoreRuntimeBridge.create({
         'app_id': appId,
-        'org_id': 'org_synheart_eqf-5a',
+        'org_id': orgId,
         'subject_id': subjectId,
         'mode': shared._config?.mode.name ?? 'personal',
         'device_id': shared._config?.deviceId ?? '',
@@ -456,7 +464,6 @@ class Synheart {
           'enabled': true,
           'hsi': true,
           'lab': true,
-          'queue_db_path': '',
         },
         'device_auth': {
           'enabled': true,
@@ -651,13 +658,21 @@ class Synheart {
       CoreRuntimeBridge.defaultRuntimeLogEnvFilter = effRuntimeFilter;
     }
     // Initialize core runtime bridge (best-effort; null if native lib absent).
-    // NOTE: logging is deferred until AFTER coreNew — the Rust init emits
+    // NOTE: logging is deferred until AFTER coreNew — the native init emits
     // logs synchronously which crashes the async NativeCallable.listener
     // trampoline if it's already registered.
     try {
+      final orgId = resolvedCfg.cloudConfig?.orgId ?? '';
+      if (orgId.isEmpty) {
+        SynheartLogger.log(
+          '[Synheart] ⚠️ configure: cloudConfig.orgId is empty — '
+          'ingest rows will be tagged with empty org_id. '
+          'Set CloudConfig.orgId in SynheartConfig before initialize().',
+        );
+      }
       final coreJson = <String, dynamic>{
         'app_id': resolvedCfg.appId,
-        'org_id': 'org_synheart_eqf-5a',
+        'org_id': orgId,
         'subject_id': resolvedCfg.subjectId,
         'client_id': resolvedCfg.subjectId,
         'api_base_url': resolvedCfg.sync.baseUrl,
@@ -672,7 +687,6 @@ class Synheart {
           'enabled': true,
           'hsi': true,
           'lab': true,
-          'queue_db_path': '',
         },
         'device_auth': {
           'enabled': true,
@@ -890,8 +904,22 @@ class Synheart {
       // Wire HSI callback from core runtime → _hsvStream
       if (_coreRuntime != null) {
         _coreRuntime!.setHsiCallback((hsiJson) {
-          final consent = _consentModule?.current();
-          if (consent == null || !consent.biosignals) return;
+          // Consent gating is already enforced by the native runtime before
+          // HSI reaches state_tx. The Dart `_consentModule.current()`
+          // snapshot has been observed to return stale defaults (biosignals
+          // reads `false` even after `consentSubmitFormTyped` wrote the
+          // consent store on the native side) — causing this filter to drop
+          // 100% of HSI windows during an earlier validation run.
+          // Cross-check with the effective-state snapshot so we don't block
+          // on a Dart-side cache that's out of sync with the runtime.
+          final local = _consentModule?.current();
+          final effective = _coreRuntime?.consentEffectiveState();
+          final biosignalsEffective =
+              effective?['biosignals'] == true || effective?['research'] == true;
+          final biosignalsLocal = local?.biosignals == true;
+          if (!biosignalsEffective && !biosignalsLocal) {
+            return;
+          }
           _hsvStream.add(hsiJson);
         });
       }
@@ -937,7 +965,7 @@ class Synheart {
       // Cold-start auto-heal: if the runtime already has persisted cloud
       // consent (e.g. a prior session's grant) and device auth is configured
       // but not yet wired in this process, trigger registration AND refresh
-      // the consent JWT so the Rust ingest connector can flush immediately
+      // the consent JWT so the native ingest connector can flush immediately
       // on its next tick — otherwise it logs "ERR_AUTH: device not registered"
       // (pre-fix) or "ERR_AUTH: ingest requires non-empty X-Consent-Token"
       // (post-fix) every 60s until a session starts. Non-fatal.
@@ -962,7 +990,7 @@ class Synheart {
             }
           }
           // Even if registration is cached from a prior session, the consent
-          // JWT in the Rust ingest slot is in-memory state that does not
+          // JWT in the native ingest slot is in-memory state that does not
           // survive a process restart. Re-issue on every cold start when
           // cloud consent is persisted.
           if (_deviceAuthProvider != null) {
@@ -1331,13 +1359,13 @@ class Synheart {
 
   // ── HSI history (on-device mirror of uploaded payloads) ──────────────
   //
-  // The Rust ingest connector deletes rows from the outbound upload queue
+  // The native ingest connector deletes rows from the outbound upload queue
   // on HTTP 200 — that table is pure "pending uploads". `hsi_history` is a
   // separate on-device table that keeps a copy of each successfully
   // uploaded HSI payload so apps can render offline timelines and users
   // keep access to their data after cloud storage.
   //
-  // Retention is age-based (default 30 days, enforced by the Rust side on
+  // Retention is age-based (default 30 days, enforced by the native side on
   // each archive pass). Returns empty / 0 when no cloud connector is
   // configured. These are pure on-device operations — no network I/O.
 
@@ -1679,13 +1707,8 @@ class Synheart {
   }) {
     if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
       _ingestBuffer!.addHr(tsMs, bpm, provider: provider);
-      print(
-        "------------------------------------------------------------------",
-      );
-      print('add hr');
     } else {
       _coreRuntime?.pushHr(tsMs, bpm);
-      print('push hr');
     }
   }
 
@@ -1773,7 +1796,7 @@ class Synheart {
   /// Last preprocessed features from the engine (HRV, motion, quality, SRM context).
   static String? get lastFeatures => _coreRuntime?.lastFeatures();
 
-  // ── synheart-engine SRM API (baselines live in the native Rust engine) ──
+  // ── synheart-engine SRM API (baselines live in the native engine) ──
 
   /// Baseline summary from the native synheart-engine.
   ///
@@ -2598,9 +2621,9 @@ class Synheart {
     );
   }
 
-  // ── Vendor Sync (RAMEN via Rust stream-runtime) ─────────────────
+  // ── Vendor Sync (RAMEN via native stream-runtime) ────────────────
 
-  /// Start the Rust-based RAMEN streaming connection.
+  /// Start the RAMEN streaming connection.
   ///
   /// [config] must include `host`, `port`, `app_id`, `device_id`, `user_id`.
   /// Optional: `api_key`, `use_tls`, `providers`, `event_types`.
@@ -2610,13 +2633,19 @@ class Synheart {
   static void startVendorSync(Map<String, dynamic> config) {
     final bridge = _coreRuntime;
     if (bridge == null) {
-      SynheartLogger.log(
-        '[Synheart] Cannot start vendor sync: runtime not initialized',
-      );
+      SynheartLogger.stream('Cannot start: runtime not initialized');
       return;
     }
 
-    // Register callback — each event from Rust is parsed and processed.
+    SynheartLogger.stream(
+      'Starting RAMEN '
+      'host=${config['host']}:${config['port']} '
+      'app_id=${config['app_id']} '
+      'user_id=${config['user_id']} '
+      'use_tls=${config['use_tls']}',
+    );
+
+    // Register callback — each event from the native runtime is parsed and processed.
     bridge.setStreamCallback((String eventJson) {
       try {
         final event = jsonDecode(eventJson) as Map<String, dynamic>;
@@ -2633,6 +2662,11 @@ class Synheart {
           payload = {};
         }
 
+        SynheartLogger.stream(
+          'event provider=$provider type=$eventType '
+          'event_id=$eventId seq=$seq',
+        );
+
         processVendorEvent(
           provider: provider,
           eventType: eventType,
@@ -2641,15 +2675,16 @@ class Synheart {
           seq: seq,
         );
       } catch (e) {
-        SynheartLogger.log('[Synheart] Stream event parse failed: $e');
+        SynheartLogger.stream('event parse failed: $e', error: e);
       }
     });
 
     bridge.startStream(config);
   }
 
-  /// Stop the Rust-based RAMEN streaming connection.
+  /// Stop the RAMEN streaming connection.
   static void stopVendorSync() {
+    SynheartLogger.stream('Stopping RAMEN');
     _coreRuntime?.stopStream();
     _coreRuntime?.clearStreamCallback();
   }
@@ -2708,7 +2743,7 @@ class Synheart {
     bool research = false,
   }) async {
     if (_coreRuntime != null) {
-      // Mirror every channel's new value into the Rust core — grant when
+      // Mirror every channel's new value into the native core — grant when
       // true, revoke when false. Without the revoke path the core's state
       // drifts out of sync with the UI the moment the user flips a toggle
       // OFF (the subsequent hasConsent read returns the stale TRUE).
@@ -2826,7 +2861,7 @@ class Synheart {
       }
     } else if (_config?.cloudConfig != null && cloudUpload && profileId == null) {
       // Caller granted cloud but didn't supply a profile id. Without a token
-      // the Rust ingest connector fails every flush tick with
+      // the native ingest connector fails every flush tick with
       // "ERR_AUTH: ingest requires non-empty X-Consent-Token". Route through
       // the runtime's editable-form submission path, which derives the
       // profile id from the runtime's current form (offline default when no

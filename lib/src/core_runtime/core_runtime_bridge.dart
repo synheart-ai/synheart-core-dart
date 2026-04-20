@@ -21,7 +21,7 @@ import 'sdk_ffi.dart';
 void Function(String line)? synheartRuntimeLogForwarder;
 
 /// Set by [CoreRuntimeBridge.initRuntimeLogging] so the top-level trampoline
-/// can release CStrings that the Rust layer leaks across the async hop.
+/// can release CStrings that the native layer leaks across the async hop.
 void Function(Pointer<Utf8> ptr)? _synheartRuntimeLogFree;
 
 /// Decode an FFI-owned C string and free it via [freeFn]. Tolerates malformed
@@ -219,7 +219,7 @@ class CoreRuntimeBridge {
     return 0;
   }
 
-  /// Attach host-provided secure-storage callbacks so the Rust core can
+  /// Attach host-provided secure-storage callbacks so the native core can
   /// persist state (consent tokens, device records, …) across app restarts.
   ///
   /// Resolves `synheart_native_secure_store` / `…_load` / `…_delete` from the
@@ -674,7 +674,7 @@ class CoreRuntimeBridge {
 
   NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>? _streamCallable;
 
-  /// Start the Rust RAMEN streaming connection.
+  /// Start the RAMEN streaming connection.
   ///
   /// [config] must include: `host`, `port`, `app_id`, `device_id`, `user_id`.
   /// Optional: `api_key`, `use_tls`, `providers`, `event_types`.
@@ -683,7 +683,7 @@ class CoreRuntimeBridge {
     return _withCString(json, (p) => _ffi.streamStart(_handle, p));
   }
 
-  /// Stop the Rust RAMEN streaming connection.
+  /// Stop the RAMEN streaming connection.
   int stopStream() => _ffi.streamStop(_handle);
 
   /// Register a callback for RAMEN stream events.

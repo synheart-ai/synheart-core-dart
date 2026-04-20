@@ -1,6 +1,6 @@
 /// Batched event ingest for mobile sessions.
 ///
-/// Accumulates sensor events in memory and flushes them to the Rust
+/// Accumulates sensor events in memory and flushes them to the native
 /// runtime via a single `ingestBatch` FFI call every [flushInterval].
 /// This avoids per-sample FFI overhead and matches the mobile-first
 /// pattern described in the Flutter Integration Guide.

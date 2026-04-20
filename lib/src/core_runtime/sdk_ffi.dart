@@ -29,7 +29,7 @@ typedef SynheartDeleteKeyNative = Int32 Function(Pointer<Utf8> deviceId);
 
 // ── Platform secure-storage callback typedefs (native) ───────────────────
 //
-// Match `SynheartSdkSecureStoreFn` / `…LoadFn` / `…DeleteFn` in the Rust
+// Match `SynheartSdkSecureStoreFn` / `…LoadFn` / `…DeleteFn` in the native
 // `platform_bridge::ffi_bridge` module. These back consent token persistence
 // and any other state the core wants to survive process restarts.
 typedef SynheartSecureStoreNative = Int32 Function(
