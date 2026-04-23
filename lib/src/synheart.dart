@@ -30,7 +30,6 @@ import 'config/activation_manager.dart';
 import 'modules/cloud/device_auth_provider.dart';
 import 'core_runtime/core_runtime_bridge.dart';
 import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
-import 'core_runtime/session_ingest_buffer.dart';
 
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
@@ -77,10 +76,14 @@ class Synheart {
   /// core runtime bridge (FFI). Null when native lib unavailable.
   static CoreRuntimeBridge? _coreRuntime;
 
-  /// Batched event ingest buffer — accumulates events and flushes every 5s.
-  static SessionIngestBuffer? _ingestBuffer;
-
-  /// Callback for HSI output from the ingest buffer.
+  /// Callback invoked whenever `ingestBatch` returns a completed HSI
+  /// window from a per-event push ([pushWearHr] / [pushRr] /
+  /// [pushVendorHrv]). This is the primary HSI delivery path on iOS —
+  /// the native `setHsiCallback` doesn't fire there, so consumers that
+  /// care about HSI on iOS must set this callback.
+  ///
+  /// On Android the native callback already feeds [_hsvStream] and this
+  /// is redundant; consumers typically listen to [onHSIUpdate] instead.
   static void Function(String hsiJson)? onHsi;
 
   Synheart._();
@@ -1043,11 +1046,6 @@ class Synheart {
         await shared._startRuntimeLinkedCollection();
         shared._isRunning = true;
 
-        // Start batched ingest buffer (5s flush cycle).
-        _ingestBuffer?.stop();
-        _ingestBuffer = SessionIngestBuffer(bridge: _coreRuntime!, onHsi: onHsi)
-          ..start();
-
         return shared._currentSessionHandle;
       }
     }
@@ -1083,10 +1081,6 @@ class Synheart {
   /// clear ephemeral buffers, and prevent further HSI export.
   static Future<void> stopSession() async {
     if (_coreRuntime != null) {
-      // Stop ingest buffer (final flush drains remaining events).
-      _ingestBuffer?.stop();
-      _ingestBuffer = null;
-
       _coreRuntime!.stopSession();
       await shared._stopRuntimeLinkedCollection();
       shared._currentSessionHandle = null;
@@ -1813,35 +1807,44 @@ class Synheart {
     _coreRuntime?.pushBehavior(tsMs, 4, 1.0);
   }
 
-  /// Push a wear HR event into runtime and optionally synthesize RR.
-  /// Push a heart rate sample. Routes through the ingest buffer when a
-  /// session is active; falls back to direct FFI otherwise.
+  /// Push a heart-rate sample into the runtime with provider attribution.
+  ///
+  /// Routes directly through `ingestBatch` as a single-event batch so the
+  /// runtime sees the sample immediately (no Dart-side 5s delay) while
+  /// preserving the `provider` tag that `pushHr(ts, bpm)` would otherwise
+  /// drop. HSI windows produced by the batch are delivered through
+  /// [onHsi] — the primary HSI path on iOS, where the native
+  /// `setHsiCallback` doesn't fire.
   static void pushWearHr(
     int tsMs,
     double bpm, {
     String provider = 'default_sensor',
   }) {
-    if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
-      _ingestBuffer!.addHr(tsMs, bpm, provider: provider);
-    } else {
-      _coreRuntime?.pushHr(tsMs, bpm);
-    }
+    _ingestSingleEvent({
+      'type': 'hr',
+      'ts_ms': tsMs,
+      'bpm': bpm,
+      'provider': provider,
+    });
   }
 
-  /// Push an RR interval. Routes through the ingest buffer when active.
+  /// Push an RR interval. See [pushWearHr] for routing semantics.
   static void pushRr(
     int tsMs,
     double rrMs, {
     String provider = 'default_sensor',
   }) {
-    if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
-      _ingestBuffer!.addRr(tsMs, rrMs, provider: provider);
-    } else {
-      _coreRuntime?.pushRr(tsMs, rrMs);
-    }
+    _ingestSingleEvent({
+      'type': 'rr',
+      'ts_ms': tsMs,
+      'rr_ms': rrMs,
+      'provider': provider,
+    });
   }
 
-  /// Push vendor-reported HRV metrics (Tier 2).
+  /// Push vendor-reported HRV metrics (Tier 2). See [pushWearHr] for
+  /// routing semantics. Negative/-1 fields are interpreted as "not
+  /// available" and omitted from the batch payload.
   static void pushVendorHrv(
     int tsMs, {
     double rmssd = -1.0,
@@ -1850,24 +1853,15 @@ class Synheart {
     double recovery = -1.0,
     String provider = 'default_sensor',
   }) {
-    if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
-      _ingestBuffer!.addVendorHrv(
-        tsMs,
-        rmssd: rmssd > 0 ? rmssd : null,
-        sdnn: sdnn > 0 ? sdnn : null,
-        stress: stress >= 0 ? stress : null,
-        recovery: recovery >= 0 ? recovery : null,
-        provider: provider,
-      );
-    } else {
-      _coreRuntime?.pushVendorHrv(
-        tsMs,
-        rmssd: rmssd,
-        sdnn: sdnn,
-        stress: stress,
-        recovery: recovery,
-      );
-    }
+    _ingestSingleEvent({
+      'type': 'vendor_hrv',
+      'ts_ms': tsMs,
+      if (rmssd > 0) 'rmssd_ms': rmssd,
+      if (sdnn > 0) 'sdnn_ms': sdnn,
+      if (stress >= 0) 'stress': stress,
+      if (recovery >= 0) 'recovery': recovery,
+      'provider': provider,
+    });
   }
 
   /// Push vendor vital signs (SpO2, respiration) to lab windows.
@@ -1876,25 +1870,19 @@ class Synheart {
     _coreRuntime?.pushVendorVitals(tsMs, spo2: spo2, respiration: respiration);
   }
 
-  /// Start the batched ingest buffer and ensure the runtime pipeline is created.
-  /// Use when the app manages its own session lifecycle but still wants
-  /// batched event ingestion and HSI production.
-  static void startIngestBuffer() {
-    if (_coreRuntime == null) return;
-
-    // Create the pipeline without the background tick task.
-    // The ingest buffer's 5s flush handles ticking via ingestBatch.
-    _coreRuntime!.ensurePipeline();
-
-    _ingestBuffer?.stop();
-    _ingestBuffer = SessionIngestBuffer(bridge: _coreRuntime!, onHsi: onHsi)
-      ..start();
-  }
-
-  /// Stop the ingest buffer (final flush drains remaining events).
-  static void stopIngestBuffer() {
-    _ingestBuffer?.stop();
-    _ingestBuffer = null;
+  /// Serialize a single sensor event and hand it to `ingestBatch`. Used
+  /// by the provider-tagged `push*` APIs so each sample keeps its source
+  /// attribution (which the raw `pushHr`/`pushRr` FFI signatures can't
+  /// carry). Invokes [onHsi] if the batch returned a completed window.
+  static void _ingestSingleEvent(Map<String, dynamic> event) {
+    final runtime = _coreRuntime;
+    if (runtime == null) return;
+    final batchJson = jsonEncode([event]);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final hsi = runtime.ingestBatch(batchJson, nowMs);
+    if (hsi != null) {
+      onHsi?.call(hsi);
+    }
   }
 
   /// Advance the engine pipeline clock directly. Prefer the ingest buffer
