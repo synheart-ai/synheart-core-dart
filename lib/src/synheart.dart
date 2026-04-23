@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:rxdart/rxdart.dart';
 import 'config/synheart_config.dart';
 import 'core/logger.dart';
@@ -899,6 +900,13 @@ class Synheart {
       SynheartLogger.log('[Synheart] Initializing all modules...');
       await _moduleManager.initializeAll();
 
+      // Bridge the runtime's persisted consent into the Dart
+      // ConsentModule at boot. Without this, `_consentModule.current()`
+      // sits on `ConsentSnapshot.none()` until the user explicitly
+      // re-submits consent, so every module that gates on consent
+      // (Behavior, Phone, Wear) short-circuits on first session.
+      await _syncConsentModuleFromRuntime();
+
       _consentModule!.addListener(_onConsentChanged);
 
       // Wire HSI callback from core runtime → _hsvStream
@@ -1148,20 +1156,66 @@ class Synheart {
 
   /// Check if notification listener access is enabled (Android) or notification
   /// permission is granted (iOS). Required for behavior notification metrics.
-  /// Returns false if behavior module or synheart_behavior is not initialized.
+  ///
+  /// Falls back to a direct platform-channel call when the behavior SDK has
+  /// not been initialized yet, so callers do not have to wait for
+  /// [startBehaviorCollection] to complete.
   static Future<bool> checkNotificationListenerEnabled() async {
     final sb = shared._behaviorModule?.synheartBehavior;
-    if (sb == null) return false;
-    return sb.checkNotificationPermission();
+    if (sb != null) {
+      try {
+        return await sb.checkNotificationPermission();
+      } catch (e) {
+        SynheartLogger.log(
+          '[Synheart] checkNotificationPermission via SDK failed, '
+          'falling back to direct channel: $e',
+          error: e,
+        );
+      }
+    }
+    final result = await _invokeBehaviorChannel<bool>(
+      'checkNotificationPermission',
+    );
+    return result ?? false;
   }
 
   /// Open system settings where the user can enable notification access.
   /// On Android: Notification listener access (Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).
-  /// On iOS: Opens app settings. Call after behavior collection is started.
+  /// On iOS: Opens app settings.
+  ///
+  /// Falls back to a direct platform-channel call when the behavior SDK has
+  /// not been initialized yet, so the system settings page still opens even
+  /// if behavior collection has not started yet.
   static Future<void> openNotificationListenerSettings() async {
     final sb = shared._behaviorModule?.synheartBehavior;
-    if (sb == null) return;
-    await sb.requestNotificationPermission();
+    if (sb != null) {
+      try {
+        await sb.requestNotificationPermission();
+        return;
+      } catch (e) {
+        SynheartLogger.log(
+          '[Synheart] requestNotificationPermission via SDK failed, '
+          'falling back to direct channel: $e',
+          error: e,
+        );
+      }
+    }
+    await _invokeBehaviorChannel<void>('requestNotificationPermission');
+  }
+
+  static const MethodChannel _behaviorFallbackChannel =
+      MethodChannel('ai.synheart.behavior');
+
+  static Future<T?> _invokeBehaviorChannel<T>(String method) async {
+    try {
+      return await _behaviorFallbackChannel.invokeMethod<T>(method);
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] Direct behavior channel call "$method" failed: $e',
+        error: e,
+      );
+      return null;
+    }
   }
 
   /// Start phone context data collection
@@ -1539,12 +1593,74 @@ class Synheart {
       await ensureDeviceAuthRegistered();
     }
 
-    return rt.consentSubmitForm(
+    final result = await rt.consentSubmitForm(
       deviceId: resolvedDeviceId,
       platform: resolvedPlatform,
       userId: resolvedUserId,
       formJson: formJson,
     );
+
+    // Bridge the runtime's effective state into the Dart ConsentModule.
+    //
+    // Without this, `ConsentModule._currentConsent` stays at its
+    // `ConsentSnapshot.none()` boot default — and everything that gates
+    // on `_consent.current().allowsChannel(...)` (BehaviorModule,
+    // PhoneModule, WearModule) sees no consent forever, even though
+    // runtime correctly reports it granted. Downstream symptoms:
+    // `BehaviorModule._startTrackingIfNeeded: SKIP (consent channel not
+    // granted)`, `synheart_behavior` never initializes,
+    // `Synheart.behaviorEventStream` stays empty for the app session.
+    //
+    // Fire-and-forget so a sync failure here never blocks the form
+    // submit result.
+    if (result == null || result['error'] == null) {
+      // ignore: discarded_futures — sync is observational, not on the critical path
+      shared._syncConsentModuleFromRuntime();
+    }
+
+    return result;
+  }
+
+  /// Pull the runtime's effective consent state and push it into the
+  /// Dart [ConsentModule] so all consumers that read `_consent.current()`
+  /// (modules, observers) see the truth instead of the stale
+  /// `ConsentSnapshot.none()` default set at boot.
+  ///
+  /// No-ops if either the runtime bridge or the Dart consent module
+  /// isn't available yet.
+  Future<void> _syncConsentModuleFromRuntime() async {
+    final effective = consentEffectiveStateTyped();
+    if (effective == null) return;
+    final module = _consentModule;
+    if (module == null) return;
+    try {
+      final snapshot = ConsentSnapshot(
+        biosignals: effective.biosignals,
+        behavior: effective.behavior,
+        phoneContext: effective.phoneContext,
+        cloudUpload: effective.cloudUpload,
+        syni: effective.syni,
+        vendorSync: effective.vendorSync,
+        research: effective.research,
+        timestamp: DateTime.now(),
+      );
+      await module.updateConsent(snapshot);
+      SynheartLogger.log(
+        '[Synheart] Dart ConsentModule synced from runtime: '
+        'biosignals=${effective.biosignals}, '
+        'behavior=${effective.behavior}, '
+        'phoneContext=${effective.phoneContext}, '
+        'cloudUpload=${effective.cloudUpload}, '
+        'vendorSync=${effective.vendorSync}, '
+        'research=${effective.research}',
+      );
+    } catch (e, st) {
+      SynheartLogger.log(
+        '[Synheart] Failed to sync ConsentModule from runtime: $e',
+        error: e,
+        stackTrace: st,
+      );
+    }
   }
 
   /// Submit a typed [ConsentForm] to runtime using offline-first semantics.

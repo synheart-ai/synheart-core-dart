@@ -87,8 +87,31 @@ class BehaviorModule extends BaseSynheartModule
   }
 
   /// Handle events from synheart_behavior, forwarding to event stream and runtime.
+  ///
+  /// Per-call diagnostics are gated to the first few events so we don't
+  /// spam logs at the native event rate — just enough to answer the
+  /// "are events flowing through the Dart bridge at all?" question when
+  /// `behavior_events` shows up empty in an export.
+  int _synheartBehaviorEventLogCount = 0;
   void _onSynheartBehaviorEvent(sb.BehaviorEvent event) {
-    if (!_consent.current().allowsChannel('behavior.digital_activity')) return;
+    if (_synheartBehaviorEventLogCount < 3) {
+      SynheartLogger.log(
+        '[BehaviorModule] _onSynheartBehaviorEvent: received event '
+        'type=${event.eventType.name}',
+      );
+      _synheartBehaviorEventLogCount++;
+    }
+    if (!_consent.current().allowsChannel('behavior.digital_activity')) {
+      if (_synheartBehaviorEventLogCount <= 3) {
+        SynheartLogger.log(
+          '[BehaviorModule] _onSynheartBehaviorEvent: DROPPED '
+          '(consent channel "behavior.digital_activity" not allowed — '
+          'events are NOT forwarding to Synheart.behaviorEventStream, '
+          'behavior_events will be empty)',
+        );
+      }
+      return;
+    }
     final behaviorEvent = _convertSynheartEvent(event);
     if (behaviorEvent != null) {
       _eventStream.addEvent(behaviorEvent);
@@ -98,6 +121,11 @@ class BehaviorModule extends BaseSynheartModule
         final tsMs = behaviorEvent.timestamp.millisecondsSinceEpoch;
         _pushBehaviorToRuntime?.call(tsMs, mapped.$1, mapped.$2);
       }
+    } else if (_synheartBehaviorEventLogCount <= 3) {
+      SynheartLogger.log(
+        '[BehaviorModule] _onSynheartBehaviorEvent: DROPPED '
+        '(_convertSynheartEvent returned null for type=${event.eventType.name})',
+      );
     }
   }
 
@@ -157,14 +185,41 @@ class BehaviorModule extends BaseSynheartModule
   }
 
   Future<void> _startTrackingIfNeeded() async {
-    if (_isStarting) return;
-    if (_eventSubscription != null || _cleanupTimer != null) return;
-    if (!_consent.current().allowsChannel('behavior.digital_activity')) return;
+    if (_isStarting) {
+      SynheartLogger.log(
+        '[BehaviorModule] _startTrackingIfNeeded: SKIP (already starting)',
+      );
+      return;
+    }
+    if (_eventSubscription != null || _cleanupTimer != null) {
+      SynheartLogger.log(
+        '[BehaviorModule] _startTrackingIfNeeded: SKIP (already running: '
+        'eventSub=${_eventSubscription != null}, '
+        'cleanupTimer=${_cleanupTimer != null}, '
+        'synheart_behavior=${_synheartBehavior != null})',
+      );
+      return;
+    }
+    if (!_consent.current().allowsChannel('behavior.digital_activity')) {
+      SynheartLogger.log(
+        '[BehaviorModule] _startTrackingIfNeeded: SKIP (consent channel '
+        '"behavior.digital_activity" not granted)',
+      );
+      return;
+    }
+
+    SynheartLogger.log(
+      '[BehaviorModule] _startTrackingIfNeeded: proceeding '
+      '(synheart_behavior currently ${_synheartBehavior == null ? "null" : "set"})',
+    );
 
     _isStarting = true;
     try {
       // Initialize synheart_behavior only after consent is granted.
       if (_synheartBehavior == null) {
+        SynheartLogger.log(
+          '[BehaviorModule] Calling SynheartBehavior.initialize()…',
+        );
         try {
           _synheartBehavior = await sb.SynheartBehavior.initialize(
             config: sb.BehaviorConfig(
@@ -174,12 +229,14 @@ class BehaviorModule extends BaseSynheartModule
             ),
           );
           SynheartLogger.log(
-            '[BehaviorModule] synheart_behavior initialized successfully',
+            '[BehaviorModule] synheart_behavior initialized successfully '
+            '(instance=${_synheartBehavior != null})',
           );
-        } catch (e) {
+        } catch (e, st) {
           SynheartLogger.log(
             '[BehaviorModule] Failed to initialize synheart_behavior: $e',
             error: e,
+            stackTrace: st,
           );
           _synheartBehavior = null;
         }
@@ -253,7 +310,13 @@ class BehaviorModule extends BaseSynheartModule
 
     switch (eventType) {
       case sb.BehaviorEventType.tap:
-        return BehaviorEvent.tap(Offset.zero);
+        // Preserve the native tap coordinates when the iOS plugin
+        // provides them (UITapGestureRecognizer.location(in:) on a
+        // non-zero view). Falls back to Offset.zero when absent so
+        // downstream consumers always receive a well-formed event.
+        final x = (event.metrics['x'] as num?)?.toDouble() ?? 0.0;
+        final y = (event.metrics['y'] as num?)?.toDouble() ?? 0.0;
+        return BehaviorEvent.tap(Offset(x, y));
       case sb.BehaviorEventType.scroll:
         final velocity = event.metrics['velocity'] as double? ?? 0.0;
         return BehaviorEvent.scroll(velocity);

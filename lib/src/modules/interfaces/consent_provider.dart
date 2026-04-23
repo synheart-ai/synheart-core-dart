@@ -120,10 +120,19 @@ class ConsentSnapshot {
   ///
   /// Channel format: "biosignals.vitals", "behavior.digital_activity", etc.
   bool allowsChannel(String channel) {
+    // Granular channels take precedence when explicitly set — but if the
+    // granular map exists yet reports `false` for a channel whose parent
+    // module IS granted, fall back to the module boolean. This catches
+    // the common case where a consent submit sets the module-level
+    // toggle (`behavior = true`) but doesn't materialize the granular
+    // map (or materializes it with all subchannels false by default).
+    // Without the fallback, events silently drop here even though the
+    // user clearly consented to the parent module.
     if (channels != null) {
-      return _checkChannel(channel);
+      final granular = _checkChannel(channel);
+      if (granular) return true;
     }
-    // Fallback to module-level booleans
+    // Module-level fallback.
     if (channel.startsWith('biosignals.')) return biosignals;
     if (channel.startsWith('behavior.')) return behavior;
     if (channel.startsWith('phone_context.')) return phoneContext;

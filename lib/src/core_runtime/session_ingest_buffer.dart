@@ -19,8 +19,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
-
+import '../core/logger.dart';
 import 'core_runtime_bridge.dart';
 
 class SessionIngestBuffer {
@@ -137,7 +136,8 @@ class SessionIngestBuffer {
       final nowMs = DateTime.now().millisecondsSinceEpoch;
       final hsi = _bridge.ingestBatch('[]', nowMs);
       if (hsi != null) {
-        debugPrint('[IngestBuffer] tick produced HSI (${hsi.length} chars)');
+        SynheartLogger.stream(
+            '[IngestBuffer] tick produced HSI (${hsi.length} chars)');
         onHsi?.call(hsi);
       }
       return hsi;
@@ -155,7 +155,7 @@ class SessionIngestBuffer {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     _buffer.clear();
 
-    debugPrint('[IngestBuffer] flushing $count events ($types)');
+    SynheartLogger.stream('[IngestBuffer] flushing $count events ($types)');
     final hsi = _bridge.ingestBatch(batchJson, nowMs);
     if (hsi != null) {
       try {
@@ -180,21 +180,21 @@ class SessionIngestBuffer {
             }
           }
         }
-        debugPrint('[HSI] ${readings.join(" | ")}');
+        SynheartLogger.stream('[HSI] ${readings.join(" | ")}');
       } catch (e) {
-        debugPrint('[IngestBuffer] HSI (${hsi.length} chars)');
+        SynheartLogger.stream('[IngestBuffer] HSI (${hsi.length} chars)');
       }
       // Dump feature diagnostics for tier debugging
       try {
         final features = _bridge.lastFeatures();
         if (features != null) {
           final preview = features.length > 300 ? features.substring(0, 300) : features;
-          debugPrint('[Features] ${features.length} chars: $preview');
+          SynheartLogger.stream('[Features] ${features.length} chars: $preview');
         }
       } catch (_) {}
       onHsi?.call(hsi);
     } else {
-      debugPrint('[IngestBuffer] result: null');
+      SynheartLogger.stream('[IngestBuffer] result: null');
     }
     return hsi;
   }
