@@ -1706,7 +1706,8 @@ class Synheart {
     String provider = 'default_sensor',
   }) {
     if (_ingestBuffer != null && _ingestBuffer!.isRunning) {
-      _ingestBuffer!.addHr(tsMs, bpm, provider: provider);
+      // _ingestBuffer!.addHr(tsMs, bpm, provider: provider);
+      _coreRuntime?.pushHr(tsMs, bpm);
     } else {
       _coreRuntime?.pushHr(tsMs, bpm);
     }
