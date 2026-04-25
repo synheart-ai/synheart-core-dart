@@ -101,6 +101,19 @@ typedef _LoadCapDart =
 typedef _JsonReturnC = Pointer<Utf8> Function(Pointer<Void> h);
 typedef _JsonReturnDart = Pointer<Utf8> Function(Pointer<Void> h);
 
+// ── Batch sleep score (RFC-SLEEP-SCORE-PIPELINE-0001) ──
+// compute: (handle, input_json) -> *char  (handle reserved, may be null)
+typedef _SleepScoreComputeC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> inputJson);
+typedef _SleepScoreComputeDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> inputJson);
+
+// compute_traced: (handle, input_json, correlation_id) -> *char
+typedef _SleepScoreComputeTracedC = Pointer<Utf8> Function(
+    Pointer<Void> h, Pointer<Utf8> inputJson, Pointer<Utf8> correlationId);
+typedef _SleepScoreComputeTracedDart = Pointer<Utf8> Function(
+    Pointer<Void> h, Pointer<Utf8> inputJson, Pointer<Utf8> correlationId);
+
 // hsi_history list: (handle, since_unix_ms, limit) -> char* (JSON array)
 typedef _HsiHistoryListC = Pointer<Utf8> Function(
     Pointer<Void> h, Int64 sinceMs, Int64 limit);
@@ -529,6 +542,36 @@ class SynheartCoreFFI {
   late final loadSrmSnapshot = _lib
       .lookupFunction<_LoadSnapshotC, _LoadSnapshotDart>(
         'synheart_core_load_srm_snapshot',
+      );
+
+  // ── Batch nightly sleep score (RFC-SLEEP-SCORE-PIPELINE-0001) ──
+  late final sleepScoreComputeJson = _lib
+      .lookupFunction<_SleepScoreComputeC, _SleepScoreComputeDart>(
+        'synheart_core_sleep_score_compute_json',
+      );
+  late final sleepScoreComputeJsonTraced = _lib.lookupFunction<
+      _SleepScoreComputeTracedC, _SleepScoreComputeTracedDart>(
+    'synheart_core_sleep_score_compute_json_traced',
+  );
+  late final attachSleepScoreJson = _lib
+      .lookupFunction<_LoadSnapshotC, _LoadSnapshotDart>(
+        'synheart_core_attach_sleep_score_json',
+      );
+  late final lastSleepScoreJson = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_last_sleep_score_json',
+      );
+  late final exportLongitudinalSnapshot = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_export_longitudinal_snapshot',
+      );
+  late final loadLongitudinalSnapshot = _lib
+      .lookupFunction<_LoadSnapshotC, _LoadSnapshotDart>(
+        'synheart_core_load_longitudinal_snapshot',
+      );
+  late final wearableReferenceJson = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_wearable_reference_json',
       );
   late final srmOverallStatus = _lib
       .lookupFunction<_JsonReturnC, _JsonReturnDart>(

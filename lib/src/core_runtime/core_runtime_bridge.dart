@@ -13,6 +13,7 @@ import 'package:ffi/ffi.dart';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/sleep_score.dart';
 import 'ffi_bindings.dart';
 import 'platform_native_sdk_storage_callbacks.dart';
 import 'sdk_ffi.dart';
@@ -364,6 +365,147 @@ class CoreRuntimeBridge {
     return _withCString(batchJson, (p) {
       return _readAndFree(_ffi.ingestBatch(_handle, p, nowMs));
     });
+  }
+
+  // ── Batch nightly sleep score (RFC-SLEEP-SCORE-PIPELINE-0001) ──────
+  //
+  // All methods here marshal UTF-8 and free the returned native strings.
+  // See `docs/SLEEP-SCORE-INTEGRATION.md` in synheart-engine-runtime for
+  // input/output JSON shapes.
+
+  /// Compute a nightly sleep score (stateless).
+  ///
+  /// [inputJson] must match `synheart_sleep_score::SleepScoreInput`.
+  /// Returns the serialized `SleepScoreResult` or `null` on parse error.
+  String? sleepScoreComputeJson(String inputJson) {
+    return _withCString(inputJson, (p) {
+      return _readAndFree(_ffi.sleepScoreComputeJson(_handle, p));
+    });
+  }
+
+  /// Same as [sleepScoreComputeJson] but with a caller-supplied
+  /// correlation ID attached to tracing events.
+  String? sleepScoreComputeJsonTraced(String inputJson, String correlationId) {
+    return _withCString(inputJson, (p) {
+      return _withCString(correlationId, (cid) {
+        return _readAndFree(
+            _ffi.sleepScoreComputeJsonTraced(_handle, p, cid));
+      });
+    });
+  }
+
+  /// Queue a batch `SleepScoreResult` JSON to ride the next HSI and
+  /// feed the Path-B rolling median. Returns `0` on success.
+  int attachSleepScoreJson(String resultJson) {
+    return _withCString(
+        resultJson, (p) => _ffi.attachSleepScoreJson(_handle, p)) ?? -1;
+  }
+
+  /// Get the last **live-head** `SleepScore` JSON
+  /// (`rulepack://sleep_autonomic_v1`). Null if no window has completed.
+  String? lastSleepScoreJson() =>
+      _readAndFree(_ffi.lastSleepScoreJson(_handle));
+
+  /// Export the longitudinal SRM snapshot for cross-launch persistence.
+  String? exportLongitudinalSnapshot() =>
+      _readAndFree(_ffi.exportLongitudinalSnapshot(_handle));
+
+  /// Restore the longitudinal SRM from a prior snapshot.
+  /// Returns the engine error code (0 on success).
+  int loadLongitudinalSnapshot(String json) {
+    return _withCString(
+        json, (p) => _ffi.loadLongitudinalSnapshot(_handle, p)) ?? -1;
+  }
+
+  /// Get the current wearable reference, including Path-B
+  /// `recent_sleep_score_median`. Null if no reference is set.
+  String? wearableReferenceJson() =>
+      _readAndFree(_ffi.wearableReferenceJson(_handle));
+
+  // ── Typed sleep-score bridge API ───────────────────────────────────
+
+  /// Typed form of [sleepScoreComputeJson]. Returns `null` if the engine
+  /// rejected the input or the JSON couldn't be parsed.
+  SleepScoreResult? computeSleepScore(SleepScoreInput input) {
+    final json = sleepScoreComputeJson(input.toJsonString());
+    if (json == null) return null;
+    try {
+      return SleepScoreResult.fromJsonString(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Typed form of [sleepScoreComputeJsonTraced].
+  SleepScoreResult? computeSleepScoreTraced(
+      SleepScoreInput input, String correlationId) {
+    final json =
+        sleepScoreComputeJsonTraced(input.toJsonString(), correlationId);
+    if (json == null) return null;
+    try {
+      return SleepScoreResult.fromJsonString(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Typed form of [attachSleepScoreJson] — serializes the result
+  /// internally. Returns 0 on success.
+  int attachSleepScore(SleepScoreResult result) {
+    // Round-trip via JSON so we use the same wire format the Rust side
+    // expects. SleepScoreResult fields are symmetric with serde.
+    final json = jsonEncode({
+      'score': result.score,
+      'score_normalized': result.scoreNormalized,
+      'confidence': result.confidence,
+      'path': result.path.wire,
+      'mode': result.mode.wire,
+      'components': {
+        'duration': result.components.duration,
+        'quality': result.components.quality,
+        'continuity': result.components.continuity,
+        'consistency': result.components.consistency,
+        'personalization': result.components.personalization,
+        'vendor_score': result.components.vendorScore,
+        'proxy_hr': result.components.proxyHr,
+      },
+      'adjustments': {
+        'debt_penalty': result.adjustments.debtPenalty,
+        'hr_adjustment': result.adjustments.hrAdjustment,
+      },
+      'effective_weights': {
+        'duration': result.effectiveWeights.duration,
+        'quality': result.effectiveWeights.quality,
+        'continuity': result.effectiveWeights.continuity,
+        'consistency': result.effectiveWeights.consistency,
+        'personalization': result.effectiveWeights.personalization,
+      },
+      'reason': result.reason?.wire,
+      'prior_night_count': result.priorNightCount,
+      'pipeline_version': result.pipelineVersion,
+      'model_id': result.modelId,
+      'constants_hash': result.constantsHash,
+    });
+    return attachSleepScoreJson(json);
+  }
+
+  /// Typed form of [lastSleepScoreJson] — returns the live-head
+  /// SleepScore. Shape currently still matches the state-runtime
+  /// SleepScore JSON (path/mode/components/tier/baseline); returned as
+  /// raw JSON for now since the two shapes differ from the batch form.
+  String? lastSleepScoreRawJson() => lastSleepScoreJson();
+
+  /// Typed form of [wearableReferenceJson] — returns just the Path-B
+  /// fields callers usually need (`status`, `recent_sleep_score_median`).
+  /// For the full reference, parse the raw JSON yourself.
+  WearableReferenceView? wearableReference() {
+    final json = wearableReferenceJson();
+    if (json == null) return null;
+    try {
+      return WearableReferenceView.fromJsonString(json);
+    } catch (_) {
+      return null;
+    }
   }
 
   // ── Consent ──────────────────────────────────────────────────────────

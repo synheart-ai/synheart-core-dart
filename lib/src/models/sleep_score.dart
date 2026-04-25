@@ -1,0 +1,387 @@
+// Typed Dart models for the RFC-SLEEP-SCORE-PIPELINE-0001 batch scorer.
+//
+// Mirrors the JSON shapes produced by `synheart_sleep_score` (Rust, in
+// synheart-engine-runtime). Every field name matches the snake_case key
+// used by serde on the Rust side. See
+// `synheart-engine-runtime/docs/SLEEP-SCORE-INTEGRATION.md` and
+// `crates/sleep-score/README.md` for semantics.
+
+import 'dart:convert';
+
+/// Canonical sleep stage. See `SleepStage` in the Rust crate.
+enum SleepStage {
+  awake('awake'),
+  light('light'),
+  deep('deep'),
+  rem('rem'),
+  unknown('unknown');
+
+  final String wire;
+  const SleepStage(this.wire);
+
+  static SleepStage fromWire(String s) =>
+      SleepStage.values.firstWhere(
+        (v) => v.wire == s,
+        orElse: () => SleepStage.unknown,
+      );
+}
+
+/// Which pipeline path produced a score.
+enum SleepPath {
+  stage('stage'),
+  aggregated('aggregated'),
+  vendorScore('vendor_score'),
+  proxy('proxy');
+
+  final String wire;
+  const SleepPath(this.wire);
+
+  static SleepPath fromWire(String s) =>
+      SleepPath.values.firstWhere(
+        (v) => v.wire == s,
+        orElse: () => SleepPath.proxy,
+      );
+}
+
+/// Mode derived from history length (0→cold, 1–6→short, ≥7→stable in
+/// Kotlin-parity v2.0.0).
+enum SleepScoreMode {
+  coldStart('cold_start'),
+  shortHistory('short_history'),
+  stable('stable');
+
+  final String wire;
+  const SleepScoreMode(this.wire);
+
+  static SleepScoreMode fromWire(String s) =>
+      SleepScoreMode.values.firstWhere(
+        (v) => v.wire == s,
+        orElse: () => SleepScoreMode.coldStart,
+      );
+}
+
+/// Reason a score was absent or degraded.
+enum SleepScoreReason {
+  noSleepData('no_sleep_data'),
+  insufficientData('insufficient_data'),
+  proxyFallback('proxy_fallback'),
+  vendorPassthrough('vendor_passthrough');
+
+  final String wire;
+  const SleepScoreReason(this.wire);
+
+  static SleepScoreReason? fromWire(String? s) {
+    if (s == null) return null;
+    for (final v in SleepScoreReason.values) {
+      if (v.wire == s) return v;
+    }
+    return null;
+  }
+}
+
+/// A contiguous stage interval. Half-open: `[startMs, endMs)`.
+class StageSegment {
+  final SleepStage stage;
+  final int startMs;
+  final int endMs;
+
+  const StageSegment({
+    required this.stage,
+    required this.startMs,
+    required this.endMs,
+  });
+
+  Map<String, Object?> toJson() => {
+        'stage': stage.wire,
+        'start_ms': startMs,
+        'end_ms': endMs,
+      };
+}
+
+/// Aggregate per-night totals for vendors that don't expose a timeline.
+class AggregatedTotals {
+  final double totalSleepMinutes;
+  final double deepSleepMinutes;
+  final double remSleepMinutes;
+  final double awakeMinutes;
+  final int? awakenings;
+  final double? timeInBedMinutes;
+
+  const AggregatedTotals({
+    required this.totalSleepMinutes,
+    required this.deepSleepMinutes,
+    required this.remSleepMinutes,
+    required this.awakeMinutes,
+    this.awakenings,
+    this.timeInBedMinutes,
+  });
+
+  Map<String, Object?> toJson() => {
+        'total_sleep_minutes': totalSleepMinutes,
+        'deep_sleep_minutes': deepSleepMinutes,
+        'rem_sleep_minutes': remSleepMinutes,
+        'awake_minutes': awakeMinutes,
+        'awakenings': awakenings,
+        'time_in_bed_minutes': timeInBedMinutes,
+      };
+}
+
+/// The three vendor-input shapes. Rust `NightInput` is a tagged enum
+/// (`kind: segmented | aggregated | vendor_score`).
+sealed class NightInput {
+  const NightInput();
+
+  Map<String, Object?> toJson();
+}
+
+class SegmentedNight extends NightInput {
+  final int sessionStartMs;
+  final int sessionEndMs;
+  final String zoneId;
+  final List<StageSegment> segments;
+
+  const SegmentedNight({
+    required this.sessionStartMs,
+    required this.sessionEndMs,
+    required this.zoneId,
+    required this.segments,
+  });
+
+  @override
+  Map<String, Object?> toJson() => {
+        'kind': 'segmented',
+        'session_start_ms': sessionStartMs,
+        'session_end_ms': sessionEndMs,
+        'zone_id': zoneId,
+        'segments': segments.map((s) => s.toJson()).toList(),
+      };
+}
+
+class AggregatedNight extends NightInput {
+  final int? sessionStartMs;
+  final int? sessionEndMs;
+  final AggregatedTotals totals;
+
+  const AggregatedNight({
+    this.sessionStartMs,
+    this.sessionEndMs,
+    required this.totals,
+  });
+
+  @override
+  Map<String, Object?> toJson() => {
+        'kind': 'aggregated',
+        'session_start_ms': sessionStartMs,
+        'session_end_ms': sessionEndMs,
+        'totals': totals.toJson(),
+      };
+}
+
+class VendorScoreNight extends NightInput {
+  final int score;
+  const VendorScoreNight({required this.score});
+
+  @override
+  Map<String, Object?> toJson() => {
+        'kind': 'vendor_score',
+        'score': score,
+      };
+}
+
+/// One night's raw input + optional session-window HR.
+class NightRaw {
+  final int wakeCalendarDate;
+  final NightInput detail;
+  final double? avgHrBpm;
+
+  const NightRaw({
+    required this.wakeCalendarDate,
+    required this.detail,
+    this.avgHrBpm,
+  });
+
+  Map<String, Object?> toJson() => {
+        'wake_calendar_date': wakeCalendarDate,
+        'detail': detail.toJson(),
+        'avg_hr_bpm': avgHrBpm,
+      };
+}
+
+/// Full input to the scorer.
+class SleepScoreInput {
+  final NightRaw tonight;
+  final List<NightRaw> priorsNewestFirst;
+  final String pipelineVersion;
+
+  const SleepScoreInput({
+    required this.tonight,
+    this.priorsNewestFirst = const [],
+    this.pipelineVersion = '',
+  });
+
+  Map<String, Object?> toJson() => {
+        'tonight': tonight.toJson(),
+        'priors_newest_first':
+            priorsNewestFirst.map((p) => p.toJson()).toList(),
+        'pipeline_version': pipelineVersion,
+      };
+
+  String toJsonString() => jsonEncode(toJson());
+}
+
+/// Per-component breakdown; fields populated per-path.
+class SleepScoreBreakdown {
+  final int? duration;
+  final int? quality;
+  final int? continuity;
+  final int? consistency;
+  final int? personalization;
+  final int? vendorScore;
+  final int? proxyHr;
+
+  const SleepScoreBreakdown({
+    this.duration,
+    this.quality,
+    this.continuity,
+    this.consistency,
+    this.personalization,
+    this.vendorScore,
+    this.proxyHr,
+  });
+
+  factory SleepScoreBreakdown.fromJson(Map<String, Object?> json) =>
+      SleepScoreBreakdown(
+        duration: (json['duration'] as num?)?.toInt(),
+        quality: (json['quality'] as num?)?.toInt(),
+        continuity: (json['continuity'] as num?)?.toInt(),
+        consistency: (json['consistency'] as num?)?.toInt(),
+        personalization: (json['personalization'] as num?)?.toInt(),
+        vendorScore: (json['vendor_score'] as num?)?.toInt(),
+        proxyHr: (json['proxy_hr'] as num?)?.toInt(),
+      );
+}
+
+class SleepScoreAdjust {
+  final int debtPenalty;
+  final int hrAdjustment;
+
+  const SleepScoreAdjust({
+    required this.debtPenalty,
+    required this.hrAdjustment,
+  });
+
+  factory SleepScoreAdjust.fromJson(Map<String, Object?> json) =>
+      SleepScoreAdjust(
+        debtPenalty: (json['debt_penalty'] as num?)?.toInt() ?? 0,
+        hrAdjustment: (json['hr_adjustment'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class ComponentWeights {
+  final double duration;
+  final double quality;
+  final double continuity;
+  final double consistency;
+  final double personalization;
+
+  const ComponentWeights({
+    this.duration = 0,
+    this.quality = 0,
+    this.continuity = 0,
+    this.consistency = 0,
+    this.personalization = 0,
+  });
+
+  factory ComponentWeights.fromJson(Map<String, Object?> json) =>
+      ComponentWeights(
+        duration: (json['duration'] as num?)?.toDouble() ?? 0,
+        quality: (json['quality'] as num?)?.toDouble() ?? 0,
+        continuity: (json['continuity'] as num?)?.toDouble() ?? 0,
+        consistency: (json['consistency'] as num?)?.toDouble() ?? 0,
+        personalization: (json['personalization'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+/// The canonical output of the batch scorer.
+class SleepScoreResult {
+  final int? score;
+  final double? scoreNormalized;
+  final double confidence;
+  final SleepPath path;
+  final SleepScoreMode mode;
+  final SleepScoreBreakdown components;
+  final SleepScoreAdjust adjustments;
+  final ComponentWeights effectiveWeights;
+  final SleepScoreReason? reason;
+  final int priorNightCount;
+  final String pipelineVersion;
+  final String modelId;
+  final String constantsHash;
+
+  const SleepScoreResult({
+    this.score,
+    this.scoreNormalized,
+    required this.confidence,
+    required this.path,
+    required this.mode,
+    required this.components,
+    required this.adjustments,
+    required this.effectiveWeights,
+    this.reason,
+    required this.priorNightCount,
+    required this.pipelineVersion,
+    required this.modelId,
+    required this.constantsHash,
+  });
+
+  factory SleepScoreResult.fromJson(Map<String, Object?> json) =>
+      SleepScoreResult(
+        score: (json['score'] as num?)?.toInt(),
+        scoreNormalized: (json['score_normalized'] as num?)?.toDouble(),
+        confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
+        path: SleepPath.fromWire(json['path'] as String? ?? 'proxy'),
+        mode: SleepScoreMode.fromWire(
+            json['mode'] as String? ?? 'cold_start'),
+        components: SleepScoreBreakdown.fromJson(
+            (json['components'] as Map?)?.cast<String, Object?>() ?? {}),
+        adjustments: SleepScoreAdjust.fromJson(
+            (json['adjustments'] as Map?)?.cast<String, Object?>() ?? {}),
+        effectiveWeights: ComponentWeights.fromJson(
+            (json['effective_weights'] as Map?)?.cast<String, Object?>() ?? {}),
+        reason: SleepScoreReason.fromWire(json['reason'] as String?),
+        priorNightCount: (json['prior_night_count'] as num?)?.toInt() ?? 0,
+        pipelineVersion: json['pipeline_version'] as String? ?? '',
+        modelId: json['model_id'] as String? ?? '',
+        constantsHash: json['constants_hash'] as String? ?? '',
+      );
+
+  factory SleepScoreResult.fromJsonString(String s) =>
+      SleepScoreResult.fromJson(jsonDecode(s) as Map<String, Object?>);
+}
+
+/// Minimal WearableReference view — only the Path-B field Flutter hosts
+/// typically need. Callers who want the full reference should parse the
+/// raw JSON from `wearableReferenceJson`.
+class WearableReferenceView {
+  final String status;
+  final int? recentSleepScoreMedian;
+
+  const WearableReferenceView({
+    required this.status,
+    this.recentSleepScoreMedian,
+  });
+
+  factory WearableReferenceView.fromJson(Map<String, Object?> json) {
+    final dims =
+        (json['dimensions'] as Map?)?.cast<String, Object?>() ?? {};
+    return WearableReferenceView(
+      status: json['status'] as String? ?? 'Empty',
+      recentSleepScoreMedian:
+          (dims['recent_sleep_score_median'] as num?)?.toInt(),
+    );
+  }
+
+  factory WearableReferenceView.fromJsonString(String s) =>
+      WearableReferenceView.fromJson(
+          jsonDecode(s) as Map<String, Object?>);
+}
