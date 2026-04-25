@@ -359,25 +359,55 @@ class SleepScoreResult {
       SleepScoreResult.fromJson(jsonDecode(s) as Map<String, Object?>);
 }
 
-/// Minimal WearableReference view — only the Path-B field Flutter hosts
-/// typically need. Callers who want the full reference should parse the
-/// raw JSON from `wearableReferenceJson`.
+/// WearableReference view over the Longitudinal SRM engine output.
+///
+/// Surfaces the high-signal fields typed (status, Path-B median) and
+/// keeps the raw maps accessible for UI that wants to walk every
+/// dimension — useful for a baselines page that renders the full SRM.
 class WearableReferenceView {
   final String status;
+  final String? modelVersion;
   final int? recentSleepScoreMedian;
+
+  /// Per-dimension numeric values (e.g. `hrv_rmssd_ms`,
+  /// `resting_hr_bpm`). Values are num — callers coerce as needed.
+  final Map<String, num> dimensions;
+
+  /// Per-dimension confidence ∈ [0,1].
+  final Map<String, double> confidence;
 
   const WearableReferenceView({
     required this.status,
+    this.modelVersion,
     this.recentSleepScoreMedian,
+    this.dimensions = const {},
+    this.confidence = const {},
   });
 
   factory WearableReferenceView.fromJson(Map<String, Object?> json) {
-    final dims =
-        (json['dimensions'] as Map?)?.cast<String, Object?>() ?? {};
+    final dimsRaw =
+        (json['dimensions'] as Map?)?.cast<String, Object?>() ?? const {};
+    final confRaw =
+        (json['confidence'] as Map?)?.cast<String, Object?>() ?? const {};
+
+    final dims = <String, num>{};
+    for (final e in dimsRaw.entries) {
+      final v = e.value;
+      if (v is num) dims[e.key] = v;
+    }
+    final conf = <String, double>{};
+    for (final e in confRaw.entries) {
+      final v = e.value;
+      if (v is num) conf[e.key] = v.toDouble();
+    }
+
     return WearableReferenceView(
       status: json['status'] as String? ?? 'Empty',
+      modelVersion: json['model_version'] as String?,
       recentSleepScoreMedian:
-          (dims['recent_sleep_score_median'] as num?)?.toInt(),
+          (dimsRaw['recent_sleep_score_median'] as num?)?.toInt(),
+      dimensions: dims,
+      confidence: conf,
     );
   }
 

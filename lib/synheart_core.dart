@@ -47,6 +47,16 @@ export 'src/models/metric_event.dart';
 // Wearable Events
 export 'src/models/canonical_wearable_event.dart';
 
+// Sleep Score (RFC-SLEEP-SCORE-PIPELINE-0001) — typed input/result and
+// wearable reference view for the batch sleep scorer.
+export 'src/models/sleep_score.dart';
+export 'src/models/sleep_questionnaire.dart';
+
+// Baselines facade — host-facing API for vendor-sleep ingestion,
+// cached reference/score, and a live snapshot stream.
+export 'src/modules/baselines/baselines.dart';
+export 'src/modules/baselines/baselines_snapshot.dart';
+
 // Cloud vendor providers — moved to synheart_wear (link flows belong with
 // the source layer; Stream service in Core consumes handles from Wear).
 // Re-exported here for backwards compatibility; new code should import from
@@ -70,7 +80,10 @@ export 'src/modules/base/module_manager.dart';
 export 'src/modules/interfaces/capability_provider.dart';
 export 'src/modules/interfaces/auth_provider.dart';
 export 'src/modules/interfaces/consent_provider.dart';
-export 'src/modules/interfaces/feature_providers.dart';
+// `SleepStage` from the legacy feature-provider interface collides with
+// the richer enum in `models/sleep_score.dart`. The sleep_score one is
+// the public contract going forward; hide the legacy one here.
+export 'src/modules/interfaces/feature_providers.dart' hide SleepStage;
 
 // Modules
 export 'src/modules/capabilities/capability_module.dart';

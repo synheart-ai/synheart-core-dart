@@ -32,7 +32,7 @@ void main() {
           avgHrBpm: 58.0,
         ),
         priorsNewestFirst: const [],
-        pipelineVersion: 'sleep_score/2.0.1',
+        pipelineVersion: 'sleep_score/1.0.0',
       );
 
       final json = jsonDecode(input.toJsonString()) as Map<String, Object?>;
@@ -127,8 +127,8 @@ void main() {
         },
         "reason": "vendor_passthrough",
         "prior_night_count": 0,
-        "pipeline_version": "sleep_score/2.0.1",
-        "model_id": "rulepack://sleep_score_v2",
+        "pipeline_version": "sleep_score/1.0.0",
+        "model_id": "rulepack://sleep_score_v1",
         "constants_hash": "deadbeefcafef00d"
       }''';
       final r = SleepScoreResult.fromJsonString(raw);
@@ -139,8 +139,8 @@ void main() {
       expect(r.reason, SleepScoreReason.vendorPassthrough);
       expect(r.components.vendorScore, 82);
       expect(r.components.duration, isNull);
-      expect(r.pipelineVersion, 'sleep_score/2.0.1');
-      expect(r.modelId, 'rulepack://sleep_score_v2');
+      expect(r.pipelineVersion, 'sleep_score/1.0.0');
+      expect(r.modelId, 'rulepack://sleep_score_v1');
       expect(r.constantsHash, 'deadbeefcafef00d');
     });
 
@@ -157,8 +157,8 @@ void main() {
         "effective_weights": {},
         "reason": "no_sleep_data",
         "prior_night_count": 0,
-        "pipeline_version": "sleep_score/2.0.1",
-        "model_id": "rulepack://sleep_score_v2",
+        "pipeline_version": "sleep_score/1.0.0",
+        "model_id": "rulepack://sleep_score_v1",
         "constants_hash": "deadbeefcafef00d"
       }''';
       final r = SleepScoreResult.fromJsonString(raw);

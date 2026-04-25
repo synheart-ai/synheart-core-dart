@@ -35,6 +35,7 @@ import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
 import 'modules/consent/consent_ui.dart';
 import 'models/canonical_wearable_event.dart';
+import 'models/sleep_score.dart';
 import 'modules/wear/wearable_event_processor.dart';
 import 'modules/session/watch_session_module.dart';
 import 'package:synheart_session/synheart_session.dart';
@@ -2723,6 +2724,39 @@ class Synheart {
       eventId: eventId,
       seq: seq,
     );
+  }
+
+  // ── Sleep Score (RFC-SLEEP-SCORE-PIPELINE-0001) ──────────────────
+
+  /// Compute a batch [SleepScoreResult] from a [SleepScoreInput].
+  ///
+  /// Stateless: runs purely through the engine pipeline and does not
+  /// persist. Use [attachSleepScore] to ride the next HSI with the
+  /// returned result. Returns `null` if the runtime is not initialized
+  /// or the engine rejected the input.
+  static SleepScoreResult? computeSleepScore(SleepScoreInput input) {
+    return _coreRuntime?.computeSleepScore(input);
+  }
+
+  /// Attach a batch [SleepScoreResult] so it rides the next emitted
+  /// HSI window as the `sleep_score` axis and feeds the Path-B
+  /// 7-night median. Returns 0 on success, non-zero on failure.
+  static int attachSleepScore(SleepScoreResult result) {
+    return _coreRuntime?.attachSleepScore(result) ?? -1;
+  }
+
+  /// Snapshot of the current [WearableReferenceView] — including
+  /// Path-B `recent_sleep_score_median`. Null when no reference has
+  /// been produced yet or the runtime is not initialized.
+  static WearableReferenceView? get wearableReference {
+    return _coreRuntime?.wearableReference();
+  }
+
+  /// Last live-head SleepScore JSON (legacy state-runtime shape:
+  /// path/mode/components/tier/baseline). Null before the first
+  /// window closes. For the batch-score shape use [computeSleepScore].
+  static String? get lastSleepScoreJson {
+    return _coreRuntime?.lastSleepScoreJson();
   }
 
   // ── Vendor Sync (RAMEN via native stream-runtime) ────────────────
