@@ -665,16 +665,17 @@ packages:
     dependency: transitive
     description:
       name: synheart_auth
-      sha256: "78864f40a8ef8b247a215da350ec6ed47293ae6de050b58f6a25523adb131436"
+      sha256: "7a9b07634e63dec2c5922d4908d78d74f277947baa99f6ac17abaa8a9cf58683"
       url: "https://pub.dev"
     source: hosted
-    version: "0.1.1"
+    version: "0.1.2"
   synheart_behavior:
     dependency: "direct main"
     description:
-      path: "../../synheart-behavior-flutter"
-      relative: true
-    source: path
+      name: synheart_behavior
+      sha256: c92cf3c83ede016940c63f12263081edf79433097c1b221bb4c45fea6fd97b07
+      url: "https://pub.dev"
+    source: hosted
     version: "0.3.0"
   synheart_core:
     dependency: "direct main"
@@ -682,7 +683,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "0.1.0"
+    version: "0.1.1"
   synheart_session:
     dependency: transitive
     description:
@@ -692,11 +693,12 @@ packages:
     source: hosted
     version: "0.2.0"
   synheart_wear:
-    dependency: "direct overridden"
+    dependency: transitive
     description:
-      path: "../../synheart-wear-flutter"
-      relative: true
-    source: path
+      name: synheart_wear
+      sha256: "5fb35a427109de957ca7329b248f44ed7d284b56e7cdc5c3324e3c77f927febf"
+      url: "https://pub.dev"
+    source: hosted
     version: "0.4.0"
   term_glyph:
     dependency: transitive
