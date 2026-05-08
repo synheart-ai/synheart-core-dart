@@ -1,5 +1,4 @@
 // ignore_for_file: avoid_print
-import 'dart:convert';
 import 'package:synheart_core/synheart_core.dart';
 
 /// Canonical example demonstrating the full Synheart Core SDK surface.

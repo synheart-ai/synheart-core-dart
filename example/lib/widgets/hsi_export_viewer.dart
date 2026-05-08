@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:convert';
 
 /// HSI export viewer widget
 class HSIExportViewer extends StatelessWidget {

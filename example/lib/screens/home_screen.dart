@@ -2,13 +2,11 @@ import 'dart:async';
 import 'dart:ui' show FontFeature;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../behavior_metrics/session_results_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:synheart_core/synheart_core.dart';
 import 'package:synheart_behavior/synheart_behavior.dart' as sb;
 import '../providers/synheart_provider.dart';
 import '../widgets/feature_toggle_card.dart';
-import '../widgets/metric_card.dart';
 import '../widgets/session_summary_dialog.dart';
 import '../widgets/status_indicator.dart';
 import 'hsi_state_screen.dart';
@@ -16,15 +14,6 @@ import 'consent_screen.dart';
 import 'settings_screen.dart';
 import 'on_demand_screen.dart';
 import 'runtime_screen.dart';
-
-/// Helper to find a reading score from an HSI domain by axis name
-double _findReading(HSI11Domain? domain, String axis) {
-  if (domain == null) return 0.0;
-  for (final r in domain.readings) {
-    if (r.axis == axis) return r.score;
-  }
-  return 0.0;
-}
 
 /// Home screen with feature overview and toggles
 class HomeScreen extends StatefulWidget {
@@ -156,9 +145,8 @@ class _HomeScreenState extends State<HomeScreen> {
       // print(
       //   '[HomeScreen] Current session ID in SDK: ${_behavior!.currentSessionId}',
       // );
-    } catch (e, stackTrace) {
+    } catch (e) {
       // print('[HomeScreen] ❌ Failed to start behavior session: $e');
-      // print('[HomeScreen] Stack trace: $stackTrace');
     }
   }
 
@@ -306,22 +294,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         Navigator.of(context).pop(); // Close loading dialog
       }
-
-      // Navigate to results screen
-      if (mounted) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => SessionResultsScreen(
-              summary: summary,
-              events: sessionEvents,
-              behavior: _behavior,
-            ),
-          ),
-        );
-      }
-    } catch (e, stackTrace) {
+    } catch (e) {
       // print('[HomeScreen] ERROR ending session: $e');
-      // print('[HomeScreen] Stack trace: $stackTrace');
 
       // Close loading dialog if still open
       if (mounted && Navigator.of(context).canPop()) {
