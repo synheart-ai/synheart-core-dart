@@ -1,0 +1,1212 @@
+/// dart:ffi bindings to `synheart_core_runtime` C ABI.
+///
+/// Loads the native library and resolves `synheart_core_*` symbols.
+/// Used by [CoreRuntimeBridge] — not called directly by app code.
+library;
+
+import 'dart:ffi';
+import 'dart:io';
+
+import 'package:ffi/ffi.dart';
+
+import 'sdk_ffi.dart';
+
+// ── C function typedefs (native + Dart) ─────────────────────────────────
+
+// Handle lifecycle
+typedef _NewC = Pointer<Void> Function(Pointer<Utf8> configJson);
+typedef _NewDart = Pointer<Void> Function(Pointer<Utf8> configJson);
+typedef _FreeC = Void Function(Pointer<Void> handle);
+typedef _FreeDart = void Function(Pointer<Void> handle);
+typedef _FreeStringC = Void Function(Pointer<Utf8> ptr);
+typedef _FreeStringDart = void Function(Pointer<Utf8> ptr);
+
+// Session
+typedef _StartSessionC = Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _StartSessionDart = Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _StopSessionC = Int32 Function(Pointer<Void> handle);
+typedef _StopSessionDart = int Function(Pointer<Void> handle);
+typedef _CurrentSessionC = Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _CurrentSessionDart = Pointer<Utf8> Function(Pointer<Void> handle);
+typedef _IsRunningC = Int32 Function(Pointer<Void> handle);
+typedef _IsRunningDart = int Function(Pointer<Void> handle);
+
+// Sensor push
+typedef _PushRrC =
+    Void Function(Pointer<Void> h, Int64 ts, Double rr, Pointer<Utf8> provider);
+typedef _PushRrDart =
+    void Function(Pointer<Void> h, int ts, double rr, Pointer<Utf8> provider);
+typedef _PushHrC = Void Function(Pointer<Void> h, Int64 ts, Double bpm);
+typedef _PushHrDart = void Function(Pointer<Void> h, int ts, double bpm);
+typedef _EnsurePipelineC = Void Function(Pointer<Void> h);
+typedef _EnsurePipelineDart = void Function(Pointer<Void> h);
+typedef _TickC = Pointer<Utf8> Function(Pointer<Void> h, Int64 nowMs);
+typedef _TickDart = Pointer<Utf8> Function(Pointer<Void> h, int nowMs);
+typedef _PushVendorHrvC =
+    Void Function(
+      Pointer<Void> h,
+      Int64 ts,
+      Double rmssd,
+      Double sdnn,
+      Double stress,
+      Double recovery,
+    );
+typedef _PushVendorHrvDart =
+    void Function(
+      Pointer<Void> h,
+      int ts,
+      double rmssd,
+      double sdnn,
+      double stress,
+      double recovery,
+    );
+typedef _PushVendorVitalsC =
+    Void Function(Pointer<Void> h, Int64 ts, Double spo2, Double respiration);
+typedef _PushVendorVitalsDart =
+    void Function(Pointer<Void> h, int ts, double spo2, double respiration);
+typedef _PushAccelC =
+    Void Function(Pointer<Void> h, Int64 ts, Double x, Double y, Double z);
+typedef _PushAccelDart =
+    void Function(Pointer<Void> h, int ts, double x, double y, double z);
+typedef _PushBehaviorC =
+    Void Function(Pointer<Void> h, Int64 ts, Int32 t, Double v);
+typedef _PushBehaviorDart =
+    void Function(Pointer<Void> h, int ts, int t, double v);
+typedef _PushSleepC = Void Function(Pointer<Void> h, Pointer<Utf8> json);
+typedef _PushSleepDart = void Function(Pointer<Void> h, Pointer<Utf8> json);
+typedef _IngestBatchC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> json, Int64 now);
+typedef _IngestBatchDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> json, int now);
+
+// Breathing compliance (RFC-Breathing-001).
+typedef _BreathingSetTargetBpmC = Void Function(Pointer<Void> h, Double bpm);
+typedef _BreathingSetTargetBpmDart = void Function(Pointer<Void> h, double bpm);
+typedef _BreathingSetWindowSecsC = Void Function(Pointer<Void> h, Int32 secs);
+typedef _BreathingSetWindowSecsDart = void Function(Pointer<Void> h, int secs);
+typedef _BreathingSetPopulationC =
+    Void Function(Pointer<Void> h, Int32 profile);
+typedef _BreathingSetPopulationDart =
+    void Function(Pointer<Void> h, int profile);
+typedef _BreathingEvaluateC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _BreathingEvaluateDart = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _BreathingResetC = Void Function(Pointer<Void> h);
+typedef _BreathingResetDart = void Function(Pointer<Void> h);
+
+// Personalization task / workout APIs .
+typedef _SetTaskTypeC = Void Function(Pointer<Void> h, Int32 kind);
+typedef _SetTaskTypeDart = void Function(Pointer<Void> h, int kind);
+typedef _PushWorkoutEventC =
+    Void Function(
+      Pointer<Void> h,
+      Int64 startMs,
+      Int64 endMs,
+      Int32 workoutKind,
+      Double vendorStrain,
+      Double vendorRecovery,
+    );
+typedef _PushWorkoutEventDart =
+    void Function(
+      Pointer<Void> h,
+      int startMs,
+      int endMs,
+      int workoutKind,
+      double vendorStrain,
+      double vendorRecovery,
+    );
+typedef _CurrentTaskTypeC = Int32 Function(Pointer<Void> h);
+typedef _CurrentTaskTypeDart = int Function(Pointer<Void> h);
+typedef _CurrentWorkoutKindC = Int32 Function(Pointer<Void> h);
+typedef _CurrentWorkoutKindDart = int Function(Pointer<Void> h);
+typedef _PersonalizationContextJsonC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _PersonalizationContextJsonDart =
+    Pointer<Utf8> Function(Pointer<Void> h);
+// Daily Recovery Score attach (RFC-RECOVERY-SCORE-0001).
+typedef _AttachRecoveryScoreC = Int32 Function(Pointer<Void> h, Uint8 score);
+typedef _AttachRecoveryScoreDart = int Function(Pointer<Void> h, int score);
+typedef _SrmPushWearableDailyC =
+    Void Function(
+      Pointer<Void> h,
+      Pointer<Utf8> dim,
+      Int32 dayIndex,
+      Double value,
+      Double confidence,
+      Int32 fidelity,
+    );
+typedef _SrmPushWearableDailyDart =
+    void Function(
+      Pointer<Void> h,
+      Pointer<Utf8> dim,
+      int dayIndex,
+      double value,
+      double confidence,
+      int fidelity,
+    );
+typedef _SrmTriggerRecomputeC =
+    Void Function(Pointer<Void> h, Int32 trigger, Int32 asOfDay);
+typedef _SrmTriggerRecomputeDart =
+    void Function(Pointer<Void> h, int trigger, int asOfDay);
+
+// Consent
+typedef _ConsentStrC = Int32 Function(Pointer<Void> h, Pointer<Utf8> ct);
+typedef _ConsentStrDart = int Function(Pointer<Void> h, Pointer<Utf8> ct);
+typedef _HasConsentC = Int32 Function(Pointer<Void> h, Pointer<Utf8> ct);
+typedef _HasConsentDart = int Function(Pointer<Void> h, Pointer<Utf8> ct);
+typedef _CurrentConsentC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _CurrentConsentDart = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _ConsentConfigureCloudC =
+    Int32 Function(Pointer<Void> h, Pointer<Utf8> baseUrl, Pointer<Utf8> appId);
+typedef _ConsentConfigureCloudDart =
+    int Function(Pointer<Void> h, Pointer<Utf8> baseUrl, Pointer<Utf8> appId);
+typedef _ConsentSubmitFormC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> deviceId,
+      Pointer<Utf8> platform,
+      Pointer<Utf8> userId,
+      Pointer<Utf8> formJson,
+    );
+typedef _ConsentSubmitFormDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> deviceId,
+      Pointer<Utf8> platform,
+      Pointer<Utf8> userId,
+      Pointer<Utf8> formJson,
+    );
+
+// Capability
+typedef _LoadCapC =
+    Int32 Function(Pointer<Void> h, Pointer<Utf8> tj, Pointer<Utf8> s);
+typedef _LoadCapDart =
+    int Function(Pointer<Void> h, Pointer<Utf8> tj, Pointer<Utf8> s);
+
+// Queries
+typedef _JsonReturnC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _JsonReturnDart = Pointer<Utf8> Function(Pointer<Void> h);
+
+// ── Batch sleep score (RFC-SLEEP-SCORE-PIPELINE-0001) ──
+// compute: (handle, input_json) -> *char (handle reserved, may be null)
+typedef _SleepScoreComputeC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> inputJson);
+typedef _SleepScoreComputeDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> inputJson);
+
+// compute_traced: (handle, input_json, correlation_id) -> *char
+typedef _SleepScoreComputeTracedC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> inputJson,
+      Pointer<Utf8> correlationId,
+    );
+typedef _SleepScoreComputeTracedDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> inputJson,
+      Pointer<Utf8> correlationId,
+    );
+
+// hsi_history list: (handle, since_unix_ms, limit) -> char* (JSON array)
+typedef _HsiHistoryListC =
+    Pointer<Utf8> Function(Pointer<Void> h, Int64 sinceMs, Int64 limit);
+typedef _HsiHistoryListDart =
+    Pointer<Utf8> Function(Pointer<Void> h, int sinceMs, int limit);
+// hsi_history count: (handle) -> int64 uses the existing _Int64Return* typedefs.
+typedef _SessionIdC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> sid);
+typedef _SessionIdDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> sid);
+typedef _HsiWindowsC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> sid,
+      Int64 s,
+      Int64 e,
+      Int32 l,
+    );
+typedef _HsiWindowsDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> sid,
+      int s,
+      int e,
+      int l,
+    );
+
+// Metrics
+typedef _RecordMetricC = Int32 Function(Pointer<Void> h, Pointer<Utf8> json);
+typedef _RecordMetricDart = int Function(Pointer<Void> h, Pointer<Utf8> json);
+
+// Deletion
+typedef _DeleteSessionC = Int32 Function(Pointer<Void> h, Pointer<Utf8> sid);
+typedef _DeleteSessionDart = int Function(Pointer<Void> h, Pointer<Utf8> sid);
+typedef _WipeC = Int32 Function(Pointer<Void> h);
+typedef _WipeDart = int Function(Pointer<Void> h);
+typedef _RetentionC = Int64 Function(Pointer<Void> h, Int32 days);
+typedef _RetentionDart = int Function(Pointer<Void> h, int days);
+
+// Vendor events
+typedef _IngestVendorEventC =
+    Int32 Function(Pointer<Void> h, Pointer<Utf8> json);
+typedef _IngestVendorEventDart =
+    int Function(Pointer<Void> h, Pointer<Utf8> json);
+typedef _QueryVendorEventsC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> queryJson);
+typedef _QueryVendorEventsDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> queryJson);
+typedef _GetLatestVendorEventC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> provider,
+      Pointer<Utf8> eventType,
+    );
+typedef _GetLatestVendorEventDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> provider,
+      Pointer<Utf8> eventType,
+    );
+typedef _DeleteVendorEventsC =
+    Int64 Function(Pointer<Void> h, Pointer<Utf8> provider);
+typedef _DeleteVendorEventsDart =
+    int Function(Pointer<Void> h, Pointer<Utf8> provider);
+
+// Sync
+typedef _SetSyncC = Void Function(Pointer<Void> h, Int32 enabled);
+typedef _SetSyncDart = void Function(Pointer<Void> h, int enabled);
+typedef _SyncNowC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncNowDart = Pointer<Utf8> Function(Pointer<Void> h);
+
+// Generic `(handle) -> int32` shape — used by ambient-capture get,
+// and any future read-only flag accessor. Kept here rather than
+// inlined at the lookup site so the binding block stays terse.
+typedef _GetIntC = Int32 Function(Pointer<Void> h);
+typedef _GetIntDart = int Function(Pointer<Void> h);
+
+// SRM
+typedef _LoadSnapshotC = Int32 Function(Pointer<Void> h, Pointer<Utf8> json);
+typedef _LoadSnapshotDart = int Function(Pointer<Void> h, Pointer<Utf8> json);
+
+// Cloud
+typedef _EnqueueC =
+    Void Function(Pointer<Void> h, Pointer<Utf8> json, Int64 ts);
+typedef _EnqueueDart =
+    void Function(Pointer<Void> h, Pointer<Utf8> json, int ts);
+typedef _IntReturnC = Int32 Function(Pointer<Void> h);
+typedef _IntReturnDart = int Function(Pointer<Void> h);
+
+// Account
+typedef _AccountActionC = Int32 Function(Pointer<Void> h);
+typedef _AccountActionDart = int Function(Pointer<Void> h);
+
+// Lab
+//
+// `synheart_core_lab_start` returns `c_int` — 0 on success, non-zero on
+// failure (e.g. 1 = "Lab session already active"). Earlier the Dart
+// typedef declared the return as `Pointer<Utf8>`, which caused Dart to
+// read the integer return as a pointer: a non-zero error code (e.g. 1)
+// became `Pointer<Utf8>` at address `0x1`, and the bridge's
+// `_readAndFree` then tried to walk bytes from `0x1` looking for a null
+// terminator — guaranteed EXC_BAD_ACCESS at address=0x1. Mirror crash
+// 2026-04-28 traced to this when "Add Another Entry" reused an active
+// lab session and the runtime correctly returned err=1.
+typedef _LabStartC =
+    Int32 Function(
+      Pointer<Void> h,
+      Pointer<Utf8> protocolJson,
+      Int64 startedAtMs,
+    );
+typedef _LabStartDart =
+    int Function(Pointer<Void> h, Pointer<Utf8> protocolJson, int startedAtMs);
+typedef _LabOpenWindowC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> parentId,
+      Pointer<Utf8> windowType,
+      Pointer<Utf8> label,
+      Int64 startedAtMs,
+    );
+typedef _LabOpenWindowDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> parentId,
+      Pointer<Utf8> windowType,
+      Pointer<Utf8> label,
+      int startedAtMs,
+    );
+typedef _LabCloseWindowC =
+    Int32 Function(Pointer<Void> h, Pointer<Utf8> windowId, Int64 endedAtMs);
+typedef _LabCloseWindowDart =
+    int Function(Pointer<Void> h, Pointer<Utf8> windowId, int endedAtMs);
+typedef _LabSetWindowValuesC =
+    Int32 Function(
+      Pointer<Void> h,
+      Pointer<Utf8> windowId,
+      Pointer<Utf8> valuesJson,
+    );
+typedef _LabSetWindowValuesDart =
+    int Function(
+      Pointer<Void> h,
+      Pointer<Utf8> windowId,
+      Pointer<Utf8> valuesJson,
+    );
+// Same ABI-mismatch class as _LabStart was — the runtime returns `c_int`
+// (0 = OK, non-zero = error code). Earlier this was declared as
+// Pointer<Utf8>, so a non-zero error code was read as a pointer and
+// the bridge crashed walking bytes from a tiny address.
+typedef _LabMergeExtraDataC =
+    Int32 Function(Pointer<Void> h, Pointer<Utf8> patchJson);
+typedef _LabMergeExtraDataDart =
+    int Function(Pointer<Void> h, Pointer<Utf8> patchJson);
+typedef _LabSetStateOverridesC =
+    Int32 Function(
+      Pointer<Void> h,
+      Pointer<Utf8> windowId,
+      Pointer<Utf8> overridesJson,
+    );
+typedef _LabSetStateOverridesDart =
+    int Function(
+      Pointer<Void> h,
+      Pointer<Utf8> windowId,
+      Pointer<Utf8> overridesJson,
+    );
+typedef _LabFinalizeC =
+    Pointer<Utf8> Function(Pointer<Void> h, Int64 endedAtMs);
+typedef _LabFinalizeDart =
+    Pointer<Utf8> Function(Pointer<Void> h, int endedAtMs);
+typedef _LabAvailableC = Int32 Function(Pointer<Void> h);
+typedef _LabAvailableDart = int Function(Pointer<Void> h);
+
+// Lab metadata
+typedef _LabEnsureMetadataC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> deviceId,
+      Pointer<Utf8> platform,
+      Pointer<Utf8> osVersion,
+      Pointer<Utf8> userInfoJson,
+      Pointer<Utf8> deviceExtraJson,
+    );
+typedef _LabEnsureMetadataDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> deviceId,
+      Pointer<Utf8> platform,
+      Pointer<Utf8> osVersion,
+      Pointer<Utf8> userInfoJson,
+      Pointer<Utf8> deviceExtraJson,
+    );
+typedef _LabMarkMetadataDirtyC =
+    Int32 Function(Pointer<Void> h, Pointer<Utf8> reason);
+typedef _LabMarkMetadataDirtyDart =
+    int Function(Pointer<Void> h, Pointer<Utf8> reason);
+
+// Diagnostics
+typedef _VersionC = Pointer<Utf8> Function();
+typedef _VersionDart = Pointer<Utf8> Function();
+typedef _Int64ReturnC = Int64 Function(Pointer<Void> h);
+typedef _Int64ReturnDart = int Function(Pointer<Void> h);
+typedef _DoubleReturnC = Double Function(Pointer<Void> h);
+typedef _DoubleReturnDart = double Function(Pointer<Void> h);
+
+// ── Multi-source priority resolver ──────────────────────────────────
+// Process-global (no handle), JSON in/out for resolve.
+typedef _PrioritySetProviderC =
+    Int32 Function(Pointer<Utf8> provider, Int32 rank);
+typedef _PrioritySetProviderDart =
+    int Function(Pointer<Utf8> provider, int rank);
+typedef _PrioritySetMetricOverrideC =
+    Int32 Function(
+      Pointer<Utf8> metric,
+      Pointer<Utf8> provider,
+      Int32 present,
+      Int32 rank,
+    );
+typedef _PrioritySetMetricOverrideDart =
+    int Function(
+      Pointer<Utf8> metric,
+      Pointer<Utf8> provider,
+      int present,
+      int rank,
+    );
+typedef _PriorityEffectiveRankC =
+    Int32 Function(Pointer<Utf8> metric, Pointer<Utf8> provider);
+typedef _PriorityEffectiveRankDart =
+    int Function(Pointer<Utf8> metric, Pointer<Utf8> provider);
+typedef _PriorityResolveC =
+    Pointer<Utf8> Function(Pointer<Utf8> metric, Pointer<Utf8> samplesJson);
+typedef _PriorityResolveDart =
+    Pointer<Utf8> Function(Pointer<Utf8> metric, Pointer<Utf8> samplesJson);
+
+// ── HRV-CV resilience score ─────────────────────────────────────────
+// Stateless. Three JSON inputs, one JSON output.
+typedef _ResilienceComputeC =
+    Pointer<Utf8> Function(
+      Pointer<Utf8> samplesJson,
+      Pointer<Utf8> windowsJson,
+      Pointer<Utf8> configJson,
+    );
+typedef _ResilienceComputeDart =
+    Pointer<Utf8> Function(
+      Pointer<Utf8> samplesJson,
+      Pointer<Utf8> windowsJson,
+      Pointer<Utf8> configJson,
+    );
+
+// ── Apple Health XML backfill ───────────────────────────────────────
+// Stateful per-import via runtime registry keyed by import_id.
+typedef _BackfillOpenC =
+    Int32 Function(Pointer<Utf8> dbPath, Pointer<Utf8> importId);
+typedef _BackfillOpenDart =
+    int Function(Pointer<Utf8> dbPath, Pointer<Utf8> importId);
+typedef _BackfillInsertBatchC =
+    Pointer<Utf8> Function(Pointer<Utf8> importId, Pointer<Utf8> samplesJson);
+typedef _BackfillInsertBatchDart =
+    Pointer<Utf8> Function(Pointer<Utf8> importId, Pointer<Utf8> samplesJson);
+typedef _BackfillFinalizeC = Pointer<Utf8> Function(Pointer<Utf8> importId);
+typedef _BackfillFinalizeDart = Pointer<Utf8> Function(Pointer<Utf8> importId);
+
+// ── Library loader ──────────────────────────────────────────────────────
+
+/// Resolved FFI bindings for `synheart_core_runtime`.
+class SynheartCoreFFI {
+  SynheartCoreFFI._(this._lib) : sdkFfi = SynheartSdkFfi.tryBind(_lib);
+
+  final DynamicLibrary _lib;
+
+  /// Optional `synheart_core_sdk_*` device-auth symbols (null fields if absent).
+  final SynheartSdkFfi sdkFfi;
+
+  static SynheartCoreFFI? _instance;
+
+  /// Load the native library. Returns null if not found.
+  ///
+  /// Desktop (macOS/Linux/Windows) lookup order:
+  /// 1. `<cwd>/synheart/vendor/runtime/<platform>/<libname>` (installed by
+  /// `synheart install runtime` or `synheart runtime install --from`)
+  /// 2. bare `<libname>` (system loader path — DYLD/LD_LIBRARY_PATH, PATH)
+  ///
+  /// iOS is statically linked (DynamicLibrary.process()). Android loads via
+  /// jniLibs/ auto-discovery by the Android loader.
+  static SynheartCoreFFI? load() {
+    if (_instance != null) return _instance;
+
+    DynamicLibrary? lib;
+    try {
+      if (Platform.isIOS) {
+        lib = DynamicLibrary.process(); // statically linked
+      } else if (Platform.isAndroid) {
+        lib = DynamicLibrary.open('libsynheart_core_runtime.so');
+      } else if (Platform.isMacOS) {
+        lib = _openDesktop('macos', 'libsynheart_core_runtime.dylib');
+      } else if (Platform.isLinux) {
+        lib = _openDesktop('linux', 'libsynheart_core_runtime.so');
+      } else if (Platform.isWindows) {
+        lib = _openDesktop('windows', 'synheart_core_runtime.dll');
+      }
+    } catch (_) {
+      return null;
+    }
+
+    if (lib == null) return null;
+    _instance = SynheartCoreFFI._(lib);
+    return _instance;
+  }
+
+  /// Try `synheart/vendor/runtime/<platform>/<libname>` relative to the
+  /// current working directory, then fall back to the bare filename so the
+  /// OS loader can resolve it from standard library search paths.
+  static DynamicLibrary? _openDesktop(String platform, String libname) {
+    final vendored =
+        '${Directory.current.path}'
+        '${Platform.pathSeparator}synheart'
+        '${Platform.pathSeparator}vendor'
+        '${Platform.pathSeparator}runtime'
+        '${Platform.pathSeparator}$platform'
+        '${Platform.pathSeparator}$libname';
+    if (File(vendored).existsSync()) {
+      try {
+        return DynamicLibrary.open(vendored);
+      } catch (_) {
+        // fall through to bare lookup
+      }
+    }
+    try {
+      return DynamicLibrary.open(libname);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Resolved symbols ────────────────────────────────────────────────
+
+  late final initLogging = _lib
+      .lookupFunction<
+        Int32 Function(
+          Pointer<Utf8>,
+          Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>?,
+          Pointer<Void>,
+        ),
+        int Function(
+          Pointer<Utf8>,
+          Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>?,
+          Pointer<Void>,
+        )
+      >('synheart_core_init_logging');
+
+  // Logging lifecycle FFI (runtime ≥ 5.2.1). Required: every shipped
+  // runtime artifact exports these alongside `synheart_core_init_logging`.
+  late final setLogCallback = _lib
+      .lookupFunction<
+        Int32 Function(
+          Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>?,
+          Pointer<Void>,
+        ),
+        int Function(
+          Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>?,
+          Pointer<Void>,
+        )
+      >('synheart_core_set_log_callback');
+
+  late final shutdownLogging = _lib
+      .lookupFunction<Int32 Function(), int Function()>(
+        'synheart_core_shutdown_logging',
+      );
+
+  late final buildInfo = _lib
+      .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+        'synheart_core_build_info',
+      );
+
+  late final coreNew = _lib.lookupFunction<_NewC, _NewDart>(
+    'synheart_core_new',
+  );
+  late final coreFree = _lib.lookupFunction<_FreeC, _FreeDart>(
+    'synheart_core_free',
+  );
+  late final coreFreeString = _lib
+      .lookupFunction<_FreeStringC, _FreeStringDart>(
+        'synheart_core_free_string',
+      );
+
+  late final startSession = _lib
+      .lookupFunction<_StartSessionC, _StartSessionDart>(
+        'synheart_core_start_session',
+      );
+  late final stopSession = _lib.lookupFunction<_StopSessionC, _StopSessionDart>(
+    'synheart_core_stop_session',
+  );
+  late final currentSession = _lib
+      .lookupFunction<_CurrentSessionC, _CurrentSessionDart>(
+        'synheart_core_current_session',
+      );
+  late final isRunning = _lib.lookupFunction<_IsRunningC, _IsRunningDart>(
+    'synheart_core_is_running',
+  );
+
+  late final pushRr = _lib.lookupFunction<_PushRrC, _PushRrDart>(
+    'synheart_core_push_rr',
+  );
+  late final pushHr = _lib.lookupFunction<_PushHrC, _PushHrDart>(
+    'synheart_core_push_hr',
+  );
+
+  // Breathing compliance (RFC-Breathing-001).
+  late final breathingSetTargetBpm = _lib
+      .lookupFunction<_BreathingSetTargetBpmC, _BreathingSetTargetBpmDart>(
+        'synheart_core_breathing_set_target_bpm',
+      );
+  late final breathingSetWindowSecs = _lib
+      .lookupFunction<_BreathingSetWindowSecsC, _BreathingSetWindowSecsDart>(
+        'synheart_core_breathing_set_window_secs',
+      );
+  late final breathingSetPopulation = _lib
+      .lookupFunction<_BreathingSetPopulationC, _BreathingSetPopulationDart>(
+        'synheart_core_breathing_set_population',
+      );
+  late final breathingEvaluate = _lib
+      .lookupFunction<_BreathingEvaluateC, _BreathingEvaluateDart>(
+        'synheart_core_breathing_evaluate',
+      );
+  late final breathingReset = _lib
+      .lookupFunction<_BreathingResetC, _BreathingResetDart>(
+        'synheart_core_breathing_reset',
+      );
+  late final ensurePipeline = _lib
+      .lookupFunction<_EnsurePipelineC, _EnsurePipelineDart>(
+        'synheart_core_ensure_pipeline',
+      );
+  late final tick = _lib.lookupFunction<_TickC, _TickDart>(
+    'synheart_core_tick',
+  );
+  late final pushVendorHrv = _lib
+      .lookupFunction<_PushVendorHrvC, _PushVendorHrvDart>(
+        'synheart_core_push_vendor_hrv',
+      );
+  late final pushVendorVitals = _lib
+      .lookupFunction<_PushVendorVitalsC, _PushVendorVitalsDart>(
+        'synheart_core_push_vendor_vitals',
+      );
+  late final pushAccel = _lib.lookupFunction<_PushAccelC, _PushAccelDart>(
+    'synheart_core_push_accel',
+  );
+  late final pushBehavior = _lib
+      .lookupFunction<_PushBehaviorC, _PushBehaviorDart>(
+        'synheart_core_push_behavior',
+      );
+  late final pushSleepStages = _lib.lookupFunction<_PushSleepC, _PushSleepDart>(
+    'synheart_core_push_sleep_stages',
+  );
+  late final ingestBatch = _lib.lookupFunction<_IngestBatchC, _IngestBatchDart>(
+    'synheart_core_ingest_batch',
+  );
+
+  // Personalization task / workout APIs .
+  late final setTaskType = _lib.lookupFunction<_SetTaskTypeC, _SetTaskTypeDart>(
+    'synheart_core_set_task_type',
+  );
+  late final pushWorkoutEvent = _lib
+      .lookupFunction<_PushWorkoutEventC, _PushWorkoutEventDart>(
+        'synheart_core_push_workout_event',
+      );
+  late final currentTaskType = _lib
+      .lookupFunction<_CurrentTaskTypeC, _CurrentTaskTypeDart>(
+        'synheart_core_current_task_type',
+      );
+  late final currentWorkoutKind = _lib
+      .lookupFunction<_CurrentWorkoutKindC, _CurrentWorkoutKindDart>(
+        'synheart_core_current_workout_kind',
+      );
+  late final setFocusKind = _lib
+      .lookupFunction<_SetTaskTypeC, _SetTaskTypeDart>(
+        'synheart_core_set_focus_kind',
+      );
+  late final currentFocusKind = _lib
+      .lookupFunction<_CurrentTaskTypeC, _CurrentTaskTypeDart>(
+        'synheart_core_current_focus_kind',
+      );
+  late final personalizationContextJson = _lib
+      .lookupFunction<
+        _PersonalizationContextJsonC,
+        _PersonalizationContextJsonDart
+      >('synheart_core_personalization_context_json');
+  late final srmPushWearableDaily = _lib
+      .lookupFunction<_SrmPushWearableDailyC, _SrmPushWearableDailyDart>(
+        'synheart_core_srm_push_wearable_daily',
+      );
+  late final srmTriggerWearableRecompute = _lib
+      .lookupFunction<_SrmTriggerRecomputeC, _SrmTriggerRecomputeDart>(
+        'synheart_core_srm_trigger_wearable_recompute',
+      );
+
+  late final grantConsent = _lib.lookupFunction<_ConsentStrC, _ConsentStrDart>(
+    'synheart_core_grant_consent',
+  );
+  late final revokeConsent = _lib.lookupFunction<_ConsentStrC, _ConsentStrDart>(
+    'synheart_core_revoke_consent',
+  );
+  late final hasConsent = _lib.lookupFunction<_HasConsentC, _HasConsentDart>(
+    'synheart_core_has_consent',
+  );
+  late final currentConsent = _lib
+      .lookupFunction<_CurrentConsentC, _CurrentConsentDart>(
+        'synheart_core_current_consent',
+      );
+  late final consentConfigureCloud = _lib
+      .lookupFunction<_ConsentConfigureCloudC, _ConsentConfigureCloudDart>(
+        'synheart_core_consent_configure_cloud',
+      );
+  late final consentGetEditableForm = _lib
+      .lookupFunction<_CurrentConsentC, _CurrentConsentDart>(
+        'synheart_core_consent_get_editable_form',
+      );
+  late final consentSubmitForm = _lib
+      .lookupFunction<_ConsentSubmitFormC, _ConsentSubmitFormDart>(
+        'synheart_core_consent_submit_form',
+      );
+  late final consentClearStored = _lib
+      .lookupFunction<_IntReturnC, _IntReturnDart>(
+        'synheart_core_consent_clear_stored',
+      );
+  late final consentStatus = _lib
+      .lookupFunction<_CurrentConsentC, _CurrentConsentDart>(
+        'synheart_core_consent_status',
+      );
+  late final consentEffectiveState = _lib
+      .lookupFunction<_CurrentConsentC, _CurrentConsentDart>(
+        'synheart_core_consent_effective_state',
+      );
+  late final consentNeedsTokenRefresh = _lib
+      .lookupFunction<_IntReturnC, _IntReturnDart>(
+        'synheart_core_consent_needs_token_refresh',
+      );
+
+  late final loadCapabilityToken = _lib.lookupFunction<_LoadCapC, _LoadCapDart>(
+    'synheart_core_load_capability_token',
+  );
+
+  late final listSessions = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
+    'synheart_core_list_sessions',
+  );
+  late final getSessionSummary = _lib
+      .lookupFunction<_SessionIdC, _SessionIdDart>(
+        'synheart_core_get_session_summary',
+      );
+  late final getHsiWindows = _lib.lookupFunction<_HsiWindowsC, _HsiWindowsDart>(
+    'synheart_core_get_hsi_windows',
+  );
+  late final getStorageUsage = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_get_storage_usage',
+      );
+
+  late final recordMetric = _lib
+      .lookupFunction<_RecordMetricC, _RecordMetricDart>(
+        'synheart_core_record_metric',
+      );
+
+  late final deleteSession = _lib
+      .lookupFunction<_DeleteSessionC, _DeleteSessionDart>(
+        'synheart_core_delete_session',
+      );
+  late final wipeLocalData = _lib.lookupFunction<_WipeC, _WipeDart>(
+    'synheart_core_wipe_local_data',
+  );
+  late final setRetentionDays = _lib
+      .lookupFunction<_RetentionC, _RetentionDart>(
+        'synheart_core_set_retention_days',
+      );
+
+  late final ingestVendorEvent = _lib
+      .lookupFunction<_IngestVendorEventC, _IngestVendorEventDart>(
+        'synheart_core_ingest_vendor_event',
+      );
+  late final queryVendorEvents = _lib
+      .lookupFunction<_QueryVendorEventsC, _QueryVendorEventsDart>(
+        'synheart_core_query_vendor_events',
+      );
+  late final getLatestVendorEvent = _lib
+      .lookupFunction<_GetLatestVendorEventC, _GetLatestVendorEventDart>(
+        'synheart_core_get_latest_vendor_event',
+      );
+  late final deleteVendorEventsForProvider = _lib
+      .lookupFunction<_DeleteVendorEventsC, _DeleteVendorEventsDart>(
+        'synheart_core_delete_vendor_events_for_provider',
+      );
+
+  late final setSyncEnabled = _lib.lookupFunction<_SetSyncC, _SetSyncDart>(
+    'synheart_core_set_sync_enabled',
+  );
+
+  // Ambient capture gate (RFC §13). Drives whether the runtime forwards
+  // out-of-session HSI windows to the host's hsi callback. Default off
+  // — a host that never calls `setAmbientCapture` continues to behave
+  // like the legacy session-only build. Returns `1` for on, `0` for
+  // off; reuses `_SetSync*` typedefs because the wire shape is the
+  // same `(handle, c_int)` pair.
+  late final setAmbientCapture = _lib.lookupFunction<_SetSyncC, _SetSyncDart>(
+    'synheart_core_set_ambient_capture',
+  );
+  late final getAmbientCapture = _lib.lookupFunction<_GetIntC, _GetIntDart>(
+    'synheart_core_get_ambient_capture',
+  );
+  late final syncNow = _lib.lookupFunction<_SyncNowC, _SyncNowDart>(
+    'synheart_core_sync_now',
+  );
+
+  late final baselinesJson = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
+    'synheart_core_baselines_json',
+  );
+  late final exportSrmSnapshot = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_export_srm_snapshot',
+      );
+  late final loadSrmSnapshot = _lib
+      .lookupFunction<_LoadSnapshotC, _LoadSnapshotDart>(
+        'synheart_core_load_srm_snapshot',
+      );
+
+  // ── Batch nightly sleep score (RFC-SLEEP-SCORE-PIPELINE-0001) ──
+  late final sleepScoreComputeJson = _lib
+      .lookupFunction<_SleepScoreComputeC, _SleepScoreComputeDart>(
+        'synheart_core_sleep_score_compute_json',
+      );
+  late final sleepScoreComputeJsonTraced = _lib
+      .lookupFunction<_SleepScoreComputeTracedC, _SleepScoreComputeTracedDart>(
+        'synheart_core_sleep_score_compute_json_traced',
+      );
+
+  // ── Daily recovery score (RFC-RECOVERY-SCORE-0001) ──
+  // Same `(handle, input_json)` shape as sleep-score; reuse typedefs.
+  late final recoveryScoreComputeJson = _lib
+      .lookupFunction<_SleepScoreComputeC, _SleepScoreComputeDart>(
+        'synheart_core_recovery_score_compute_json',
+      );
+  late final recoveryScoreComputeJsonTraced = _lib
+      .lookupFunction<_SleepScoreComputeTracedC, _SleepScoreComputeTracedDart>(
+        'synheart_core_recovery_score_compute_json_traced',
+      );
+
+  // ── Daily readiness score (RFC-READINESS-SCORE-0001) ──
+  // Same `(handle, input_json)` shape; reuse typedefs.
+  late final readinessScoreComputeJson = _lib
+      .lookupFunction<_SleepScoreComputeC, _SleepScoreComputeDart>(
+        'synheart_core_readiness_score_compute_json',
+      );
+  late final readinessScoreComputeJsonTraced = _lib
+      .lookupFunction<_SleepScoreComputeTracedC, _SleepScoreComputeTracedDart>(
+        'synheart_core_readiness_score_compute_json_traced',
+      );
+  late final attachSleepScoreJson = _lib
+      .lookupFunction<_LoadSnapshotC, _LoadSnapshotDart>(
+        'synheart_core_attach_sleep_score_json',
+      );
+  late final attachRecoveryScoreToday = _lib
+      .lookupFunction<_AttachRecoveryScoreC, _AttachRecoveryScoreDart>(
+        'synheart_core_attach_recovery_score_today',
+      );
+  late final clearRecoveryScoreToday = _lib
+      .lookupFunction<_IntReturnC, _IntReturnDart>(
+        'synheart_core_clear_recovery_score_today',
+      );
+  late final lastSleepScoreJson = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_last_sleep_score_json',
+      );
+  late final exportLongitudinalSnapshot = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_export_longitudinal_snapshot',
+      );
+  late final loadLongitudinalSnapshot = _lib
+      .lookupFunction<_LoadSnapshotC, _LoadSnapshotDart>(
+        'synheart_core_load_longitudinal_snapshot',
+      );
+  late final wearableReferenceJson = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_wearable_reference_json',
+      );
+  late final srmOverallStatus = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_srm_overall_status',
+      );
+
+  late final enqueueHsi = _lib.lookupFunction<_EnqueueC, _EnqueueDart>(
+    'synheart_core_enqueue_hsi',
+  );
+  late final uploadQueueLength = _lib
+      .lookupFunction<_IntReturnC, _IntReturnDart>(
+        'synheart_core_upload_queue_length',
+      );
+  late final lastIngestSuccessAtMs = _lib
+      .lookupFunction<_Int64ReturnC, _Int64ReturnDart>(
+        'synheart_core_last_ingest_success_at_ms',
+      );
+  late final flushUploads = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
+    'synheart_core_flush_uploads',
+  );
+
+  // hsi_history: on-device mirror of successfully uploaded HSI payloads.
+  // Populated automatically by the ingest connector on HTTP 200; pruned
+  // by age (default 30 days).
+  late final hsiHistoryList = _lib
+      .lookupFunction<_HsiHistoryListC, _HsiHistoryListDart>(
+        'synheart_core_hsi_history_list',
+      );
+  late final hsiHistoryCount = _lib
+      .lookupFunction<_Int64ReturnC, _Int64ReturnDart>(
+        'synheart_core_hsi_history_count',
+      );
+  late final hsiHistoryClear = _lib.lookupFunction<_IntReturnC, _IntReturnDart>(
+    'synheart_core_hsi_history_clear',
+  );
+  late final uploadMetadata = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_upload_metadata',
+      );
+
+  late final wellnessJson = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
+    'synheart_core_wellness_json',
+  );
+
+  late final lastFeatures = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
+    'synheart_core_last_features',
+  );
+  late final diagnostics = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
+    'synheart_core_diagnostics',
+  );
+  late final lastErrorCode = _lib.lookupFunction<_IntReturnC, _IntReturnDart>(
+    'synheart_core_last_error_code',
+  );
+  late final isRuntimeAvailable = _lib
+      .lookupFunction<_IntReturnC, _IntReturnDart>(
+        'synheart_core_is_runtime_available',
+      );
+  late final isNetworkReachable = _lib
+      .lookupFunction<_IntReturnC, _IntReturnDart>(
+        'synheart_core_is_network_reachable',
+      );
+
+  late final requestAccountDeletion = _lib
+      .lookupFunction<_AccountActionC, _AccountActionDart>(
+        'synheart_core_request_account_deletion',
+      );
+  late final cancelAccountDeletion = _lib
+      .lookupFunction<_AccountActionC, _AccountActionDart>(
+        'synheart_core_cancel_account_deletion',
+      );
+
+  // HSI callback
+  late final setHsiCallback = _lib
+      .lookupFunction<
+        Void Function(
+          Pointer<Void>,
+          Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>,
+          Pointer<Void>,
+        ),
+        void Function(
+          Pointer<Void>,
+          Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>,
+          Pointer<Void>,
+        )
+      >('synheart_core_set_hsi_callback');
+
+  late final clearHsiCallback = _lib
+      .lookupFunction<
+        Void Function(Pointer<Void>),
+        void Function(Pointer<Void>)
+      >('synheart_core_clear_hsi_callback');
+
+  // Stream (RAMEN vendor sync)
+  late final streamStart = _lib
+      .lookupFunction<
+        Int32 Function(Pointer<Void>, Pointer<Utf8>),
+        int Function(Pointer<Void>, Pointer<Utf8>)
+      >('synheart_core_stream_start');
+
+  late final streamStop = _lib
+      .lookupFunction<
+        Int32 Function(Pointer<Void>),
+        int Function(Pointer<Void>)
+      >('synheart_core_stream_stop');
+
+  late final setStreamCallback = _lib
+      .lookupFunction<
+        Void Function(
+          Pointer<Void>,
+          Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>,
+          Pointer<Void>,
+        ),
+        void Function(
+          Pointer<Void>,
+          Pointer<NativeFunction<Void Function(Pointer<Utf8>, Pointer<Void>)>>,
+          Pointer<Void>,
+        )
+      >('synheart_core_set_stream_callback');
+
+  late final streamState = _lib
+      .lookupFunction<
+        Pointer<Utf8> Function(Pointer<Void>),
+        Pointer<Utf8> Function(Pointer<Void>)
+      >('synheart_core_stream_state');
+
+  // Lab
+  late final labStart = _lib.lookupFunction<_LabStartC, _LabStartDart>(
+    'synheart_core_lab_start',
+  );
+  late final labOpenWindow = _lib
+      .lookupFunction<_LabOpenWindowC, _LabOpenWindowDart>(
+        'synheart_core_lab_open_window',
+      );
+  late final labCloseWindow = _lib
+      .lookupFunction<_LabCloseWindowC, _LabCloseWindowDart>(
+        'synheart_core_lab_close_window',
+      );
+  late final labSetWindowValues = _lib
+      .lookupFunction<_LabSetWindowValuesC, _LabSetWindowValuesDart>(
+        'synheart_core_lab_set_window_values',
+      );
+  late final labMergeExtraData = _lib
+      .lookupFunction<_LabMergeExtraDataC, _LabMergeExtraDataDart>(
+        'synheart_core_lab_merge_extra_data',
+      );
+  late final labSetStateOverrides = _lib
+      .lookupFunction<_LabSetStateOverridesC, _LabSetStateOverridesDart>(
+        'synheart_core_lab_set_state_overrides',
+      );
+  late final labFinalize = _lib.lookupFunction<_LabFinalizeC, _LabFinalizeDart>(
+    'synheart_core_lab_finalize',
+  );
+  late final labAvailable = _lib
+      .lookupFunction<_LabAvailableC, _LabAvailableDart>(
+        'synheart_core_is_lab_available',
+      );
+  late final labExportJson = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
+    'synheart_core_lab_export_json',
+  );
+  // Lab metadata. Optional: older runtimes may not export these, in which case
+  // the lookup throws and the field stays null.
+  late final Pointer<Utf8> Function(
+    Pointer<Void>,
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+  )?
+  labEnsureMetadata = () {
+    try {
+      return _lib.lookupFunction<_LabEnsureMetadataC, _LabEnsureMetadataDart>(
+        'synheart_core_lab_ensure_metadata',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
+  late final int Function(Pointer<Void>, Pointer<Utf8>)? labMarkMetadataDirty =
+      () {
+        try {
+          return _lib.lookupFunction<
+            _LabMarkMetadataDirtyC,
+            _LabMarkMetadataDirtyDart
+          >('synheart_core_lab_mark_metadata_dirty');
+        } catch (_) {
+          return null;
+        }
+      }();
+  late final Pointer<Utf8> Function(Pointer<Void>)? labCurrentMetadataId = () {
+    try {
+      return _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_lab_current_metadata_id',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  // Version / frame diagnostics
+  late final Pointer<Utf8> Function()? version = () {
+    try {
+      return _lib.lookupFunction<_VersionC, _VersionDart>(
+        'synheart_core_version',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
+  late final frameCount = _lib.lookupFunction<_Int64ReturnC, _Int64ReturnDart>(
+    'synheart_core_frame_count',
+  );
+  late final double Function(Pointer<Void>)? lastQuality = () {
+    try {
+      return _lib.lookupFunction<_DoubleReturnC, _DoubleReturnDart>(
+        'synheart_core_last_quality',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  // ── Multi-source priority resolver ────────────────────────────────
+  // All four symbols are nullable because they ship in the native runtime
+  // 5.4.0+; older runtimes return null and the high-level Dart API
+  // falls back to a pure-Dart in-memory store.
+
+  late final int Function(Pointer<Utf8>, int)? prioritySetProvider = () {
+    try {
+      return _lib
+          .lookupFunction<_PrioritySetProviderC, _PrioritySetProviderDart>(
+            'synheart_core_priority_set_provider',
+          );
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  late final int Function(Pointer<Utf8>, Pointer<Utf8>, int, int)?
+  prioritySetMetricOverride = () {
+    try {
+      return _lib.lookupFunction<
+        _PrioritySetMetricOverrideC,
+        _PrioritySetMetricOverrideDart
+      >('synheart_core_priority_set_metric_override');
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  late final int Function(Pointer<Utf8>, Pointer<Utf8>)? priorityEffectiveRank =
+      () {
+        try {
+          return _lib.lookupFunction<
+            _PriorityEffectiveRankC,
+            _PriorityEffectiveRankDart
+          >('synheart_core_priority_effective_rank');
+        } catch (_) {
+          return null;
+        }
+      }();
+
+  late final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>)?
+  priorityResolve = () {
+    try {
+      return _lib.lookupFunction<_PriorityResolveC, _PriorityResolveDart>(
+        'synheart_core_priority_resolve',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  // ── HRV-CV resilience score ───────────────────────────────────────
+  // Stateless. Nullable for graceful version fallback.
+
+  late final Pointer<Utf8> Function(
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+  )?
+  resilienceComputeV1 = () {
+    try {
+      return _lib.lookupFunction<_ResilienceComputeC, _ResilienceComputeDart>(
+        'synheart_core_resilience_compute_v1',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  // ── Apple Health XML backfill ─────────────────────────────────────
+  // Same nullable pattern.
+
+  late final int Function(Pointer<Utf8>, Pointer<Utf8>)? backfillOpen = () {
+    try {
+      return _lib.lookupFunction<_BackfillOpenC, _BackfillOpenDart>(
+        'synheart_core_backfill_open',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  late final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>)?
+  backfillInsertBatch = () {
+    try {
+      return _lib
+          .lookupFunction<_BackfillInsertBatchC, _BackfillInsertBatchDart>(
+            'synheart_core_backfill_insert_batch',
+          );
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  late final Pointer<Utf8> Function(Pointer<Utf8>)? backfillFinalize = () {
+    try {
+      return _lib.lookupFunction<_BackfillFinalizeC, _BackfillFinalizeDart>(
+        'synheart_core_backfill_finalize',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
+}

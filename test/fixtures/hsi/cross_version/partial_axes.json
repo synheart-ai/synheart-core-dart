@@ -1,0 +1,52 @@
+{
+  "hsi_version": "1.2",
+  "observed_at_utc": "2025-12-28T00:07:00Z",
+  "computed_at_utc": "2025-12-28T00:07:00Z",
+  "producer": {
+    "name": "Example Producer",
+    "version": "1.0.0",
+    "instance_id": "a7b8c9d0-e1f2-3a4b-5c6d-7e8f9a0b1c2d"
+  },
+  "windows": {
+    "w1": {
+      "start_utc": "2025-12-28T00:06:50Z",
+      "end_utc": "2025-12-28T00:07:00Z",
+      "label": "10s_window"
+    },
+    "w2": {
+      "start_utc": "2025-12-28T00:06:00Z",
+      "end_utc": "2025-12-28T00:07:00Z",
+      "label": "60s_window"
+    }
+  },
+  "axes": {
+    "physiological": [
+      {
+        "name": "valence",
+        "score": 0.51,
+        "confidence": 0.57,
+        "direction": "higher_is_more",
+        "inference_mode": "probabilistic_model",
+        "model_id": "model://example/valence-v1",
+        "window_ids": ["w2"],
+        "evidence_source_ids": []
+      }
+    ]
+  },
+  "privacy": {
+    "contains_pii": false,
+    "raw_biosignals_allowed": false,
+    "derived_metrics_allowed": true,
+    "consent": "implicit",
+    "purposes": ["personalization"]
+  },
+  "meta": {
+    "intent": "Test vector: partial axes (physiological only), no embeddings, no provenance sources.",
+    "provenance": {
+      "baseline_status": "READY",
+      "providers": [{ "id": "synheart-physio", "version": "2.0.0" }],
+      "engine": "synheart-flux",
+      "engine_version": "1.0.0"
+    }
+  }
+}

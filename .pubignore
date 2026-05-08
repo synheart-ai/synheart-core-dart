@@ -1,0 +1,39 @@
+# Files to exclude from the published package
+
+# Development files
+.claude/
+__dev__/
+.env*
+!.env.example
+TASKS.md
+DEVELOPMENT.md
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Git files
+.git/
+.gitignore
+
+# CI/CD (included via .github)
+# .github/
+
+# Documentation (keep main docs, exclude drafts)
+doc/arch.md
+
+# Build artifacts
+build/
+.dart_tool/
+
+# Test files (if you want to exclude them)
+# test/
+
+# Example apps (keep them for pub.dev)
+# example/
+
+# Temporary files
+*.log
+*.tmp
+.DS_Store

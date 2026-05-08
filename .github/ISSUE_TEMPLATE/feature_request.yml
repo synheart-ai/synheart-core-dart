@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a new feature or change to the SDK.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to propose changes to the SDK. We do not accept
+        pull requests, but well-scoped feature requests are how external
+        feedback shapes the roadmap.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you trying to solve? What is the use case?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        How would you like the SDK to behave? Include API sketches if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you have tried, or other approaches you considered.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context

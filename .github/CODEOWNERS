@@ -1,0 +1,4 @@
+# All changes require review from the Synheart open-source team.
+# This is a defense-in-depth alongside the auto-close-external-prs workflow:
+# any internal-team PR that slips past the auto-close also goes through review.
+*       @synheart-ai/opensource

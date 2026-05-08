@@ -1,0 +1,80 @@
+{
+  "hsi_version": "1.2",
+  "observed_at_utc": "2026-02-21T12:00:10Z",
+  "computed_at_utc": "2026-02-21T12:00:10Z",
+  "producer": {
+    "name": "Example Producer",
+    "version": "1.1.0",
+    "instance_id": "a3c7e1b4-9f2d-4a6e-b8c5-1d2e3f4a5b6c"
+  },
+  "windows": {
+    "w1": {
+      "start_utc": "2026-02-21T12:00:00Z",
+      "end_utc": "2026-02-21T12:00:10Z",
+      "label": "10s_window"
+    }
+  },
+  "axes": {
+    "physiological": [
+      {
+        "name": "valence",
+        "score": 0.55,
+        "confidence": 0.72,
+        "direction": "higher_is_more",
+        "inference_mode": "probabilistic_model",
+        "model_id": "model://example/valence-v1",
+        "window_ids": ["w1"],
+        "evidence_source_ids": []
+      }
+    ],
+    "context": [
+      {
+        "name": "activity_walk_conf",
+        "score": 0.91,
+        "confidence": 0.88,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://context_activity_v1",
+        "window_ids": ["w1"],
+        "evidence_source_ids": []
+      },
+      {
+        "name": "baseline_ready",
+        "score": 1,
+        "confidence": 1.0,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://baseline_flags_v1",
+        "window_ids": ["w1"],
+        "evidence_source_ids": []
+      },
+      {
+        "name": "baseline_maturity",
+        "score": 0.74,
+        "confidence": 0.95,
+        "direction": "higher_is_more",
+        "inference_mode": "probabilistic_model",
+        "model_id": "model://example/baseline-maturity-v1",
+        "window_ids": ["w1"],
+        "evidence_source_ids": []
+      }
+    ]
+  },
+  "privacy": {
+    "contains_pii": false,
+    "raw_biosignals_allowed": false,
+    "derived_metrics_allowed": true,
+    "consent": "implicit",
+    "purposes": ["personalization"]
+  },
+  "meta": {
+    "intent": "Valid example: context domain with full provenance.",
+    "provenance": {
+      "baseline_status": "READY",
+      "providers": [{ "id": "synheart-focus", "version": "2.1.0" }],
+      "equation_id": "eq-context-v1.0",
+      "engine": "synheart-flux",
+      "engine_version": "1.1.0"
+    }
+  }
+}

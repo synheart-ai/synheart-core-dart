@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/synheart-ai/synheart-core-flutter/security/advisories/new
+    about: Please report security issues privately via GitHub Security Advisories — do not file public issues for security reports.
+  - name: Question or discussion
+    url: https://github.com/synheart-ai/synheart-core-flutter/discussions
+    about: For open-ended questions, use Discussions rather than the issue tracker.
