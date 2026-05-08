@@ -123,8 +123,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           controller: _consentUrlController,
                           decoration: const InputDecoration(
                             labelText: 'Consent service URL',
-                            hintText:
-                                'https://your-platform.example.com',
+                            hintText: 'https://your-platform.example.com',
                             border: OutlineInputBorder(),
                           ),
                           keyboardType: TextInputType.url,

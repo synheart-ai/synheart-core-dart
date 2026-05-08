@@ -49,8 +49,7 @@ class SynheartProvider extends ChangeNotifier {
   String? _savedConsentServiceUrl;
   String? _savedConsentAppId;
   String? _savedConsentAppApiKey;
-  static const _defaultConsentServiceUrl =
-      'https://your-platform.example.com';
+  static const _defaultConsentServiceUrl = 'https://your-platform.example.com';
   static const _defaultConsentAppId = const String.fromEnvironment(
     'SYNHEART_CONSENT_APP_ID',
     defaultValue: '',

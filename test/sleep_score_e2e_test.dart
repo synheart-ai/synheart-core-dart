@@ -115,14 +115,10 @@ DynamicLibrary? _openDylib() {
 void main() {
   final lib = _openDylib();
   if (lib == null) {
-    test(
-      'skipped — native dylib not found',
-      () {
-        // Install the runtime via the Synheart CLI (`synheart install
-        // runtime`) so the dylib lands in synheart-core-flutter/native/.
-      },
-      skip: 'native runtime dylib not present',
-    );
+    test('skipped — native dylib not found', () {
+      // Install the runtime via the Synheart CLI (`synheart install
+      // runtime`) so the dylib lands in synheart-core-flutter/native/.
+    }, skip: 'native runtime dylib not present');
     return;
   }
   final edge = _Edge(lib);
