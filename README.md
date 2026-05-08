@@ -1,6 +1,6 @@
 # Synheart Core SDK - Dart/Flutter
 
-[![Version](https://img.shields.io/badge/version-0.0.4-blue.svg)](https://github.com/synheart-ai/synheart-core-flutter)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/synheart-ai/synheart-core-flutter)
 [![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.32.0-blue.svg)](https://flutter.dev)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
@@ -125,7 +125,7 @@ Add `synheart_core` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  synheart_core: ^0.0.4
+  synheart_core: ^0.1.1
 ```
 
 Or:
