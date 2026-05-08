@@ -55,7 +55,7 @@ void main() {
     });
 
     test('errors are sealed — only the four known variants exist', () {
-      const e = BackfillRuntimeUnavailable();
+      const BackfillSinkError e = BackfillRuntimeUnavailable();
       // Exhaustive switch must compile; if a new variant is added
       // and this switch is missing a branch, dart analyzer flags it.
       final tag = switch (e) {
