@@ -3949,22 +3949,43 @@ class Synheart {
     );
 
     try {
-      final reg = await runtime.sdkRegisterDevice(resolvedConfig.subjectId);
-      final deviceId =
-          reg?['device_id'] as String? ?? reg?['deviceId'] as String?;
-      final err = reg?['error']?.toString();
-      if (reg == null || deviceId == null || (err != null && err.isNotEmpty)) {
-        throw StateError(
-          'Core SDK register_device failed: ${reg ?? "null result"}',
+      // After keychain restore the runtime can already be in `registered`
+      // state. Calling sdkRegisterDevice again kicks off the full 7-step
+      // re-registration (Play Integrity → new keypair → HTTP POST), which
+      // blocks the main isolate's microtask queue while it runs and ANRs
+      // the app on cold boot once a few stale device records pile up
+      // server-side. Short-circuit when the runtime already considers us
+      // registered — the keychain/state is the source of truth.
+      final preSnap = runtime.sdkDeviceAuthStatus();
+      final preStatus = preSnap?['status']?.toString();
+      if (preStatus == 'registered') {
+        final restoredId = preSnap?['device_id']?.toString();
+        _deviceAuthViaCoreRuntime = true;
+        final idPreview = (restoredId == null || restoredId.length <= 8)
+            ? (restoredId ?? '?')
+            : '${restoredId.substring(0, 8)}..';
+        SynheartLogger.log(
+          '[Synheart] Device already registered (restored from keychain) — '
+          'skipping re-registration (device_id preview: $idPreview)',
+        );
+      } else {
+        final reg = await runtime.sdkRegisterDevice(resolvedConfig.subjectId);
+        final deviceId =
+            reg?['device_id'] as String? ?? reg?['deviceId'] as String?;
+        final err = reg?['error']?.toString();
+        if (reg == null || deviceId == null || (err != null && err.isNotEmpty)) {
+          throw StateError(
+            'Core SDK register_device failed: ${reg ?? "null result"}',
+          );
+        }
+        _deviceAuthViaCoreRuntime = true;
+        final idPreview = deviceId.length <= 8
+            ? deviceId
+            : '${deviceId.substring(0, 8)}..';
+        SynheartLogger.log(
+          '[Synheart] Core SDK device registration complete (device_id preview: $idPreview)',
         );
       }
-      _deviceAuthViaCoreRuntime = true;
-      final idPreview = deviceId.length <= 8
-          ? deviceId
-          : '${deviceId.substring(0, 8)}..';
-      SynheartLogger.log(
-        '[Synheart] Core SDK device registration complete (device_id preview: $idPreview)',
-      );
     } catch (e) {
       SynheartLogger.log('[Synheart] Device registration failed: $e', error: e);
       if (resolvedConfig.allowUnsignedCapabilities) {
