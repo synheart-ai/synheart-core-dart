@@ -2833,10 +2833,23 @@ class Synheart {
   /// - read editable form,
   /// - submit current consent choices,
   /// - verify runtime status / token refresh state.
+  ///
+  /// IMPORTANT: this is the consent-grant chain — the runtime gate
+  /// (`has_consent`) deliberately fails-closed when cloud is configured
+  /// but no valid consent token is loaded. We must NOT pre-check that
+  /// gate here, because the whole point of this function is to obtain
+  /// the token that flips the gate open. Instead we read the local
+  /// snapshot (effective state) directly: that tells us whether the
+  /// user has chosen to allow cloud upload, independent of token
+  /// validity. When the snapshot says cloud is allowed but no valid
+  /// token exists, this is exactly the cold-start "user granted in a
+  /// prior session, token expired or never persisted" case — and we
+  /// need to re-submit the form to issue a fresh token.
   static Future<bool> ensureCloudConsentReady() async {
     final runtime = _coreRuntime;
     if (runtime == null) return false;
-    if (!await hasConsent('cloudUpload')) return false;
+    final effective = consentEffectiveStateTyped();
+    if (effective?.cloudUpload != true) return false;
 
     final status = consentStatus()?['status']?.toString().toLowerCase();
     final needsRefresh = consentNeedsTokenRefresh();
@@ -2848,16 +2861,40 @@ class Synheart {
     if (currentForm == null) return false;
     final local = shared._consentModule?.current();
     final mergedForm = currentForm.copyWith(
-      biosignals: local?.biosignals ?? currentForm.biosignals,
-      phoneContext: local?.phoneContext ?? currentForm.phoneContext,
-      behavior: local?.behavior ?? currentForm.behavior,
+      biosignals:
+          local?.biosignals ?? effective?.biosignals ?? currentForm.biosignals,
+      phoneContext: local?.phoneContext ??
+          effective?.phoneContext ??
+          currentForm.phoneContext,
+      behavior:
+          local?.behavior ?? effective?.behavior ?? currentForm.behavior,
       allowCloud: true,
-      allowResearch: local?.research ?? currentForm.allowResearch,
-      allowVendorSync: local?.vendorSync ?? currentForm.allowVendorSync,
+      allowResearch: local?.research ??
+          effective?.research ??
+          currentForm.allowResearch,
+      allowVendorSync: local?.vendorSync ??
+          effective?.vendorSync ??
+          currentForm.allowVendorSync,
     );
 
     final submit = await consentSubmitFormTyped(form: mergedForm);
     if (submit == null || submit['error'] != null) {
+      return false;
+    }
+    // Verify a token was actually issued. submit_form returns
+    // `synced=false, token=null` (without `error`) when the cloud
+    // profile fetch or token-issue HTTP call failed — the local
+    // snapshot is still saved but the runtime stays in Pending and
+    // the biosignal/research gates remain closed. Treating that as
+    // success would silently drop pushes for the rest of the session.
+    final tokenIssued = submit['token'] != null;
+    final synced = submit['synced'] == true;
+    if (!tokenIssued || !synced) {
+      SynheartLogger.log(
+        '[Synheart] ensureCloudConsentReady: submit accepted but no '
+        'cloud token issued (synced=$synced, token=$tokenIssued). '
+        'Likely network/cloud unavailable — gates stay closed.',
+      );
       return false;
     }
     final refreshedStatus = consentStatus()?['status']
