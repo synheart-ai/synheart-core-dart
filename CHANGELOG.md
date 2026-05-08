@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-08
+
+### Changed
+- Bumped `synheart_auth` dep to `^0.1.2`. Picks up the Maven Central
+  `ai.synheart:synheart-auth:0.1.1` upgrade (clock-skew auto-apply,
+  register/rotate race fix, HTTP timeouts, §13 audit-log PII redaction).
+
 ## [0.1.0] - 2026-05-08
 
 First public open-source release on pub.dev. The SDK is now a thin
@@ -75,5 +82,6 @@ post-tag breaking change to `processVendorEvent`.
   `synheart_behavior ^0.3.0`, `synheart_auth ^0.1.1`) instead of git
   refs.
 
-[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.1.1
 [0.1.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.1.0

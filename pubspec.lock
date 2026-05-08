@@ -625,10 +625,10 @@ packages:
     dependency: "direct main"
     description:
       name: synheart_auth
-      sha256: "78864f40a8ef8b247a215da350ec6ed47293ae6de050b58f6a25523adb131436"
+      sha256: "7a9b07634e63dec2c5922d4908d78d74f277947baa99f6ac17abaa8a9cf58683"
       url: "https://pub.dev"
     source: hosted
-    version: "0.1.1"
+    version: "0.1.2"
   synheart_behavior:
     dependency: "direct main"
     description:

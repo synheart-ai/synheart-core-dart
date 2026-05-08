@@ -1,6 +1,6 @@
 name: synheart_core
 description: Flutter SDK for the Human State Interface (HSI) 1.3 — unified collection of wearable, behavior, and phone signals with consent-gated cloud upload.
-version: 0.1.0
+version: 0.1.1
 homepage: https://github.com/synheart-ai/synheart-core-flutter
 repository: https://github.com/synheart-ai/synheart-core-flutter
 issue_tracker: https://github.com/synheart-ai/synheart-core-flutter/issues
@@ -25,7 +25,7 @@ dependencies:
   synheart_wear: ^0.4.0
   synheart_session: ^0.2.0
   synheart_behavior: ^0.3.0
-  synheart_auth: ^0.1.1
+  synheart_auth: ^0.1.2
 
   # FFI for the Synheart Runtime native library
   ffi: ^2.1.0
