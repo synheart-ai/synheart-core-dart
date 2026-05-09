@@ -53,13 +53,27 @@ void main() {
       expect(state.hsi.arousal!.value, closeTo(0.7333333333333333, 1e-9));
     });
 
-    test('HSIState extracts sleep_score from axes.physiological[]', () {
+    test('axes.physiological[] carries sleep_autonomic (live proxy); '
+        'state.hsi.sleep stays null until a batch nightly score attaches', () {
+      // PHYSIO-002 supersession: the live autonomic head emits as
+      // `sleep_autonomic`. The canonical `sleep_score` slot is reserved for
+      // the nightly batch result, attached separately. The SDK's
+      // state.hsi.sleep accessor reflects the canonical slot, not the live
+      // proxy — correctly None when the fixture has no batch attachment.
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      final physio = (json['axes'] as Map)['physiological'] as List;
+      final autonomic =
+          physio.firstWhere((r) => (r as Map)['name'] == 'sleep_autonomic') as Map;
+      expect(
+        (autonomic['score'] as num).toDouble(),
+        closeTo(0.47999998927116394, 1e-6),
+      );
       final state = HSIState.fromJson(raw);
-      expect(state.hsi.sleep, isNotNull);
-      expect(state.hsi.sleep!.value, closeTo(0.47999998927116394, 1e-6));
+      expect(state.hsi.sleep, isNull,
+          reason: 'no batch sleep_score in fixture → SDK accessor is null');
     });
 
-    test('hsi_id is RFC 4122 UUIDv7', () {
+    test('hsi_id is RFC 4122 UUIDv5 (deterministic, content-addressed)', () {
       final json = jsonDecode(raw) as Map<String, dynamic>;
       final id = ((json['meta'] as Map)['ids'] as Map)['hsi_id'] as String;
       // 8-4-4-4-12 lowercase hex
@@ -67,8 +81,10 @@ void main() {
         r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
       );
       expect(uuidPattern.hasMatch(id), isTrue, reason: 'hsi_id="$id"');
-      // UUIDv7: version nibble in third group is '7'.
-      expect(id.split('-')[2][0], '7', reason: 'expected UUIDv7, got "$id"');
+      // UUIDv5: deterministic, derived from synheart-id's canonical input
+      // string under the Synheart HSI namespace. Version nibble in the
+      // third group is '5'.
+      expect(id.split('-')[2][0], '5', reason: 'expected UUIDv5, got "$id"');
     });
 
     test('multimodal readings carry modalities_used; single-modality do not',
