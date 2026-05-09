@@ -161,18 +161,41 @@ class HSI11Window {
 }
 
 class HSI11Axes {
+  // Domains carried over / introduced across HSI 1.0–1.3.
+  // `physiological` is canonical in every version. `engagement`, `behavior`,
+  // `context` are 1.0–1.2 only (dissolved in 1.3 per RFC-HSI-0010 §11).
+  // `kinematic`, `digital`, `cognitive`, `affective` are introduced in 1.3
+  // (RFC-HSI-0010 §4). The struct intentionally carries the union — older
+  // payloads populate the legacy fields, 1.3 payloads populate the new ones.
   final HSI11Domain? physiological;
   final HSI11Domain? engagement;
   final HSI11Domain? behavior;
   final HSI11Domain? context;
+  final HSI11Domain? kinematic;
+  final HSI11Domain? digital;
+  final HSI11Domain? cognitive;
+  final HSI11Domain? affective;
 
-  HSI11Axes({this.physiological, this.engagement, this.behavior, this.context});
+  HSI11Axes({
+    this.physiological,
+    this.engagement,
+    this.behavior,
+    this.context,
+    this.kinematic,
+    this.digital,
+    this.cognitive,
+    this.affective,
+  });
 
   factory HSI11Axes.fromJson(Map<String, dynamic> json) => HSI11Axes(
     physiological: HSI11Domain._tryParse(json['physiological']),
     engagement: HSI11Domain._tryParse(json['engagement']),
     behavior: HSI11Domain._tryParse(json['behavior']),
     context: HSI11Domain._tryParse(json['context']),
+    kinematic: HSI11Domain._tryParse(json['kinematic']),
+    digital: HSI11Domain._tryParse(json['digital']),
+    cognitive: HSI11Domain._tryParse(json['cognitive']),
+    affective: HSI11Domain._tryParse(json['affective']),
   );
 
   Map<String, dynamic> toJson() => {
@@ -180,6 +203,10 @@ class HSI11Axes {
     if (engagement != null) 'engagement': engagement!.toJson(),
     if (behavior != null) 'behavior': behavior!.toJson(),
     if (context != null) 'context': context!.toJson(),
+    if (kinematic != null) 'kinematic': kinematic!.toJson(),
+    if (digital != null) 'digital': digital!.toJson(),
+    if (cognitive != null) 'cognitive': cognitive!.toJson(),
+    if (affective != null) 'affective': affective!.toJson(),
   };
 }
 
@@ -405,7 +432,7 @@ class HSI11Privacy {
 // with `synheart-core-flutter/test/fixtures/hsi/` — see
 // `test/hsi_parser_compat_test.dart`. When a new HSI release ships,
 // vendor its test vectors first, then add the version string here.
-const Set<String> kKnownHsiVersions = {'1.0', '1.1', '1.2'};
+const Set<String> kKnownHsiVersions = {'1.0', '1.1', '1.2', '1.3'};
 
 final Set<String> _warnedHsiVersions = <String>{};
 

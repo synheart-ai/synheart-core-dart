@@ -1,0 +1,329 @@
+{
+  "hsi_version": "1.3",
+  "observed_at_utc": "2024-01-23T10:01:00Z",
+  "computed_at_utc": "2024-01-23T10:01:00.100Z",
+  "producer": {
+    "name": "synheart-flux",
+    "version": "0.4.0"
+  },
+  "windows": {
+    "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82": {
+      "start_utc": "2024-01-15T10:00:00Z",
+      "end_utc": "2024-01-15T10:01:00Z",
+      "label": "realtime"
+    }
+  },
+  "axes": {
+    "physiological": [
+      {
+        "name": "sleep_score",
+        "score": 0.47999998927116394,
+        "confidence": 0.18000000715255737,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://sleep_autonomic_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ],
+        "notes": "{\"path\":\"proxy\",\"mode\":\"cold\",\"baseline\":\"EMPTY\",\"reason\":\"proxy_fallback\",\"weights\":{\"duration\":0.000,\"quality\":0.000,\"continuity\":0.000,\"consistency\":0.000,\"personalization\":0.000}}"
+      },
+      {
+        "name": "sleep_score_proxy_hrv",
+        "score": 0.5,
+        "confidence": 0.18000000715255737,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://sleep_autonomic_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ]
+      },
+      {
+        "name": "sleep_score_proxy_hr",
+        "score": 0.45,
+        "confidence": 0.18000000715255737,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://sleep_autonomic_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ]
+      },
+      {
+        "name": "sleep_score_debt_penalty",
+        "score": 0.0,
+        "confidence": 0.18000000715255737,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://sleep_autonomic_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ]
+      },
+      {
+        "name": "sleep_score_hr_adjustment",
+        "score": 0.5,
+        "confidence": 0.18000000715255737,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://sleep_autonomic_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ]
+      },
+      {
+        "name": "recovery",
+        "score": 0.484,
+        "confidence": 0.5292,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://recovery_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ]
+      },
+      {
+        "name": "strain",
+        "score": 0.5569480519480519,
+        "confidence": 0.4536,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://strain_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ]
+      }
+    ],
+    "cognitive": [
+      {
+        "name": "focus",
+        "score": 0.7000000000000001,
+        "confidence": 0.5292,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://focus_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ],
+        "modalities_used": [
+          "physiological"
+        ]
+      },
+      {
+        "name": "capacity",
+        "score": 0.5266666666666666,
+        "confidence": 0.5292,
+        "direction": "higher_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://capacity_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ],
+        "modalities_used": [
+          "physiological"
+        ]
+      }
+    ],
+    "affective": [
+      {
+        "name": "valence",
+        "score": 0.73,
+        "confidence": 0.5292,
+        "direction": "bidirectional",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://emotion_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ],
+        "modalities_used": [
+          "physiological"
+        ]
+      },
+      {
+        "name": "arousal",
+        "score": 0.7333333333333333,
+        "confidence": 0.5292,
+        "direction": "bidirectional",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://emotion_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ],
+        "modalities_used": [
+          "physiological"
+        ]
+      },
+      {
+        "name": "stress",
+        "score": 1.0,
+        "confidence": 0.5292,
+        "direction": "lower_is_more",
+        "inference_mode": "deterministic_rule",
+        "model_id": "rulepack://emotion_v1",
+        "window_ids": [
+          "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82"
+        ],
+        "evidence_source_ids": [
+          "garmin"
+        ],
+        "modalities_used": [
+          "physiological"
+        ]
+      }
+    ]
+  },
+  "embeddings": [
+    {
+      "window_id": "win_34e3532d82d63947a9384adf2eaf5dc79098a5db24f51a82",
+      "vector": [
+        -0.13790879486158458,
+        -0.08005557297049828,
+        -0.0008277510407542603,
+        -0.04650774808691593,
+        0.010076356926875123,
+        0.24159820054885828,
+        -0.02965062253026234,
+        -0.058631713296222805,
+        0.022599982761940186,
+        0.06528322420757099,
+        0.12186732922136198,
+        0.17845143423515292,
+        -0.26593164915709466,
+        0.05576429196117209,
+        0.11361751385225842,
+        -0.17453060238242593,
+        -0.11794649736863495,
+        0.11357534625334828,
+        0.06956523983520671,
+        -0.1866545675917328,
+        -0.1054228715335699,
+        -0.06273963008793902,
+        -0.006155525074148015,
+        0.05042857993964296,
+        0.107012684953434,
+        -0.07225856233433797,
+        -0.014405340443251594,
+        0.06482248148649238,
+        0.01914248444033077,
+        0.07572658945412175,
+        0.307248433076105,
+        0.03599960999698424,
+        0.0070185192310238224,
+        0.08825021528918685,
+        -0.13417837936965804,
+        0.18751756174860867,
+        0.24410166676239967,
+        -0.20028141662984802,
+        -0.14242819473876164,
+        -0.06320037280901762,
+        -0.1088803698551793,
+        -0.05229626484138829,
+        0.1792255787805949,
+        -0.09202324429852579,
+        -0.12100433506448618,
+        -0.03977263900632321,
+        0.0029106024393075612,
+        0.05949470745309857,
+        0.11607881246688961,
+        0.17266291748068077,
+        -0.006608329807091365,
+        0.05124489208399502,
+        -0.23690322415068935,
+        0.08479271696757736,
+        0.1413768219813684,
+        0.007192618066943433,
+        -0.24902718935999618,
+        -0.16779549330183333,
+        0.15390044781643344,
+        -0.0685281468424115,
+        -0.01194404182862046,
+        0.04464006318517062,
+        -0.13463118410260141,
+        -0.07677796221151503
+      ],
+      "vector_hash": "sha256:f99c469c0f85f6f8a8bd5caf6c0faf5b0a42561ec9c00ecc95c18a0af737e2d5",
+      "dimension": 64,
+      "encoding": "float32",
+      "confidence": 1.0,
+      "model": "synheart-jl-64"
+    }
+  ],
+  "privacy": {
+    "contains_pii": false,
+    "raw_biosignals_allowed": false,
+    "derived_metrics_allowed": true,
+    "embedding_allowed": false,
+    "consent": "explicit",
+    "purposes": [
+      "self_insight",
+      "adaptive_ux"
+    ]
+  },
+  "meta": {
+    "ids": {
+      "hsi_id": "019e0df8-dff2-74f2-89c5-8242cf5a7353",
+      "subject_id": "sub_example123",
+      "session_id": "sess_example456"
+    },
+    "snapshot_type": "realtime",
+    "staleness": {
+      "signal_age_seconds": 30,
+      "freshness_factor": 0.9995187636226662,
+      "decay_model": "exponential_12h",
+      "half_life_hours": 12.0
+    },
+    "provenance": {
+      "sources": {
+        "garmin": {
+          "type": "sensor",
+          "quality": 0.9,
+          "degraded": false,
+          "source_tier": 2,
+          "device_class": "watch",
+          "signals": [
+            "hrv",
+            "rr",
+            "accel"
+          ],
+          "transport": "ble",
+          "vendor": "garmin"
+        }
+      },
+      "engine": "synheart-state-runtime",
+      "engine_version": "0.4.0"
+    }
+  }
+}
