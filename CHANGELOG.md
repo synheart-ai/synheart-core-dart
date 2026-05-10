@@ -10,12 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `BehaviorModule._convertSynheartEvent` now forwards
   `BehaviorEventType.app_switch` to the runtime instead of dropping it
-  via the default-arm. The runtime's interaction adapter (HSI 1.3
-  Phase D Tier 1) needs `app_switch` for notification-response
-  detection (PRD §1 NR / §2 attentional cost) and to anchor session
-  boundaries between foreground events of different apps. Without
-  this, `axes.digital[]` `focus_quality` / `interruption_pressure`
-  readings were silent on iOS / Android.
+  via the default-arm. The runtime needs `app_switch` to detect
+  notification responses (an app switch shortly after a notification)
+  and to anchor session boundaries between foreground events of
+  different apps. Without this forward, the digital readings on the
+  HSI 1.3 envelope (`axes.digital[]` — `focus_quality`,
+  `interruption_pressure`, `interaction_mode`) were silent on iOS and
+  Android.
 
 ## [0.1.1] - 2026-05-08
 
