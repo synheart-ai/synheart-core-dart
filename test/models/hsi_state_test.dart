@@ -57,6 +57,126 @@ void main() {
       final state = HSIState.fromJson(json);
       expect(state.timestampMs, 1234567890000);
     });
+
+    test('parses HSI 1.3 canonical 5-axis payload', () {
+      // RFC-HSI-0010 §4: focus/capacity → cognitive, valence/arousal →
+      // affective, sleep_score → physiological. UUIDv7 hsi_id is irrelevant
+      // to the parser; we just confirm axes are read from the right domains.
+      final json = jsonEncode({
+        'hsi_version': '1.3',
+        'subject_id': 'usr_v13',
+        'timestamp_ms': 1700000000000,
+        'axes': {
+          'physiological': [
+            {
+              'name': 'sleep_score',
+              'score': 0.42,
+              'confidence': 0.9,
+              'direction': 'higher_is_more',
+            },
+          ],
+          'cognitive': [
+            {
+              'name': 'focus',
+              'score': 0.71,
+              'confidence': 0.6,
+              'direction': 'higher_is_more',
+              'modalities_used': ['physiological'],
+            },
+            {
+              'name': 'capacity',
+              'score': 0.55,
+              'confidence': 0.58,
+              'direction': 'higher_is_more',
+              'modalities_used': ['physiological'],
+            },
+          ],
+          'affective': [
+            {
+              'name': 'arousal',
+              'score': 0.45,
+              'confidence': 0.5,
+              'direction': 'bidirectional',
+              'modalities_used': ['physiological'],
+            },
+          ],
+        },
+        'meta': {
+          'ids': {'hsi_id': '019e0d98-9396-7663-a161-95f4727162b6'},
+        },
+      });
+
+      final state = HSIState.fromJson(json);
+      expect(state.subjectId, 'usr_v13');
+      expect(state.hsi.focus!.value, 0.71);
+      expect(state.hsi.focus!.confidence, 0.6);
+      expect(state.hsi.capacity!.value, 0.55);
+      expect(state.hsi.arousal!.value, 0.45);
+      expect(state.hsi.sleep!.value, 0.42);
+    });
+
+    test('1.3 sleep alias is tolerated for forward-compat producers', () {
+      // RFC-HSI-0008 §6.5: unknown member names within a known domain MUST
+      // be tolerated. Producers that emit `sleep` instead of the canonical
+      // `sleep_score` should still parse.
+      final json = jsonEncode({
+        'hsi_version': '1.3',
+        'axes': {
+          'physiological': [
+            {
+              'name': 'sleep',
+              'score': 0.5,
+              'confidence': 0.9,
+              'direction': 'higher_is_more',
+            },
+          ],
+        },
+      });
+      final state = HSIState.fromJson(json);
+      expect(state.hsi.sleep!.value, 0.5);
+    });
+
+    test('1.3 categorical / null-score readings yield null axis (not zero)', () {
+      // RFC-HSI-0008 §6.2: consumers MUST NOT treat null as zero. An axis
+      // whose only matching reading carries `score: null` surfaces as a null
+      // HSIAxisValue, not value=0.
+      final json = jsonEncode({
+        'hsi_version': '1.3',
+        'axes': {
+          'cognitive': [
+            {
+              'name': 'focus',
+              'score': null,
+              'confidence': 0.4,
+              'direction': 'higher_is_more',
+              'modalities_used': ['physiological'],
+            },
+          ],
+        },
+      });
+      final state = HSIState.fromJson(json);
+      expect(state.hsi.focus, isNull);
+    });
+
+    test('1.3 dispatch does not fall back to legacy hsi.<name>', () {
+      // Even if a 1.3 payload also carries a legacy `hsi.focus` block (it
+      // shouldn't, but defensive), the canonical axes.cognitive[] reading is
+      // the source of truth.
+      final json = jsonEncode({
+        'hsi_version': '1.3',
+        'hsi': {
+          'focus': {'value': 0.99, 'confidence': 0.99},
+        },
+        'axes': {
+          'cognitive': [
+            {'name': 'focus', 'score': 0.5, 'confidence': 0.5},
+          ],
+        },
+      });
+      final state = HSIState.fromJson(json);
+      expect(state.hsi.focus!.value, 0.5);
+      expect(state.hsi.focus!.confidence, 0.5);
+    });
   });
 
   group('HSIAxisValue', () {

@@ -24,6 +24,9 @@ class HSIAxes {
 
   const HSIAxes({this.focus, this.arousal, this.capacity, this.sleep});
 
+  /// Pre-1.3 (legacy) parse: each axis is a flat object `{value, confidence}`
+  /// at the top of the `hsi` map. Used for the in-process runtime contract
+  /// and for HSI 1.2 payloads that don't fit the canonical wire shape.
   factory HSIAxes.fromJson(Map<String, dynamic> json) => HSIAxes(
     focus: json['focus'] is Map
         ? HSIAxisValue.fromJson(json['focus'] as Map<String, dynamic>)
@@ -37,6 +40,46 @@ class HSIAxes {
     sleep: json['sleep'] is Map
         ? HSIAxisValue.fromJson(json['sleep'] as Map<String, dynamic>)
         : null,
+  );
+}
+
+/// Find a reading by `name` in an axis-domain readings array (HSI 1.2/1.3
+/// `axes.<domain>: [{name, score, confidence, ...}]`).
+///
+/// Returns null when the domain is missing, not a list, or when no matching
+/// reading is found. Skips readings with `score: null` (categorical or
+/// "could not compute" — RFC-HSI-0008 §6.2: consumers MUST NOT treat null
+/// as zero), since the `HSIAxisValue` shape requires a numeric value.
+HSIAxisValue? _findAxisReading(Object? domain, String name) {
+  if (domain is! List) return null;
+  for (final r in domain) {
+    if (r is! Map) continue;
+    if (r['name'] != name) continue;
+    final s = r['score'];
+    if (s is! num) return null;
+    final c = r['confidence'];
+    return HSIAxisValue(
+      value: s.toDouble(),
+      confidence: c is num ? c.toDouble() : 0.0,
+    );
+  }
+  return null;
+}
+
+/// HSI 1.3 parse path (RFC-HSI-0010 §4 canonical 5-domain set).
+/// `focus`/`capacity` → `axes.cognitive[]`, `valence`/`arousal` → `axes.affective[]`,
+/// `sleep_score` → `axes.physiological[]`. We surface `arousal` (not `valence`)
+/// as the affective axis to keep parity with the legacy 4-axis model. The
+/// canonical `sleep_score` member is preferred; `sleep` is tolerated for
+/// forward-compat producers (RFC-HSI-0008 §6.5).
+HSIAxes _parseAxesV13(Object? axes) {
+  if (axes is! Map) return const HSIAxes();
+  return HSIAxes(
+    focus: _findAxisReading(axes['cognitive'], 'focus'),
+    capacity: _findAxisReading(axes['cognitive'], 'capacity'),
+    arousal: _findAxisReading(axes['affective'], 'arousal'),
+    sleep: _findAxisReading(axes['physiological'], 'sleep_score') ??
+        _findAxisReading(axes['physiological'], 'sleep'),
   );
 }
 
@@ -204,6 +247,12 @@ class HSIState {
   });
 
   /// Parse an HSI JSON string from the runtime into a typed [HSIState].
+  ///
+  /// Version dispatch: when `hsi_version == "1.3"`, axes are read from the
+  /// canonical 5-domain layout (`axes.cognitive[]`, `axes.affective[]`,
+  /// `axes.physiological[]`). For any other version (legacy / 1.2), the
+  /// pre-1.3 path falls back to the flat `hsi.<name>` shape used by the
+  /// in-process runtime contract.
   factory HSIState.fromJson(String json, {String subjectId = ''}) {
     try {
       final map = jsonDecode(json) as Map<String, dynamic>;
@@ -212,13 +261,19 @@ class HSIState {
           (map['observed_at_ms'] as num?)?.toInt() ??
           DateTime.now().millisecondsSinceEpoch;
 
-      final hsiMap = (map['hsi'] as Map<String, dynamic>?) ?? map;
       final sid = (map['subject_id'] as String?) ?? subjectId;
+      final HSIAxes axes;
+      if (map['hsi_version'] == '1.3') {
+        axes = _parseAxesV13(map['axes']);
+      } else {
+        final hsiMap = (map['hsi'] as Map<String, dynamic>?) ?? map;
+        axes = HSIAxes.fromJson(hsiMap);
+      }
 
       return HSIState(
         subjectId: sid,
         timestampMs: timestampMs,
-        hsi: HSIAxes.fromJson(hsiMap),
+        hsi: axes,
         modalities: _deriveModalities(map),
         tiers: _deriveTiers(map),
         rawJson: json,
