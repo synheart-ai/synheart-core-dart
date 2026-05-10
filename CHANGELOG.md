@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-09
+
+### Added
+- HSI 1.3 envelope parsing in `HSIState` and `HSIPayload`. Producers
+  emit the closed 5-axis domain set (`physiological`, `kinematic`,
+  `digital`, `cognitive`, `affective`) with deterministic UUIDv5
+  `hsi_id`. The SDK now parses the new shape and exposes the digital
+  readings (`focus_quality`, `interruption_pressure`,
+  `interaction_mode`) alongside the existing physiological / cognitive
+  / affective fields. The 1.2 wire shape is still accepted as a
+  fallback; consumers should not rely on that path long-term.
+
 ### Fixed
 - `BehaviorModule._convertSynheartEvent` now forwards
   `BehaviorEventType.app_switch` to the runtime instead of dropping it
@@ -93,6 +105,7 @@ post-tag breaking change to `processVendorEvent`.
   `synheart_behavior ^0.3.0`, `synheart_auth ^0.1.1`) instead of git
   refs.
 
-[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.2.0
 [0.1.1]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.1.1
 [0.1.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.1.0
