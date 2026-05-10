@@ -414,10 +414,17 @@ class BehaviorModule extends BaseSynheartModule
             ? event.metrics['direction'] as String
             : null;
         return BehaviorEvent.swipe(velocity: velocity, direction: direction);
+      case sb.BehaviorEventType.app_switch:
+        // Required for HSI 1.3 axes.digital[] computation: the runtime's
+        // interaction_adapter pairs each app_switch with the next
+        // foreground transition for notification-response detection
+        // (PRD §1 NR / §2 attentional cost). Dropping app_switch here
+        // would leave the digital axis silent on iOS / Android.
+        return BehaviorEvent.appSwitch();
       case sb.BehaviorEventType.clipboard:
         return null;
       // Forward-compat: newer synheart_behavior versions may add variants
-      // (e.g. app_switch) that this SDK doesn't yet map. Drop them silently.
+      // that this SDK doesn't yet map. Drop them silently.
       // ignore: unreachable_switch_default
       default:
         return null;
