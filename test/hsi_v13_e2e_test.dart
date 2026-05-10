@@ -63,14 +63,18 @@ void main() {
       final json = jsonDecode(raw) as Map<String, dynamic>;
       final physio = (json['axes'] as Map)['physiological'] as List;
       final autonomic =
-          physio.firstWhere((r) => (r as Map)['name'] == 'sleep_autonomic') as Map;
+          physio.firstWhere((r) => (r as Map)['name'] == 'sleep_autonomic')
+              as Map;
       expect(
         (autonomic['score'] as num).toDouble(),
         closeTo(0.47999998927116394, 1e-6),
       );
       final state = HSIState.fromJson(raw);
-      expect(state.hsi.sleep, isNull,
-          reason: 'no batch sleep_score in fixture → SDK accessor is null');
+      expect(
+        state.hsi.sleep,
+        isNull,
+        reason: 'no batch sleep_score in fixture → SDK accessor is null',
+      );
     });
 
     test('hsi_id is RFC 4122 UUIDv5 (deterministic, content-addressed)', () {
@@ -87,26 +91,38 @@ void main() {
       expect(id.split('-')[2][0], '5', reason: 'expected UUIDv5, got "$id"');
     });
 
-    test('multimodal readings carry modalities_used; single-modality do not',
-        () {
-      // Schema-level invariant from RFC-HSI-0010 §5.1. The Flutter SDK
-      // doesn't surface this through HSIState, but the producer guarantee
-      // matters for downstream consumers that read raw JSON.
-      final json = jsonDecode(raw) as Map<String, dynamic>;
-      final axes = json['axes'] as Map<String, dynamic>;
+    test(
+      'multimodal readings carry modalities_used; single-modality do not',
+      () {
+        // Schema-level invariant from RFC-HSI-0010 §5.1. The Flutter SDK
+        // doesn't surface this through HSIState, but the producer guarantee
+        // matters for downstream consumers that read raw JSON.
+        final json = jsonDecode(raw) as Map<String, dynamic>;
+        final axes = json['axes'] as Map<String, dynamic>;
 
-      for (final r in axes['cognitive'] as List) {
-        expect((r as Map)['modalities_used'], isA<List>(),
-            reason: 'cognitive[${r['name']}] needs modalities_used');
-      }
-      for (final r in axes['affective'] as List) {
-        expect((r as Map)['modalities_used'], isA<List>(),
-            reason: 'affective[${r['name']}] needs modalities_used');
-      }
-      for (final r in axes['physiological'] as List) {
-        expect((r as Map).containsKey('modalities_used'), isFalse,
-            reason: 'physiological[${r['name']}] MUST NOT carry modalities_used');
-      }
-    });
+        for (final r in axes['cognitive'] as List) {
+          expect(
+            (r as Map)['modalities_used'],
+            isA<List>(),
+            reason: 'cognitive[${r['name']}] needs modalities_used',
+          );
+        }
+        for (final r in axes['affective'] as List) {
+          expect(
+            (r as Map)['modalities_used'],
+            isA<List>(),
+            reason: 'affective[${r['name']}] needs modalities_used',
+          );
+        }
+        for (final r in axes['physiological'] as List) {
+          expect(
+            (r as Map).containsKey('modalities_used'),
+            isFalse,
+            reason:
+                'physiological[${r['name']}] MUST NOT carry modalities_used',
+          );
+        }
+      },
+    );
   });
 }

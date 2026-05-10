@@ -2863,16 +2863,16 @@ class Synheart {
     final mergedForm = currentForm.copyWith(
       biosignals:
           local?.biosignals ?? effective?.biosignals ?? currentForm.biosignals,
-      phoneContext: local?.phoneContext ??
+      phoneContext:
+          local?.phoneContext ??
           effective?.phoneContext ??
           currentForm.phoneContext,
-      behavior:
-          local?.behavior ?? effective?.behavior ?? currentForm.behavior,
+      behavior: local?.behavior ?? effective?.behavior ?? currentForm.behavior,
       allowCloud: true,
-      allowResearch: local?.research ??
-          effective?.research ??
-          currentForm.allowResearch,
-      allowVendorSync: local?.vendorSync ??
+      allowResearch:
+          local?.research ?? effective?.research ?? currentForm.allowResearch,
+      allowVendorSync:
+          local?.vendorSync ??
           effective?.vendorSync ??
           currentForm.allowVendorSync,
     );
@@ -3973,7 +3973,9 @@ class Synheart {
         final deviceId =
             reg?['device_id'] as String? ?? reg?['deviceId'] as String?;
         final err = reg?['error']?.toString();
-        if (reg == null || deviceId == null || (err != null && err.isNotEmpty)) {
+        if (reg == null ||
+            deviceId == null ||
+            (err != null && err.isNotEmpty)) {
           throw StateError(
             'Core SDK register_device failed: ${reg ?? "null result"}',
           );
