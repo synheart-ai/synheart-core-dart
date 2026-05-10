@@ -78,7 +78,8 @@ HSIAxes _parseAxesV13(Object? axes) {
     focus: _findAxisReading(axes['cognitive'], 'focus'),
     capacity: _findAxisReading(axes['cognitive'], 'capacity'),
     arousal: _findAxisReading(axes['affective'], 'arousal'),
-    sleep: _findAxisReading(axes['physiological'], 'sleep_score') ??
+    sleep:
+        _findAxisReading(axes['physiological'], 'sleep_score') ??
         _findAxisReading(axes['physiological'], 'sleep'),
   );
 }

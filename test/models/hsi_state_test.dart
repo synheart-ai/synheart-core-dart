@@ -136,27 +136,30 @@ void main() {
       expect(state.hsi.sleep!.value, 0.5);
     });
 
-    test('1.3 categorical / null-score readings yield null axis (not zero)', () {
-      // RFC-HSI-0008 §6.2: consumers MUST NOT treat null as zero. An axis
-      // whose only matching reading carries `score: null` surfaces as a null
-      // HSIAxisValue, not value=0.
-      final json = jsonEncode({
-        'hsi_version': '1.3',
-        'axes': {
-          'cognitive': [
-            {
-              'name': 'focus',
-              'score': null,
-              'confidence': 0.4,
-              'direction': 'higher_is_more',
-              'modalities_used': ['physiological'],
-            },
-          ],
-        },
-      });
-      final state = HSIState.fromJson(json);
-      expect(state.hsi.focus, isNull);
-    });
+    test(
+      '1.3 categorical / null-score readings yield null axis (not zero)',
+      () {
+        // RFC-HSI-0008 §6.2: consumers MUST NOT treat null as zero. An axis
+        // whose only matching reading carries `score: null` surfaces as a null
+        // HSIAxisValue, not value=0.
+        final json = jsonEncode({
+          'hsi_version': '1.3',
+          'axes': {
+            'cognitive': [
+              {
+                'name': 'focus',
+                'score': null,
+                'confidence': 0.4,
+                'direction': 'higher_is_more',
+                'modalities_used': ['physiological'],
+              },
+            ],
+          },
+        });
+        final state = HSIState.fromJson(json);
+        expect(state.hsi.focus, isNull);
+      },
+    );
 
     test('1.3 dispatch does not fall back to legacy hsi.<name>', () {
       // Even if a 1.3 payload also carries a legacy `hsi.focus` block (it
