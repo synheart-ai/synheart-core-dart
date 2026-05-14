@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-14
+
+### Added
+- `Synheart.labReenqueueSession(String sessionJson)` — replay a
+  previously-finalized lab session payload through the cloud
+  connector. Useful when the initial upload was dropped on a 4xx
+  (typically a cloud schema mismatch — the runtime removes those
+  rows from the in-memory upload queue per
+  `ingest/hsi/connector.rs::deliver_lab_chunk`). Host reads the
+  persisted JSON from app-side storage and passes it back.
+- `Synheart.isLabReenqueueAvailable` — feature-detect whether the
+  linked runtime binary exports the symbol (engine v0.8.1+).
+- `LabReenqueueResult` enum — mirrors the FFI return codes
+  (`queued`, `researchNotAllowed`, `cloudNotConfigured`,
+  `parseError`, `invalidArgument`, `unsupported`).
+- `CoreRuntimeBridge.labReenqueueSession` instance method + companion
+  `isLabReenqueueAvailable` getter; new `_LabReenqueueC` / `_LabReenqueueDart`
+  typedefs in `ffi_bindings.dart`. Lookup is optional so older
+  runtime binaries (pre-v0.8.1) keep loading without errors.
+- Customer-facing data deletion API (`requestDataDeletion`,
+  `getDataDeletion`, `listDataDeletions`) and `DataDeletion*` models
+  for GDPR Article 17 (landed via PR #40).
+
+### Runtime compatibility
+- Requires `synheart-core-runtime` v0.8.1+ for `labReenqueueSession`
+  to actually invoke the FFI. Older binaries return
+  `LabReenqueueResult.unsupported`.
+
 ## [0.2.0] - 2026-05-09
 
 ### Added
