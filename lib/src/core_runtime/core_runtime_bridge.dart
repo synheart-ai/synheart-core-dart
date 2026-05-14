@@ -1111,6 +1111,105 @@ class CoreRuntimeBridge {
   bool requestAccountDeletion() => _ffi.requestAccountDeletion(_handle) == 0;
   bool cancelAccountDeletion() => _ffi.cancelAccountDeletion(_handle) == 0;
 
+  // ── Customer-facing data deletion (GDPR Article 17) ─────────────────
+
+  /// Request cloud-side deletion of every byte the platform holds for the
+  /// currently-bound subject (the value derived from your `client_id` at
+  /// register time). Returns the persisted request row as parsed JSON, or
+  /// `{"error": "..."}` if the call failed.
+  ///
+  /// `reason` and `contact` are optional — both land in the audit row
+  /// metadata so operators can correlate later. `dryRun=true` exercises the
+  /// auth + persistence path without running the actual purge.
+  ///
+  /// Runs on a background isolate; the underlying HTTPS call can block.
+  Future<Map<String, dynamic>?> requestDataDeletion({
+    String? reason,
+    String? contact,
+    bool dryRun = false,
+  }) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final reasonPtr = (reason == null || reason.isEmpty)
+          ? nullptr
+          : reason.toNativeUtf8();
+      final contactPtr = (contact == null || contact.isEmpty)
+          ? nullptr
+          : contact.toNativeUtf8();
+      try {
+        final resPtr = ffi.requestDataDeletion(
+          handle,
+          reasonPtr.cast(),
+          contactPtr.cast(),
+          dryRun,
+        );
+        if (resPtr == nullptr) return null;
+        final str = resPtr.toDartString();
+        ffi.coreFreeString(resPtr);
+        return jsonDecode(str) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      } finally {
+        if (reasonPtr != nullptr) malloc.free(reasonPtr);
+        if (contactPtr != nullptr) malloc.free(contactPtr);
+      }
+    });
+  }
+
+  /// Poll the status of a deletion request. `status` transitions through
+  /// pending → in_progress → completed (or failed). On success the `result`
+  /// field carries per-layer purge stats from the server.
+  Future<Map<String, dynamic>?> getDataDeletion(String requestId) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final idPtr = requestId.toNativeUtf8();
+      try {
+        final resPtr = ffi.getDataDeletion(handle, idPtr.cast());
+        if (resPtr == nullptr) return null;
+        final str = resPtr.toDartString();
+        ffi.coreFreeString(resPtr);
+        return jsonDecode(str) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      } finally {
+        malloc.free(idPtr);
+      }
+    });
+  }
+
+  /// List recent deletion requests for this caller's org. Mostly useful for
+  /// dashboards / audit views; most apps will only call
+  /// [requestDataDeletion] + [getDataDeletion].
+  Future<Map<String, dynamic>?> listDataDeletions({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      try {
+        final resPtr = ffi.listDataDeletions(handle, limit, offset);
+        if (resPtr == nullptr) return null;
+        final str = resPtr.toDartString();
+        ffi.coreFreeString(resPtr);
+        return jsonDecode(str) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
   // ── Stream (RAMEN vendor sync) ─────────────────────────────────────
 
   NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>? _streamCallable;
@@ -1293,6 +1392,40 @@ class CoreRuntimeBridge {
   /// Get the last lab export JSON (populated after session end in research mode).
   String? labExportJson() => _readAndFree(_ffi.labExportJson(_handle));
 
+  /// Whether the runtime exports the lab re-enqueue symbol
+  /// (`synheart_core_reenqueue_lab_session`, engine v0.8.1+). Older
+  /// runtime binaries return false; callers can fall back to running
+  /// a fresh session.
+  bool get isLabReenqueueAvailable => _ffi.labReenqueueSession != null;
+
+  /// Re-enqueue a previously-finalized lab session JSON for cloud upload.
+  ///
+  /// Used to retry sessions whose initial upload was dropped on a 4xx
+  /// (typically a cloud schema mismatch — the runtime deletes those rows
+  /// from the upload queue per `ingest/hsi/connector.rs`). Read the
+  /// persisted payload from `lab_payloads` SQLite (or your host-side
+  /// equivalent) and pass it back here.
+  ///
+  /// Return codes mirror the underlying FFI:
+  ///   * [LabReenqueueResult.queued] — payload queued; HTTP happens async
+  ///   * [LabReenqueueResult.researchNotAllowed] — research consent not granted
+  ///   * [LabReenqueueResult.cloudNotConfigured] — no cloud connector
+  ///   * [LabReenqueueResult.parseError] — supplied JSON did not parse
+  ///   * [LabReenqueueResult.invalidArgument] — null handle / empty JSON
+  ///   * [LabReenqueueResult.unsupported] — runtime binary doesn't export
+  ///     the symbol; rebuild against engine v0.8.1+
+  LabReenqueueResult labReenqueueSession(String sessionJson) {
+    final fn = _ffi.labReenqueueSession;
+    if (fn == null) return LabReenqueueResult.unsupported;
+    final ptr = sessionJson.toNativeUtf8();
+    try {
+      final code = fn(_handle, ptr);
+      return LabReenqueueResult.fromCode(code);
+    } finally {
+      malloc.free(ptr);
+    }
+  }
+
   // ── Lab metadata ───────────────────────────────────────────────────
 
   /// Whether the runtime exports the lab metadata symbols (older builds may not).
@@ -1415,6 +1548,54 @@ class CoreRuntimeBridge {
       return fn(ptr.cast());
     } finally {
       malloc.free(ptr);
+    }
+  }
+}
+
+/// Result of a [CoreRuntimeBridge.labReenqueueSession] call. Mirrors
+/// the return codes from the underlying
+/// `synheart_core_reenqueue_lab_session` FFI.
+enum LabReenqueueResult {
+  /// Payload queued for upload (HTTP happens async on the same flush
+  /// cadence as HSI).
+  queued,
+
+  /// Research consent is not granted for this session — caller must
+  /// re-prompt or upgrade the consent tier before retrying.
+  researchNotAllowed,
+
+  /// No cloud connector is configured (SDK not initialized with
+  /// `cloudConfig`).
+  cloudNotConfigured,
+
+  /// The supplied JSON did not parse. Treat the row as unrecoverable
+  /// without manual intervention.
+  parseError,
+
+  /// Null handle or empty `sessionJson` — caller bug.
+  invalidArgument,
+
+  /// The currently-linked runtime binary doesn't export the re-enqueue
+  /// symbol. Rebuild against engine v0.8.1+ and re-link.
+  unsupported;
+
+  /// Decode the FFI return code from
+  /// `synheart_core_reenqueue_lab_session`. Unknown codes map to
+  /// [parseError] (caller-side defensive default).
+  static LabReenqueueResult fromCode(int code) {
+    switch (code) {
+      case 0:
+        return LabReenqueueResult.queued;
+      case 1:
+        return LabReenqueueResult.researchNotAllowed;
+      case 2:
+        return LabReenqueueResult.cloudNotConfigured;
+      case 3:
+        return LabReenqueueResult.parseError;
+      case 4:
+        return LabReenqueueResult.invalidArgument;
+      default:
+        return LabReenqueueResult.parseError;
     }
   }
 }
