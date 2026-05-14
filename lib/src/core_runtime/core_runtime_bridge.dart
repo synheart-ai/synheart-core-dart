@@ -1293,6 +1293,34 @@ class CoreRuntimeBridge {
   /// Get the last lab export JSON (populated after session end in research mode).
   String? labExportJson() => _readAndFree(_ffi.labExportJson(_handle));
 
+  /// Whether the runtime exports the lab re-enqueue symbol
+  /// (`synheart_core_reenqueue_lab_session`, engine v0.8.1+). Older
+  /// runtime binaries return false; callers can fall back to running
+  /// a fresh session.
+  bool get isLabReenqueueAvailable => _ffi.labReenqueueSession != null;
+
+  /// Re-enqueue a previously-finalized lab session JSON for cloud upload.
+  ///
+  /// Used to retry sessions whose initial upload was dropped on a 4xx
+  /// (typically a cloud schema mismatch — the runtime deletes those rows
+  /// from the upload queue per `ingest/hsi/connector.rs`). Read the
+  /// persisted payload from `lab_payloads` SQLite (or your host-side
+  /// equivalent) and pass it back here.
+  ///
+  /// Return codes mirror the underlying FFI; see [LabReenqueueResult]
+  /// for outcomes.
+  LabReenqueueResult labReenqueueSession(String sessionJson) {
+    final fn = _ffi.labReenqueueSession;
+    if (fn == null) return LabReenqueueResult.unsupported;
+    final ptr = sessionJson.toNativeUtf8();
+    try {
+      final code = fn(_handle, ptr);
+      return LabReenqueueResult.fromCode(code);
+    } finally {
+      malloc.free(ptr);
+    }
+  }
+
   // ── Lab metadata ───────────────────────────────────────────────────
 
   /// Whether the runtime exports the lab metadata symbols (older builds may not).
@@ -1415,6 +1443,54 @@ class CoreRuntimeBridge {
       return fn(ptr.cast());
     } finally {
       malloc.free(ptr);
+    }
+  }
+}
+
+/// Result of a [CoreRuntimeBridge.labReenqueueSession] call. Mirrors
+/// the return codes from the underlying
+/// `synheart_core_reenqueue_lab_session` FFI.
+enum LabReenqueueResult {
+  /// Payload queued for upload (HTTP happens async on the same flush
+  /// cadence as HSI).
+  queued,
+
+  /// Research consent is not granted for this session — caller must
+  /// re-prompt or upgrade the consent tier before retrying.
+  researchNotAllowed,
+
+  /// No cloud connector is configured (SDK not initialized with
+  /// `cloudConfig`).
+  cloudNotConfigured,
+
+  /// The supplied JSON did not parse. Treat the row as unrecoverable
+  /// without manual intervention.
+  parseError,
+
+  /// Null handle or empty `sessionJson` — caller bug.
+  invalidArgument,
+
+  /// The currently-linked runtime binary doesn't export the re-enqueue
+  /// symbol. Rebuild against engine v0.8.1+ and re-link.
+  unsupported;
+
+  /// Decode the FFI return code from
+  /// `synheart_core_reenqueue_lab_session`. Unknown codes map to
+  /// [parseError] (caller-side defensive default).
+  static LabReenqueueResult fromCode(int code) {
+    switch (code) {
+      case 0:
+        return LabReenqueueResult.queued;
+      case 1:
+        return LabReenqueueResult.researchNotAllowed;
+      case 2:
+        return LabReenqueueResult.cloudNotConfigured;
+      case 3:
+        return LabReenqueueResult.parseError;
+      case 4:
+        return LabReenqueueResult.invalidArgument;
+      default:
+        return LabReenqueueResult.parseError;
     }
   }
 }

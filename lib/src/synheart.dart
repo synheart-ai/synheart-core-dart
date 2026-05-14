@@ -2242,6 +2242,31 @@ class Synheart {
   /// Get the last lab export JSON (available after session end in research mode).
   static String? get labExportJson => _coreRuntime?.labExportJson();
 
+  /// Whether the linked runtime exports the lab re-enqueue symbol
+  /// (engine v0.8.1+). Older binaries return false and
+  /// [labReenqueueSession] yields [LabReenqueueResult.unsupported].
+  static bool get isLabReenqueueAvailable =>
+      _coreRuntime?.isLabReenqueueAvailable ?? false;
+
+  /// Re-enqueue a previously-finalized lab session payload for cloud
+  /// upload. Use this to retry sessions whose initial upload was
+  /// dropped on a 4xx (typically a cloud schema mismatch — the runtime
+  /// removes those rows from the upload queue so they don't clog the
+  /// connector).
+  ///
+  /// Host reads the persisted JSON from app-side storage and passes
+  /// it back here. Same consent + connector gates apply as the
+  /// auto-enqueue path; see [LabReenqueueResult] for outcomes.
+  ///
+  /// Returns [LabReenqueueResult.cloudNotConfigured] when the SDK is
+  /// not initialized — callers should treat that as a no-op rather
+  /// than a bug.
+  static LabReenqueueResult labReenqueueSession(String sessionJson) {
+    final rt = _coreRuntime;
+    if (rt == null) return LabReenqueueResult.cloudNotConfigured;
+    return rt.labReenqueueSession(sessionJson);
+  }
+
   // ── Lab metadata ─────────────────────────────────────────────────────
 
   /// Whether the runtime exposes the lab metadata symbols.

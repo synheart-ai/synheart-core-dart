@@ -318,6 +318,10 @@ typedef _LabStartC =
     );
 typedef _LabStartDart =
     int Function(Pointer<Void> h, Pointer<Utf8> protocolJson, int startedAtMs);
+typedef _LabReenqueueC =
+    Int32 Function(Pointer<Void> h, Pointer<Utf8> sessionJson);
+typedef _LabReenqueueDart =
+    int Function(Pointer<Void> h, Pointer<Utf8> sessionJson);
 typedef _LabOpenWindowC =
     Pointer<Utf8> Function(
       Pointer<Void> h,
@@ -1043,6 +1047,20 @@ class SynheartCoreFFI {
   late final labExportJson = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
     'synheart_core_lab_export_json',
   );
+  // Re-enqueue a previously-finalized lab session for upload (engine
+  // v0.8.1+). Optional lookup so older runtime binaries that don't
+  // export the symbol don't break the bridge — caller checks for null
+  // before invoking.
+  late final int Function(Pointer<Void>, Pointer<Utf8>)? labReenqueueSession =
+      () {
+        try {
+          return _lib.lookupFunction<_LabReenqueueC, _LabReenqueueDart>(
+            'synheart_core_reenqueue_lab_session',
+          );
+        } catch (_) {
+          return null;
+        }
+      }();
   // Lab metadata. Optional: older runtimes may not export these, in which case
   // the lookup throws and the field stays null.
   late final Pointer<Utf8> Function(
