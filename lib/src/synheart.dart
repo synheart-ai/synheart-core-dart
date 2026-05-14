@@ -28,6 +28,7 @@ import 'modules/behavior/behavior_module.dart';
 import 'modules/behavior/behavior_code.dart';
 import 'modules/behavior/behavior_events.dart';
 import 'modules/breathing/breathing_module.dart';
+import 'modules/syni/syni_module.dart';
 import 'models/behavior_session_results.dart';
 import 'package:synheart_behavior/synheart_behavior.dart' as sb;
 import 'config/synheart_mode.dart';
@@ -1932,6 +1933,32 @@ class Synheart {
   /// Returns null until the core runtime bridge is initialized.
   static BreathingModule? get breathing =>
       _coreRuntime == null ? null : BreathingModule(_coreRuntime!);
+
+  // -------------------------------------------------------------------------
+  // Syni — adaptive AI agent (gated feature)
+  // -------------------------------------------------------------------------
+  //
+  // Lazily constructed once `consent.syni == true`. The module performs its
+  // own install lifecycle (model download, persona materialization, engine
+  // load on a worker isolate). See `lib/src/modules/syni/syni_module.dart`.
+
+  static SyniModule? _syni;
+
+  /// Adaptive AI client. Returns null until the Synheart facade is running
+  /// AND the user has granted `SynheartFeature.syni` consent. Once non-null
+  /// the caller drives `install`, `chat`, and `uninstall` directly on it.
+  ///
+  /// Operational status follows the four-authority model — even when this
+  /// getter returns a non-null module, `chat()` will only succeed after
+  /// `install()` reaches [SyniInstalled].
+  static SyniModule? get syni {
+    if (!shared._isRunning) return null;
+    final consent = shared._consentModule?.current();
+    if (consent == null || !consent.syni) return null;
+    return _syni ??= SyniModule(
+      hsiSnapshot: () => Synheart.currentHSIState,
+    );
+  }
 
   /// Get the core runtime bridge (for diagnostics and direct FFI access).
   CoreRuntimeBridge? get coreRuntime => _coreRuntime;
@@ -4161,7 +4188,10 @@ class Synheart {
       case SynheartFeature.cloud:
         return cap.capability(Module.cloud) != CapabilityLevel.none;
       case SynheartFeature.syni:
-        return true; // no capability gate for syni yet
+        // Syni runs independent of the wearable capability lattice. Real
+        // operational gating (model installed, engine loaded) lives in
+        // SyniModule and is composed at the four-authority layer.
+        return _syni?.isInstalled ?? false;
     }
   }
 

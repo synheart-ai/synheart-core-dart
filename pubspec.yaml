@@ -30,6 +30,12 @@ dependencies:
   # FFI for the Synheart Runtime native library
   ffi: ^2.1.0
 
+  # Syni client (internal package — not consumer-facing).
+  # Provides Dart bindings + worker isolate over libsyni_ffi.
+  # TODO(release): replace path with git tag once syni-flutter publishes.
+  syni:
+    path: ../syni-flutter
+
   # Core dependencies
   rxdart: ^0.28.0
   collection: ^1.18.0
