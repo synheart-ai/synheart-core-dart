@@ -17,6 +17,7 @@ import 'modules/consent/consent_module.dart';
 import 'modules/interfaces/capability_provider.dart';
 import 'modules/interfaces/consent_provider.dart';
 import 'modules/wear/wear_module.dart';
+import 'models/data_deletion.dart';
 import 'models/task_type.dart';
 import 'models/focus_kind.dart';
 import 'package:synheart_wear/synheart_wear.dart'
@@ -385,6 +386,96 @@ class Synheart {
       message:
           'Account deletion cancellation requires core-runtime network bridge.',
     );
+  }
+
+  // --- Customer-facing data deletion (GDPR Article 17) ---
+
+  /// Request cloud-side deletion of every byte the platform holds for the
+  /// currently-bound user (the subject derived from the `client_id` passed
+  /// at SDK setup / device registration). Returns a [DataDeletionRequest]
+  /// with `status` typically `pending` — the server runs the chain
+  /// asynchronously. Poll [dataDeletionStatus] for completion.
+  ///
+  /// Pair this with [wipeLocalData] for the standard "Delete my account"
+  /// flow: wipe locally first so the user can't keep using the app, then
+  /// request the cloud delete.
+  ///
+  /// `reason` and `contact` are optional audit hints. `dryRun=true` runs the
+  /// auth + persistence path but skips the actual purge — useful for testing
+  /// integrations end-to-end without losing real data.
+  static Future<DataDeletionRequest> requestDataDeletion({
+    String? reason,
+    String? contact,
+    bool dryRun = false,
+  }) async {
+    if (_coreRuntime == null) {
+      throw StateError(
+        'requestDataDeletion requires the core-runtime network bridge.',
+      );
+    }
+    final json = await _coreRuntime!.requestDataDeletion(
+      reason: reason,
+      contact: contact,
+      dryRun: dryRun,
+    );
+    return _parseDataDeletion(json);
+  }
+
+  /// Poll the status of a deletion request. The `status` field transitions
+  /// `pending` → `inProgress` → `completed` (or `failed`). Once
+  /// `status == completed`, the [DataDeletionRequest.result] map carries
+  /// per-layer purge stats from the server.
+  static Future<DataDeletionRequest> dataDeletionStatus(
+    String requestId,
+  ) async {
+    if (_coreRuntime == null) {
+      throw StateError(
+        'dataDeletionStatus requires the core-runtime network bridge.',
+      );
+    }
+    final json = await _coreRuntime!.getDataDeletion(requestId);
+    return _parseDataDeletion(json);
+  }
+
+  /// List recent deletion requests for this caller's org. Mainly useful for
+  /// support/admin dashboards.
+  static Future<DataDeletionList> listDataDeletions({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    if (_coreRuntime == null) {
+      throw StateError(
+        'listDataDeletions requires the core-runtime network bridge.',
+      );
+    }
+    final json = await _coreRuntime!.listDataDeletions(
+      limit: limit,
+      offset: offset,
+    );
+    if (json == null) {
+      throw StateError('Empty response from listDataDeletions.');
+    }
+    if (json['error'] is String) {
+      throw StateError(json['error'] as String);
+    }
+    final dataList = (json['data'] as List?) ?? const [];
+    return DataDeletionList(
+      requests: dataList
+          .whereType<Map>()
+          .map((m) => DataDeletionRequest.fromJson(m.cast<String, dynamic>()))
+          .toList(growable: false),
+      total: (json['total'] as int?) ?? 0,
+    );
+  }
+
+  static DataDeletionRequest _parseDataDeletion(Map<String, dynamic>? json) {
+    if (json == null) {
+      throw StateError('Empty response from data deletion call.');
+    }
+    if (json['error'] is String) {
+      throw StateError(json['error'] as String);
+    }
+    return DataDeletionRequest.fromJson(json);
   }
 
   // --- Auth ---
@@ -2241,6 +2332,32 @@ class Synheart {
 
   /// Get the last lab export JSON (available after session end in research mode).
   static String? get labExportJson => _coreRuntime?.labExportJson();
+
+  /// Whether the linked runtime exports the lab re-enqueue symbol
+  /// (engine v0.8.1+). Older binaries return false and
+  /// [labReenqueueSession] will yield [LabReenqueueResult.unsupported].
+  static bool get isLabReenqueueAvailable =>
+      _coreRuntime?.isLabReenqueueAvailable ?? false;
+
+  /// Re-enqueue a previously-finalized lab session payload for cloud
+  /// upload. Use this to retry sessions whose initial upload was
+  /// dropped on a 4xx (typically a cloud schema mismatch — the runtime
+  /// removes those rows from the upload queue so they don't clog the
+  /// connector).
+  ///
+  /// Host reads the persisted JSON from app-side storage (pulse-focus:
+  /// `LabPayloadService` / the `lab_payloads` SQLite table) and passes
+  /// it back in here. Same consent + connector gates apply as the
+  /// auto-enqueue path; see [LabReenqueueResult] for outcomes.
+  ///
+  /// Returns [LabReenqueueResult.cloudNotConfigured] when the SDK is
+  /// not initialized — callers should treat that as a no-op rather
+  /// than a bug.
+  static LabReenqueueResult labReenqueueSession(String sessionJson) {
+    final rt = _coreRuntime;
+    if (rt == null) return LabReenqueueResult.cloudNotConfigured;
+    return rt.labReenqueueSession(sessionJson);
+  }
 
   // ── Lab metadata ─────────────────────────────────────────────────────
 

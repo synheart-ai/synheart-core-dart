@@ -42,6 +42,9 @@ export 'src/artifacts/tombstone.dart';
 // Session model
 export 'src/models/session_handle.dart';
 
+// Customer-facing GDPR Article 17 (right-to-erasure) types.
+export 'src/models/data_deletion.dart';
+
 // Typed state and metrics
 export 'src/models/hsi_state.dart';
 export 'src/models/metric_event.dart';
