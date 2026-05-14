@@ -245,6 +245,30 @@ typedef _WipeDart = int Function(Pointer<Void> h);
 typedef _RetentionC = Int64 Function(Pointer<Void> h, Int32 days);
 typedef _RetentionDart = int Function(Pointer<Void> h, int days);
 
+// Customer-facing GDPR data deletion (cloud-side).
+typedef _RequestDataDeletionC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> reason,
+      Pointer<Utf8> contact,
+      Bool dryRun,
+    );
+typedef _RequestDataDeletionDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> reason,
+      Pointer<Utf8> contact,
+      bool dryRun,
+    );
+typedef _GetDataDeletionC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> requestId);
+typedef _GetDataDeletionDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> requestId);
+typedef _ListDataDeletionsC =
+    Pointer<Utf8> Function(Pointer<Void> h, Int32 limit, Int32 offset);
+typedef _ListDataDeletionsDart =
+    Pointer<Utf8> Function(Pointer<Void> h, int limit, int offset);
+
 // Vendor events
 typedef _IngestVendorEventC =
     Int32 Function(Pointer<Void> h, Pointer<Utf8> json);
@@ -776,6 +800,23 @@ class SynheartCoreFFI {
   late final wipeLocalData = _lib.lookupFunction<_WipeC, _WipeDart>(
     'synheart_core_wipe_local_data',
   );
+
+  /// `POST /v1/customer/data-deletions` — request cloud-side deletion of every
+  /// byte the platform holds for the currently-bound subject (the value
+  /// derived from the `client_id` you passed to [registerDevice]). Returns
+  /// the persisted request row as JSON; poll [getDataDeletion] for completion.
+  late final requestDataDeletion = _lib
+      .lookupFunction<_RequestDataDeletionC, _RequestDataDeletionDart>(
+        'synheart_core_request_data_deletion',
+      );
+  late final getDataDeletion = _lib
+      .lookupFunction<_GetDataDeletionC, _GetDataDeletionDart>(
+        'synheart_core_get_data_deletion',
+      );
+  late final listDataDeletions = _lib
+      .lookupFunction<_ListDataDeletionsC, _ListDataDeletionsDart>(
+        'synheart_core_list_data_deletions',
+      );
   late final setRetentionDays = _lib
       .lookupFunction<_RetentionC, _RetentionDart>(
         'synheart_core_set_retention_days',
