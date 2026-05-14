@@ -121,8 +121,7 @@ class DataDeletionRequest {
           ? json['contact'] as String
           : null,
       result: (json['result'] as Map?)?.cast<String, dynamic>(),
-      errorMessage:
-          (json['error_message'] as String?)?.trim().isEmpty == false
+      errorMessage: (json['error_message'] as String?)?.trim().isEmpty == false
           ? json['error_message'] as String
           : null,
       createdAt: parseTs('created_at', required: true),
