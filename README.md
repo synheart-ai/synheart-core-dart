@@ -1,3 +1,5 @@
+🌐 Official website: [synheart.ai](https://synheart.ai) — Human State Interface (HSI) infrastructure for developers and AI systems.
+
 # Synheart Core SDK - Dart/Flutter
 
 [![Pub Version](https://img.shields.io/pub/v/synheart_core.svg)](https://pub.dev/packages/synheart_core)
@@ -1003,4 +1005,3 @@ Copyright 2025-2026 Synheart AI Inc.
 This project is provided under an open-source license. Certain underlying systems, methods, and architectures described or implemented herein may be covered by one or more pending patent applications.
 
 Nothing in this repository grants any license, express or implied, to any patents or patent applications, except as provided by the applicable open-source license.
-
