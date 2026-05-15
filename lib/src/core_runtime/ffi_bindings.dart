@@ -797,6 +797,10 @@ class SynheartCoreFFI {
       .lookupFunction<_DeleteSessionC, _DeleteSessionDart>(
         'synheart_core_delete_session',
       );
+  late final closeOrphanSession = _lib
+      .lookupFunction<_DeleteSessionC, _DeleteSessionDart>(
+        'synheart_core_close_orphan_session',
+      );
   late final wipeLocalData = _lib.lookupFunction<_WipeC, _WipeDart>(
     'synheart_core_wipe_local_data',
   );

@@ -899,6 +899,16 @@ class CoreRuntimeBridge {
     return _withCString(sessionId, (p) => _ffi.deleteSession(_handle, p) == 0);
   }
 
+  /// Mark a stranded `state='active'` session as closed. Returns true on
+  /// success (or when the session was already closed). Used by startup
+  /// orphan-session sweeps.
+  bool closeOrphanSession(String sessionId) {
+    return _withCString(
+      sessionId,
+      (p) => _ffi.closeOrphanSession(_handle, p) == 0,
+    );
+  }
+
   bool wipeLocalData() => _ffi.wipeLocalData(_handle) == 0;
 
   int setRetentionDays(int days) => _ffi.setRetentionDays(_handle, days);

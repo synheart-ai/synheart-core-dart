@@ -253,6 +253,59 @@ class Synheart {
     return [];
   }
 
+  /// Mark a stranded `state='active'` session as closed without going
+  /// through the normal stop-session lifecycle. Returns `true` on success
+  /// (or when the session was already closed).
+  ///
+  /// Used by [sweepOrphanSessions]; prefer that helper over calling this
+  /// directly unless you know exactly which session id to close.
+  static Future<bool> closeOrphanSession(String sessionId) async {
+    if (_coreRuntime == null) return false;
+    return _coreRuntime!.closeOrphanSession(sessionId);
+  }
+
+  /// Close every `state='active'` session whose `startUtc` is older than
+  /// `olderThan` ago. Returns the number of sessions actually closed.
+  ///
+  /// Call this once on app start to clean up sessions the host failed to
+  /// finalize cleanly (app force-killed mid-session, OS reclaim, sudden
+  /// reboot, etc.). Without this they accumulate in [listSessions] as
+  /// eternally-active and pollute downstream summaries / histories.
+  ///
+  /// `olderThan` defaults to 6 hours, which is generous for app sessions
+  /// (typical sessions are minutes) and avoids racing a session a user
+  /// just started and backgrounded briefly.
+  static Future<int> sweepOrphanSessions({
+    Duration olderThan = const Duration(hours: 6),
+  }) async {
+    final sessions = await listSessions();
+    if (sessions.isEmpty) return 0;
+    final cutoffMs =
+        DateTime.now().millisecondsSinceEpoch - olderThan.inMilliseconds;
+    final orphans = sessions
+        .where((s) => s.isActive && s.startUtc > 0 && s.startUtc < cutoffMs)
+        .toList();
+    if (orphans.isEmpty) return 0;
+    SynheartLogger.log(
+      '[synheart] sweepOrphanSessions: closing ${orphans.length} stranded '
+      'session(s) older than ${olderThan.inHours}h',
+    );
+    var closed = 0;
+    for (final s in orphans) {
+      try {
+        if (await closeOrphanSession(s.sessionId)) {
+          closed += 1;
+        }
+      } catch (e) {
+        SynheartLogger.log(
+          '[synheart] sweepOrphanSessions: closeOrphanSession(${s.sessionId}) '
+          'threw: $e',
+        );
+      }
+    }
+    return closed;
+  }
+
   /// Get a session summary (decrypted) for the given session.
   static Future<Map<String, dynamic>?> getSessionSummary(
     String sessionId,
@@ -4346,6 +4399,12 @@ class SessionRecord {
   final String mode;
   final int createdAtUtc;
   final int startUtc;
+  /// `null` while the session is still active; set to the runtime's
+  /// `ended_at_ms` once the session is closed.
+  final int? endedAtUtc;
+  /// `'active'` while a session is in flight; `'closed'` once
+  /// `stopSession` (or an orphan sweep) has finalized it.
+  final String state;
   final String appId;
   final String appVersion;
   final String deviceId;
@@ -4357,11 +4416,17 @@ class SessionRecord {
     required this.mode,
     required this.createdAtUtc,
     required this.startUtc,
+    this.endedAtUtc,
+    this.state = 'active',
     this.appId = '',
     this.appVersion = '',
     this.deviceId = '',
     this.platform = 'flutter',
   });
+
+  /// True iff the session is still marked `'active'` in storage.
+  /// Used by [Synheart.sweepOrphanSessions] to find candidates.
+  bool get isActive => state == 'active';
 
   factory SessionRecord.fromMap(Map<String, dynamic> map) {
     int readInt(List<String> keys) {
@@ -4372,6 +4437,14 @@ class SessionRecord {
       }
       return 0;
     }
+    int? readIntOpt(List<String> keys) {
+      for (final k in keys) {
+        final v = map[k];
+        if (v is int) return v;
+        if (v is num) return v.toInt();
+      }
+      return null;
+    }
 
     return SessionRecord(
       sessionId: map['session_id'] as String? ?? '',
@@ -4379,6 +4452,8 @@ class SessionRecord {
       mode: map['mode'] as String? ?? 'personal',
       createdAtUtc: readInt(['created_at_utc', 'created_at_ms']),
       startUtc: readInt(['started_at_ms', 'start_utc']),
+      endedAtUtc: readIntOpt(['ended_at_ms', 'end_utc']),
+      state: map['state'] as String? ?? 'active',
       appId: map['app_id'] as String? ?? '',
       appVersion: map['app_version'] as String? ?? '',
       deviceId: map['device_id'] as String? ?? '',
