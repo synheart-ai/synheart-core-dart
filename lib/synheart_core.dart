@@ -135,6 +135,8 @@ export 'src/modules/syni/syni_module.dart';
 export 'package:syni/agent.dart'
     show
         SyniPersona,
+        SyniSpecPersona,
+        SyniSpecPersonaException,
         SyniModelSpec,
         SyniModels,
         SyniInstallState,
