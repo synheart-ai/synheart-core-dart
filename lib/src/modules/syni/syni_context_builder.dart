@@ -27,18 +27,37 @@ class SyniContextBuilder {
     HSIState? Function()? liveState,
     Future<List<SessionRecord>> Function({SessionRange? range})? listSessions,
     Future<Map<String, dynamic>?> Function(String sessionId)? sessionSummary,
+    Future<List<Map<String, dynamic>>> Function(String sessionId)? hsiWindows,
   })  : _liveState = liveState ?? (() => Synheart.currentHSIState),
         _listSessions = listSessions ?? Synheart.listSessions,
-        _sessionSummary = sessionSummary ?? Synheart.getSessionSummary;
+        _sessionSummary = sessionSummary ?? Synheart.getSessionSummary,
+        _hsiWindows = hsiWindows ?? ((id) => Synheart.getHSIWindows(id));
 
   final HSIState? Function() _liveState;
   final Future<List<SessionRecord>> Function({SessionRange? range})
       _listSessions;
   final Future<Map<String, dynamic>?> Function(String sessionId)
       _sessionSummary;
+  final Future<List<Map<String, dynamic>>> Function(String sessionId)
+      _hsiWindows;
+
+  /// HSI 1.3 channel names we project, with their `(axis, channel)` location
+  /// in the payload — see `hsi/schema/hsi-1.3.schema.json` (RFC-HSI-0010).
+  /// Names match the runtime contract's `axis_means` keys.
+  static const _channels = <String, ({String axis, String name})>{
+    'focus': (axis: 'cognitive', name: 'focus'),
+    'capacity': (axis: 'cognitive', name: 'capacity'),
+    'arousal': (axis: 'affective', name: 'arousal'),
+    'recovery': (axis: 'physiological', name: 'recovery'),
+  };
 
   /// How many recent sessions to digest into the history block.
-  static const _historyDepth = 8;
+  ///
+  /// Trade-off: more = richer reasoning, but ~30 tokens of prompt prefill
+  /// per session, on every turn. With ~3-5 tok/sec prefill on phone CPU,
+  /// each session costs ~6-10s of "Syni is thinking…" latency. 4 is the
+  /// sweet spot for V1 — enough trend signal, bounded prefill.
+  static const _historyDepth = 4;
 
   /// Build the `HsiContext` JSON. Returns `null` when there is genuinely
   /// nothing to contribute (no live HSI, no stored sessions).
@@ -60,10 +79,19 @@ class SyniContextBuilder {
       );
       return null;
     }
+    final sessions =
+        ((ctx['history'] as Map?)?['recent_sessions'] as List?) ?? const [];
+    final withAxes = sessions
+        .whereType<Map>()
+        .where((m) => m['axis_means'] != null)
+        .length;
     SynheartLogger.log(
       '[syni] context builder: current=${ctx.containsKey('current')} '
-      'history_sessions=${(ctx['history'] as Map?)?['recent_sessions'] is List ? ((ctx['history'] as Map)['recent_sessions'] as List).length : 0}',
+      'history_sessions=${sessions.length} with_axes=$withAxes',
     );
+    final labPresent =
+        (Synheart.labExportJson != null && Synheart.labExportJson!.isNotEmpty);
+    SynheartLogger.log('[syni] lab_export_present=$labPresent');
     return ctx;
   }
 
@@ -89,9 +117,6 @@ class SyniContextBuilder {
     put('focus', axes.focus);
     put('capacity', axes.capacity);
     put('arousal', axes.arousal);
-    // NOTE: HSIAxes has no `recovery` axis today — the runtime's
-    // StateSnapshot.recovery stays null until the engine exposes it
-    // (e.g. via SRM). Intentionally omitted rather than faked.
 
     if (snapshot.isEmpty) return null;
     snapshot['observed_at_utc'] =
@@ -128,17 +153,12 @@ class SyniContextBuilder {
       recentSessions.add(await _digestSession(s));
     }
     if (recentSessions.isEmpty) return null;
-
     return {'recent_sessions': recentSessions};
   }
 
-  /// Digest one session into the runtime's `SessionDigest` shape:
-  /// `{started_at_utc, duration_min?, axis_means: {focus: 0.6, ...}}`.
-  ///
-  /// Parses the typed [SessionSummaryArtifact] — duration from the session
-  /// window, axis means from `aggregates.{focus,capacity,arousal}.mean`. If
-  /// the summary is missing or malformed, the digest carries the timestamp
-  /// only (degrades gracefully).
+  /// Digest one session into a `{started_at_utc, duration_min?, axis_means?}`
+  /// shape. Falls back to stored HSI windows when a session summary is
+  /// unavailable; degrades to a timestamp-only digest on parse failure.
   Future<Map<String, dynamic>> _digestSession(SessionRecord s) async {
     final startedAt =
         DateTime.fromMillisecondsSinceEpoch(s.startUtc, isUtc: true);
@@ -156,20 +176,111 @@ class SyniContextBuilder {
           digest['duration_min'] = (durMs / 60000).round();
         }
 
-        // Per-axis means. `sleep` is a daily measure, not meaningfully a
-        // per-(focus-)session aggregate — omit it here.
+        // Skip `sleep` (daily, not per-session), null axes (no readings),
+        // and axes whose mean is 0 (would mislead the model).
         final agg = summary.aggregates;
-        digest['axis_means'] = <String, double>{
-          'focus': agg.focus.mean,
-          'capacity': agg.capacity.mean,
-          'arousal': agg.arousal.mean,
-        };
+        final means = <String, double>{};
+        for (final axis in agg.keys) {
+          if (axis == 'sleep') continue;
+          final a = agg[axis];
+          if (a == null || a.mean == 0) continue;
+          means[axis] = a.mean;
+        }
+        if (means.isNotEmpty) {
+          digest['axis_means'] = means;
+        }
+        SynheartLogger.log(
+          '[syni] session ${s.sessionId}: summary path '
+          '(axes=${means.length}/${agg.keys.length}, '
+          'dur=${digest['duration_min'] ?? 0}min)',
+        );
+        return digest;
       }
+
+      // Fallback when the summary isn't persisted: aggregate axes from the
+      // per-window HSI payloads instead.
+      final windows = await _hsiWindows(s.sessionId);
+      if (windows.isEmpty) {
+        SynheartLogger.log(
+          '[syni] session ${s.sessionId}: no summary, no HSI windows',
+        );
+        return digest;
+      }
+
+      final means = _aggregateAxesFromWindows(windows);
+      if (means.isNotEmpty) digest['axis_means'] = means;
+      // HSI windows are 60s each by convention — count ≈ minutes.
+      digest['duration_min'] = windows.length;
+      SynheartLogger.log(
+        '[syni] session ${s.sessionId}: aggregated ${windows.length} HSI '
+        'windows → ${means.length} axes (no summary path)',
+      );
     } catch (e) {
-      // Summary unavailable or shape mismatch — keep timestamp-only digest.
-      SynheartLogger.log('[syni] session digest failed for ${s.sessionId}: $e');
+      SynheartLogger.log(
+        '[syni] session ${s.sessionId}: digest failed: $e',
+      );
     }
 
     return digest;
+  }
+
+  /// Mean per-channel score across the HSI frames buffered inside HSI
+  /// windows. Each frame is weighted equally.
+  static Map<String, double> _aggregateAxesFromWindows(
+    List<Map<String, dynamic>> windows,
+  ) {
+    final sums = <String, double>{};
+    final counts = <String, int>{};
+    for (final w in windows) {
+      for (final frame in _findFrames(w)) {
+        final axes = _findAxes(frame);
+        if (axes == null) continue;
+        for (final entry in _channels.entries) {
+          final outName = entry.key;
+          final loc = entry.value;
+          final readings = axes[loc.axis];
+          if (readings is! List) continue;
+          for (final r in readings) {
+            if (r is! Map) continue;
+            if (r['name'] != loc.name) continue;
+            final score = (r['score'] as num?)?.toDouble();
+            if (score == null) break;
+            sums[outName] = (sums[outName] ?? 0.0) + score;
+            counts[outName] = (counts[outName] ?? 0) + 1;
+            break;
+          }
+        }
+      }
+    }
+    final out = <String, double>{};
+    sums.forEach((k, v) => out[k] = v / counts[k]!);
+    return out;
+  }
+
+  /// Extract HSI frame payloads from one window envelope. Normalizes the
+  /// several envelope shapes the runtime can emit into a flat frame list.
+  static List<Map<String, dynamic>> _findFrames(Map<String, dynamic> w) {
+    final win = w['window'];
+    if (win is Map) {
+      final hsi = win['hsi'];
+      if (hsi is List) {
+        return hsi.whereType<Map<String, dynamic>>().toList();
+      }
+      if (hsi is Map<String, dynamic>) return [hsi];
+    }
+    if (w['axes'] is Map) return [w];
+    final hsi = w['hsi'];
+    if (hsi is List) return hsi.whereType<Map<String, dynamic>>().toList();
+    if (hsi is Map<String, dynamic>) return [hsi];
+    return const [];
+  }
+
+  /// Locate the `axes` map inside a single HSI frame.
+  static Map? _findAxes(Map<String, dynamic> frame) {
+    if (frame['axes'] is Map) return frame['axes'] as Map;
+    final hsi = frame['hsi'];
+    if (hsi is Map && hsi['axes'] is Map) return hsi['axes'] as Map;
+    if (hsi is Map) return hsi;
+    return null;
   }
 }

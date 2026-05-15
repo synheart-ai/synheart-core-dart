@@ -29,6 +29,7 @@ import 'modules/behavior/behavior_code.dart';
 import 'modules/behavior/behavior_events.dart';
 import 'modules/breathing/breathing_module.dart';
 import 'modules/syni/syni_module.dart';
+import 'package:syni/agent.dart' show SyniCloudConfig;
 import 'models/behavior_session_results.dart';
 import 'package:synheart_behavior/synheart_behavior.dart' as sb;
 import 'config/synheart_mode.dart';
@@ -270,22 +271,30 @@ class Synheart {
   }
 
   /// Get decrypted HSI window artifacts for a session.
+  ///
+  /// Each element is a full HSI 1.3 window payload. The native runtime may
+  /// emit each window as either a JSON string or a map; this normalizes to
+  /// `Map<String, dynamic>`.
   static Future<List<Map<String, dynamic>>> getHSIWindows(
     String sessionId, {
     WindowRange? range,
   }) async {
-    if (_coreRuntime != null) {
-      final raw = _coreRuntime!.getHsiWindows(
-        sessionId,
-        startMs: range?.startMs ?? 0,
-        endMs: range?.endMs ?? 0,
-        limit: range?.limit ?? 0,
+    if (_coreRuntime == null) return const [];
+    final raw = _coreRuntime!.getHsiWindows(
+      sessionId,
+      startMs: range?.startMs ?? 0,
+      endMs: range?.endMs ?? 0,
+      limit: range?.limit ?? 0,
+    );
+    if (raw == null) return const [];
+    return raw.map<Map<String, dynamic>>((e) {
+      if (e is Map<String, dynamic>) return e;
+      if (e is Map) return Map<String, dynamic>.from(e);
+      if (e is String) return jsonDecode(e) as Map<String, dynamic>;
+      throw FormatException(
+        'unexpected HSI window element type: ${e.runtimeType}',
       );
-      if (raw != null) {
-        return raw.cast<Map<String, dynamic>>();
-      }
-    }
-    return [];
+    }).toList();
   }
 
   // --- Storage & retention ---
@@ -1943,6 +1952,20 @@ class Synheart {
   // load on a worker isolate). See `lib/src/modules/syni/syni_module.dart`.
 
   static SyniModule? _syni;
+  static SyniCloudConfig? _syniCloudConfig;
+
+  /// Inject (or clear) the cloud config used by Syni's hybrid router.
+  ///
+  /// With a config set, `Synheart.syni!.hasCloud` is true and chat calls can
+  /// route to `syni-service` (per `SyniExecutionMode`). Without it, Syni
+  /// runs local-only.
+  ///
+  /// Resets the cached `SyniModule` so the next `Synheart.syni` access picks
+  /// up the new config. Safe to call before or after `initialize()`.
+  static void configureSyniCloud(SyniCloudConfig? config) {
+    _syniCloudConfig = config;
+    _syni = null;
+  }
 
   /// Adaptive AI client. Returns null until the Synheart facade is running.
   /// Once non-null the caller drives `install`, `chat`, and `uninstall`
@@ -1965,6 +1988,7 @@ class Synheart {
     // session is active.
     if (!shared._isConfigured) return null;
     return _syni ??= SyniModule(
+      cloudConfig: _syniCloudConfig,
       hsiSnapshot: () => Synheart.currentHSIState,
     );
   }

@@ -142,7 +142,7 @@ class BaselineSnapshotArtifact {
 
   factory BaselineSnapshotArtifact.fromJson(Map<String, dynamic> json) =>
       BaselineSnapshotArtifact(
-        header: ArtifactHeader.fromJson(json),
+        header: ArtifactHeader.fromJson(json['header'] as Map<String, dynamic>),
         baseline: BaselineData.fromJson(
           json['baseline'] as Map<String, dynamic>,
         ),

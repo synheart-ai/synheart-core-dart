@@ -21,14 +21,18 @@ import 'syni_context_builder.dart';
 class SyniModule {
   SyniModule({
     agent.SyniAgent? syniAgent,
+    agent.SyniCloudConfig? cloudConfig,
     SyniContextBuilder? contextBuilder,
     HSIState? Function()? hsiSnapshot,
-  })  : _agent = syniAgent ?? agent.SyniAgent(),
+  })  : _agent = syniAgent ?? agent.SyniAgent(cloudConfig: cloudConfig),
         _contextBuilder =
             contextBuilder ?? SyniContextBuilder(liveState: hsiSnapshot);
 
   final agent.SyniAgent _agent;
   final SyniContextBuilder _contextBuilder;
+
+  /// Whether a cloud client is configured (cloud chat is reachable).
+  bool get hasCloud => _agent.hasCloud;
 
   // --- Install lifecycle (delegated to the agent) --------------------------
 
@@ -49,6 +53,15 @@ class SyniModule {
   }) =>
       _agent.install(persona: persona, model: model);
 
+  /// Cold-start restore — if the model is already on disk, bind [persona]
+  /// and load the engine without re-downloading. See
+  /// [agent.SyniAgent.restoreInstallIfReady].
+  Future<bool> restoreInstallIfReady({
+    required agent.SyniPersona persona,
+    required agent.SyniModelSpec model,
+  }) =>
+      _agent.restoreInstallIfReady(persona: persona, model: model);
+
   /// Free the engine + worker isolate (keeps the downloaded model on disk).
   Future<void> uninstall() => _agent.uninstall();
 
@@ -56,19 +69,27 @@ class SyniModule {
 
   /// Run a single chat turn. The [SyniContextBuilder] gathers this SDK's
   /// live HSI + stored session history and the result is passed to the
-  /// agent as conditioning context.
-  Future<agent.SyniChatResponse> chat(String message, {int seed = 0}) async {
+  /// agent as conditioning context. [mode] picks local vs cloud — see
+  /// [agent.SyniExecutionMode].
+  Future<agent.SyniChatResponse> chat(
+    String message, {
+    int seed = 0,
+    agent.SyniExecutionMode mode = agent.SyniExecutionMode.localFirst,
+  }) async {
     final hsiContext = await _contextBuilder.build();
-    return _agent.chat(message, hsiContext: hsiContext, seed: seed);
+    return _agent.chat(message,
+        hsiContext: hsiContext, seed: seed, mode: mode);
   }
 
   /// Streaming counterpart to [chat].
   Stream<agent.SyniChatEvent> chatStream(
     String message, {
     int seed = 0,
+    agent.SyniExecutionMode mode = agent.SyniExecutionMode.localFirst,
   }) async* {
     final hsiContext = await _contextBuilder.build();
-    yield* _agent.chatStream(message, hsiContext: hsiContext, seed: seed);
+    yield* _agent.chatStream(message,
+        hsiContext: hsiContext, seed: seed, mode: mode);
   }
 
   /// For testing / shutdown.

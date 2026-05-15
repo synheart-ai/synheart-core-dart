@@ -15,33 +15,36 @@ class SessionInfo {
 
   Map<String, dynamic> toJson() => {
     'session_id': sessionId,
-    'start_ms': startMs,
-    'end_ms': endMs,
+    'started_at_ms': startMs,
+    'ended_at_ms': endMs,
     'mode': mode,
   };
 
   factory SessionInfo.fromJson(Map<String, dynamic> json) => SessionInfo(
     sessionId: json['session_id'] as String,
-    startMs: json['start_ms'] as int,
-    endMs: json['end_ms'] as int,
+    startMs: (json['started_at_ms'] as num).toInt(),
+    endMs: (json['ended_at_ms'] as num).toInt(),
     mode: json['mode'] as String,
   );
 }
 
 class CoverageInfo {
-  final int totalWindows;
-  final int windowSizeMs;
+  final int windowCount;
+  final double coveragePct;
 
-  const CoverageInfo({required this.totalWindows, this.windowSizeMs = 30000});
+  const CoverageInfo({
+    required this.windowCount,
+    this.coveragePct = 0.0,
+  });
 
   Map<String, dynamic> toJson() => {
-    'total_windows': totalWindows,
-    'window_size_ms': windowSizeMs,
+    'window_count': windowCount,
+    'coverage_pct': coveragePct,
   };
 
   factory CoverageInfo.fromJson(Map<String, dynamic> json) => CoverageInfo(
-    totalWindows: json['total_windows'] as int,
-    windowSizeMs: json['window_size_ms'] as int? ?? 30000,
+    windowCount: (json['window_count'] as num?)?.toInt() ?? 0,
+    coveragePct: (json['coverage_pct'] as num?)?.toDouble() ?? 0.0,
   );
 }
 
@@ -65,103 +68,112 @@ class AggregateAxis {
   );
 }
 
+/// Per-axis aggregates, keyed by axis name.
+///
+/// New axes introduced by future HSI versions appear automatically — they
+/// are reachable via [operator []] and listed in [keys]. The well-known
+/// axes are exposed as named getters; a `null` getter means the axis was
+/// not emitted for the session (no readings), which is distinct from a
+/// recorded mean of zero.
 class SessionAggregates {
-  final AggregateAxis focus;
-  final AggregateAxis arousal;
-  final AggregateAxis capacity;
-  final AggregateAxis sleep;
+  final Map<String, AggregateAxis> _byName;
 
-  const SessionAggregates({
-    required this.focus,
-    required this.arousal,
-    required this.capacity,
-    required this.sleep,
-  });
+  const SessionAggregates._(this._byName);
 
-  Map<String, dynamic> toJson() => {
-    'focus': focus.toJson(),
-    'arousal': arousal.toJson(),
-    'capacity': capacity.toJson(),
-    'sleep': sleep.toJson(),
-  };
+  const SessionAggregates.empty() : _byName = const {};
 
-  factory SessionAggregates.fromJson(
-    Map<String, dynamic> json,
-  ) => SessionAggregates(
-    focus: AggregateAxis.fromJson(json['focus'] as Map<String, dynamic>),
-    arousal: AggregateAxis.fromJson(json['arousal'] as Map<String, dynamic>),
-    capacity: AggregateAxis.fromJson(json['capacity'] as Map<String, dynamic>),
-    sleep: AggregateAxis.fromJson(json['sleep'] as Map<String, dynamic>),
-  );
+  Iterable<String> get keys => _byName.keys;
+
+  AggregateAxis? operator [](String axis) => _byName[axis];
+
+  AggregateAxis? get focus => _byName['focus'];
+  AggregateAxis? get arousal => _byName['arousal'];
+  AggregateAxis? get capacity => _byName['capacity'];
+  AggregateAxis? get sleep => _byName['sleep'];
+  AggregateAxis? get valence => _byName['valence'];
+  AggregateAxis? get stress => _byName['stress'];
+  AggregateAxis? get calm => _byName['calm'];
+
+  Map<String, dynamic> toJson() =>
+      _byName.map((k, v) => MapEntry(k, v.toJson()));
+
+  factory SessionAggregates.fromJson(Map<String, dynamic> json) {
+    final out = <String, AggregateAxis>{};
+    for (final entry in json.entries) {
+      final v = entry.value;
+      if (v is Map<String, dynamic>) {
+        out[entry.key] = AggregateAxis.fromJson(v);
+      }
+    }
+    return SessionAggregates._(out);
+  }
 }
 
 class AppMetric {
   final String name;
-  final double mean;
+  final dynamic value;
   final int count;
 
   const AppMetric({
     required this.name,
-    required this.mean,
+    required this.value,
     required this.count,
   });
 
-  Map<String, dynamic> toJson() => {'name': name, 'mean': mean, 'count': count};
+  Map<String, dynamic> toJson() =>
+      {'name': name, 'value': value, 'count': count};
 
   factory AppMetric.fromJson(Map<String, dynamic> json) => AppMetric(
     name: json['name'] as String,
-    mean: (json['mean'] as num).toDouble(),
-    count: json['count'] as int,
+    value: json['value'],
+    count: (json['count'] as num).toInt(),
   );
 }
 
 class InsightMetrics {
-  final List<AppMetric> appMetrics;
+  final List<AppMetric> metrics;
 
-  const InsightMetrics({this.appMetrics = const []});
+  const InsightMetrics({this.metrics = const []});
 
   Map<String, dynamic> toJson() => {
-    'app_metrics': appMetrics.map((m) => m.toJson()).toList(),
+    'metrics': metrics.map((m) => m.toJson()).toList(),
   };
 
   factory InsightMetrics.fromJson(Map<String, dynamic> json) => InsightMetrics(
-    appMetrics:
-        (json['app_metrics'] as List<dynamic>?)
+    metrics: (json['metrics'] as List<dynamic>?)
             ?.map((e) => AppMetric.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
   );
 }
 
-/// A compact session summary for UI display and fast queries.
-///
-/// See RFC-CORE-0006 Section 6.3.
+/// Compact session summary for UI display and fast queries.
 class SessionSummaryArtifact {
   final ArtifactHeader header;
   final SessionInfo session;
   final CoverageInfo coverage;
   final SessionAggregates aggregates;
-  final InsightMetrics insightMetrics;
+  final InsightMetrics? insightMetrics;
 
   SessionSummaryArtifact({
     required this.header,
     required this.session,
     required this.coverage,
     required this.aggregates,
-    this.insightMetrics = const InsightMetrics(),
+    this.insightMetrics,
   });
 
   Map<String, dynamic> toJson() => {
-    ...header.toJson(),
+    'header': header.toJson(),
     'session': session.toJson(),
     'coverage': coverage.toJson(),
     'aggregates': aggregates.toJson(),
-    'insight_metrics': insightMetrics.toJson(),
+    if (insightMetrics != null) 'insight_metrics': insightMetrics!.toJson(),
   };
 
   factory SessionSummaryArtifact.fromJson(Map<String, dynamic> json) =>
       SessionSummaryArtifact(
-        header: ArtifactHeader.fromJson(json),
+        header: ArtifactHeader.fromJson(json['header'] as Map<String, dynamic>),
         session: SessionInfo.fromJson(json['session'] as Map<String, dynamic>),
         coverage: CoverageInfo.fromJson(
           json['coverage'] as Map<String, dynamic>,
@@ -169,10 +181,10 @@ class SessionSummaryArtifact {
         aggregates: SessionAggregates.fromJson(
           json['aggregates'] as Map<String, dynamic>,
         ),
-        insightMetrics: json['insight_metrics'] != null
+        insightMetrics: json['insight_metrics'] is Map<String, dynamic>
             ? InsightMetrics.fromJson(
                 json['insight_metrics'] as Map<String, dynamic>,
               )
-            : const InsightMetrics(),
+            : null,
       );
 }

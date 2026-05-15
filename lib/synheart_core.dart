@@ -148,7 +148,16 @@ export 'package:syni/agent.dart'
         SyniChatEvent,
         SyniChatDelta,
         SyniChatFinal,
-        SyniInstallException;
+        SyniInstallException,
+        // Hybrid local/cloud execution
+        SyniExecutionMode,
+        SyniCloudConfig,
+        SyniCloudException,
+        // Model catalog (local + cloud peers)
+        SyniModelOption,
+        SyniLocalModel,
+        SyniCloudModel,
+        SyniModelCatalog;
 
 export 'src/modules/cloud/upload_models.dart';
 export 'src/modules/cloud/cloud_exceptions.dart';
