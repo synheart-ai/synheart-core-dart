@@ -3362,6 +3362,14 @@ class Synheart {
         // auto-route below kicks in.
         _emitRawRamenEvent(event);
 
+        // Customer-facing GDPR data deletion events have a separate
+        // typed stream — they're not vendor data, so skip the
+        // vendor-routing fall-through after emitting.
+        if (eventType.startsWith('user.data_deletion.')) {
+          _emitDataDeletionUpdate(event);
+          return;
+        }
+
         // Skip the auto-route for ping-flavored events: their inline
         // payload is empty by design (Garmin / Oura / Fitbit only send
         // a notification). The app must subscribe to [rawRamenEvents]
@@ -3481,6 +3489,53 @@ class Synheart {
         userId: _vendorUserId,
       ),
     );
+  }
+
+  // ── Customer data deletion: real-time updates from RAMEN ──────────
+
+  static final StreamController<DataDeletionEvent> _dataDeletionUpdates =
+      StreamController<DataDeletionEvent>.broadcast();
+
+  /// Real-time status transitions for [requestDataDeletion]. The cloud
+  /// publishes one event per lifecycle change (`scheduled`, `completed`,
+  /// `failed`, `cancelled`) over the same RAMEN stream that vendor
+  /// events use.
+  ///
+  /// Prerequisites: a live RAMEN connection ([startVendorSync] called).
+  /// If the SDK isn't connected when the event lands, RAMEN replays
+  /// missed events on reconnect via its persistent cursor — your handler
+  /// still runs, just later.
+  ///
+  /// Typical use:
+  /// ```dart
+  /// final sub = Synheart.onDataDeletionUpdate.listen((event) {
+  ///   if (event.status == DataDeletionStatus.completed) {
+  ///     // Tell the user their data is gone.
+  ///   }
+  /// });
+  /// await Synheart.requestDataDeletion(reason: 'user-initiated');
+  /// ```
+  static Stream<DataDeletionEvent> get onDataDeletionUpdate =>
+      _dataDeletionUpdates.stream;
+
+  /// Internal: parse a `user.data_deletion.*` envelope and emit on the
+  /// typed stream. Best-effort — a parse failure logs and continues.
+  static void _emitDataDeletionUpdate(Map<String, dynamic> envelope) {
+    if (_dataDeletionUpdates.isClosed) return;
+    try {
+      final raw = envelope['payload_json']?.toString() ?? '{}';
+      final payload = jsonDecode(raw) as Map<String, dynamic>;
+      _dataDeletionUpdates.add(
+        DataDeletionEvent.fromRuntimeJson(
+          envelope: envelope,
+          payload: payload,
+          appId: _vendorAppId,
+          userId: _vendorUserId,
+        ),
+      );
+    } catch (e) {
+      SynheartLogger.stream('data deletion event parse failed: $e', error: e);
+    }
   }
 
   /// Query stored vendor events from the Core runtime.
