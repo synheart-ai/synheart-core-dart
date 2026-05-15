@@ -127,11 +127,28 @@ export 'src/modules/breathing/breathing_module.dart';
 export 'src/modules/breathing/breathing_compliance_result.dart';
 export 'src/modules/breathing/breathing_guidance_copy.dart';
 
-// Syni — adaptive AI agent (gated feature)
+// Syni — adaptive AI agent (gated feature).
+// SyniModule is the thin host-SDK facade (gate + HSI context builder);
+// the orchestration types are re-exported from package:syni's agent layer
+// so app code gets the full surface via `package:synheart_core`.
 export 'src/modules/syni/syni_module.dart';
-export 'src/modules/syni/syni_install_state.dart';
-export 'src/modules/syni/syni_installer.dart' show SyniModelSpec, SyniModels;
-export 'src/modules/syni/syni_persona.dart';
+export 'package:syni/agent.dart'
+    show
+        SyniPersona,
+        SyniModelSpec,
+        SyniModels,
+        SyniInstallState,
+        SyniNotInstalled,
+        SyniInstalling,
+        SyniInstalled,
+        SyniInstallFailed,
+        SyniInstallStage,
+        SyniChatResponse,
+        SyniResponseKind,
+        SyniChatEvent,
+        SyniChatDelta,
+        SyniChatFinal,
+        SyniInstallException;
 
 export 'src/modules/cloud/upload_models.dart';
 export 'src/modules/cloud/cloud_exceptions.dart';

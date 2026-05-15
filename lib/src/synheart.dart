@@ -1944,17 +1944,26 @@ class Synheart {
 
   static SyniModule? _syni;
 
-  /// Adaptive AI client. Returns null until the Synheart facade is running
-  /// AND the user has granted `SynheartFeature.syni` consent. Once non-null
-  /// the caller drives `install`, `chat`, and `uninstall` directly on it.
+  /// Adaptive AI client. Returns null until the Synheart facade is running.
+  /// Once non-null the caller drives `install`, `chat`, and `uninstall`
+  /// directly on it.
   ///
-  /// Operational status follows the four-authority model — even when this
-  /// getter returns a non-null module, `chat()` will only succeed after
-  /// `install()` reaches [SyniInstalled].
+  /// Operational status follows the four-authority model — `chat()` only
+  /// succeeds after `install()` reaches [SyniInstalled], and the capability
+  /// gate (`isFeatureOperational(SynheartFeature.syni)`) returns true only
+  /// when installed.
+  ///
+  /// **V1 note**: this getter does NOT yet check `consent.syni` because
+  /// `ConsentForm` does not expose a `syni` channel — there is no way for a
+  /// user to grant syni consent through the public form. For V1 the explicit
+  /// `install()` call (which downloads a multi-GB model) functions as the
+  /// opt-in moment. Re-enable the consent check once `ConsentForm` grows a
+  /// `syni` field and host apps surface it in their consent UI.
   static SyniModule? get syni {
-    if (!shared._isRunning) return null;
-    final consent = shared._consentModule?.current();
-    if (consent == null || !consent.syni) return null;
+    // Gate on SDK *initialization*, not session-running state — Syni is
+    // usable any time after `initialize()`, independent of whether a
+    // session is active.
+    if (!shared._isConfigured) return null;
     return _syni ??= SyniModule(
       hsiSnapshot: () => Synheart.currentHSIState,
     );
