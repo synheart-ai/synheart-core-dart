@@ -4364,12 +4364,21 @@ class SessionRecord {
   });
 
   factory SessionRecord.fromMap(Map<String, dynamic> map) {
+    int readInt(List<String> keys) {
+      for (final k in keys) {
+        final v = map[k];
+        if (v is int) return v;
+        if (v is num) return v.toInt();
+      }
+      return 0;
+    }
+
     return SessionRecord(
       sessionId: map['session_id'] as String? ?? '',
       subjectId: map['subject_id'] as String? ?? '',
       mode: map['mode'] as String? ?? 'personal',
-      createdAtUtc: map['created_at_utc'] as int? ?? 0,
-      startUtc: map['start_utc'] as int? ?? 0,
+      createdAtUtc: readInt(['created_at_utc', 'created_at_ms']),
+      startUtc: readInt(['started_at_ms', 'start_utc']),
       appId: map['app_id'] as String? ?? '',
       appVersion: map['app_version'] as String? ?? '',
       deviceId: map['device_id'] as String? ?? '',
