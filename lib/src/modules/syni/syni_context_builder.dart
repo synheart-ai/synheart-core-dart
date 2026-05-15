@@ -61,7 +61,27 @@ class SyniContextBuilder {
 
   /// Build the `HsiContext` JSON. Returns `null` when there is genuinely
   /// nothing to contribute (no live HSI, no stored sessions).
-  Future<Map<String, dynamic>?> build({String surface = 'coach'}) async {
+  ///
+  /// When [message] is supplied and looks like a trivial utterance — a
+  /// short greeting or one-word reply that doesn't ask about the user's
+  /// state — the heavy `current` + `history` blocks are skipped. The
+  /// persona's authored `system_prompt` plus a tiny `surface` payload is
+  /// enough conditioning, and the saved prefill cost is significant on
+  /// CPU on-device runtimes (~30-50% off for "hi"-class messages).
+  Future<Map<String, dynamic>?> build({
+    String surface = 'coach',
+    String message = '',
+  }) async {
+    if (_isTrivialMessage(message)) {
+      SynheartLogger.log(
+        '[syni] context builder: trivial message — skipping HSI + history '
+        '(saved ~hundreds of tokens of prefill)',
+      );
+      // Return null so the runtime ships only the persona + safety prefix.
+      // Surface alone isn't worth a roundtrip.
+      return null;
+    }
+
     final ctx = <String, dynamic>{'surface': surface};
 
     final snapshot = _snapshotFromHsi(_liveState());
@@ -93,6 +113,39 @@ class SyniContextBuilder {
         (Synheart.labExportJson != null && Synheart.labExportJson!.isNotEmpty);
     SynheartLogger.log('[syni] lab_export_present=$labPresent');
     return ctx;
+  }
+
+  /// True when [message] is a short greeting / acknowledgement that
+  /// doesn't reference the user's state. Used by [build] to skip the
+  /// heavy HSI + history blocks for "hi"-class messages.
+  ///
+  /// Conservative on purpose: anything that mentions a state-related
+  /// keyword (focus, recent session, etc.) is not trivial, even if
+  /// short. Avoids the failure mode of the persona answering "how was
+  /// my last session?" without the digest data it needs to summarize.
+  static bool _isTrivialMessage(String message) {
+    final m = message.trim().toLowerCase();
+    if (m.isEmpty) return true;
+    if (m.length > 24) return false;
+    // Bare greetings / acknowledgements.
+    const greetings = {
+      'hi', 'hello', 'hey', 'yo', 'sup', 'howdy', 'hola',
+      'thanks', 'thank you', 'thx', 'ty', 'ok', 'okay',
+      'cool', 'nice', 'great', 'sounds good', 'got it',
+      'bye', 'goodbye', 'gn', 'gm', 'good morning', 'good night',
+    };
+    if (greetings.contains(m)) return true;
+    // State-related keywords keep the rich context — even in a short message.
+    const stateKeywords = [
+      'focus', 'capacity', 'arousal', 'recovery', 'sleep', 'stress',
+      'state', 'session', 'last', 'recent', 'today', 'week', 'summary',
+      'how am i', 'how was', 'how is', 'how are',
+    ];
+    for (final kw in stateKeywords) {
+      if (m.contains(kw)) return false;
+    }
+    // Short messages with no state hook — treat as trivial.
+    return true;
   }
 
   // ---------------------------------------------------------------------------

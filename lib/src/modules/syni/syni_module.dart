@@ -76,7 +76,7 @@ class SyniModule {
     int seed = 0,
     agent.SyniExecutionMode mode = agent.SyniExecutionMode.localFirst,
   }) async {
-    final hsiContext = await _contextBuilder.build();
+    final hsiContext = await _contextBuilder.build(message: message);
     return _agent.chat(message,
         hsiContext: hsiContext, seed: seed, mode: mode);
   }
@@ -87,7 +87,7 @@ class SyniModule {
     int seed = 0,
     agent.SyniExecutionMode mode = agent.SyniExecutionMode.localFirst,
   }) async* {
-    final hsiContext = await _contextBuilder.build();
+    final hsiContext = await _contextBuilder.build(message: message);
     yield* _agent.chatStream(message,
         hsiContext: hsiContext, seed: seed, mode: mode);
   }
