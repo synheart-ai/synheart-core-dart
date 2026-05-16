@@ -45,8 +45,12 @@ class BehaviorSessionResults {
 
   /// Create from BehaviorSessionSummary.
   ///
-  /// Raw rates are passed through without normalization. The native runtime
-  /// is the authoritative source for normalized behavioral metrics.
+  /// The behavior SDK emits events and raw counts; per-session behavioral
+  /// metrics (`focusHint`, `interactionIntensity`, `burstiness`, the
+  /// `typingSessionSummary` aggregates) are computed by the native runtime
+  /// from the event stream. Until a consumer has populated them on
+  /// `summary.behavioralMetrics` / `summary.typingSessionSummary`, this
+  /// factory defaults them to 0.
   factory BehaviorSessionResults.fromSummary(
     sb.BehaviorSessionSummary summary,
   ) {
@@ -55,19 +59,18 @@ class BehaviorSessionResults {
         ? summary.activitySummary.totalEvents / durationSec
         : 0.0;
 
-    double keystrokeRate = 0.0;
-    if (summary.typingSessionSummary != null) {
-      keystrokeRate = summary.typingSessionSummary!.averageTypingSpeed;
-    }
+    final keystrokeRate =
+        summary.typingSessionSummary?.averageTypingSpeed ?? 0.0;
+    final metrics = summary.behavioralMetrics;
 
     return BehaviorSessionResults(
       sessionId: summary.sessionId,
       durationMs: summary.durationMs,
       tapRate: tapRate,
       keystrokeRate: keystrokeRate,
-      focusHint: summary.behavioralMetrics.focusHint,
-      interactionIntensity: summary.behavioralMetrics.interactionIntensity,
-      burstiness: summary.behavioralMetrics.burstiness,
+      focusHint: metrics?.focusHint ?? 0.0,
+      interactionIntensity: metrics?.interactionIntensity ?? 0.0,
+      burstiness: metrics?.burstiness ?? 0.0,
       totalEvents: summary.activitySummary.totalEvents,
       summary: summary,
     );
