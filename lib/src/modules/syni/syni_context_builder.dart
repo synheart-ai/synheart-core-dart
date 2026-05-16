@@ -28,18 +28,18 @@ class SyniContextBuilder {
     Future<List<SessionRecord>> Function({SessionRange? range})? listSessions,
     Future<Map<String, dynamic>?> Function(String sessionId)? sessionSummary,
     Future<List<Map<String, dynamic>>> Function(String sessionId)? hsiWindows,
-  })  : _liveState = liveState ?? (() => Synheart.currentHSIState),
-        _listSessions = listSessions ?? Synheart.listSessions,
-        _sessionSummary = sessionSummary ?? Synheart.getSessionSummary,
-        _hsiWindows = hsiWindows ?? ((id) => Synheart.getHSIWindows(id));
+  }) : _liveState = liveState ?? (() => Synheart.currentHSIState),
+       _listSessions = listSessions ?? Synheart.listSessions,
+       _sessionSummary = sessionSummary ?? Synheart.getSessionSummary,
+       _hsiWindows = hsiWindows ?? ((id) => Synheart.getHSIWindows(id));
 
   final HSIState? Function() _liveState;
   final Future<List<SessionRecord>> Function({SessionRange? range})
-      _listSessions;
+  _listSessions;
   final Future<Map<String, dynamic>?> Function(String sessionId)
-      _sessionSummary;
+  _sessionSummary;
   final Future<List<Map<String, dynamic>>> Function(String sessionId)
-      _hsiWindows;
+  _hsiWindows;
 
   /// HSI 1.3 channel names we project, with their `(axis, channel)` location
   /// in the payload — see `hsi/schema/hsi-1.3.schema.json` (RFC-HSI-0010).
@@ -129,17 +129,51 @@ class SyniContextBuilder {
     if (m.length > 24) return false;
     // Bare greetings / acknowledgements.
     const greetings = {
-      'hi', 'hello', 'hey', 'yo', 'sup', 'howdy', 'hola',
-      'thanks', 'thank you', 'thx', 'ty', 'ok', 'okay',
-      'cool', 'nice', 'great', 'sounds good', 'got it',
-      'bye', 'goodbye', 'gn', 'gm', 'good morning', 'good night',
+      'hi',
+      'hello',
+      'hey',
+      'yo',
+      'sup',
+      'howdy',
+      'hola',
+      'thanks',
+      'thank you',
+      'thx',
+      'ty',
+      'ok',
+      'okay',
+      'cool',
+      'nice',
+      'great',
+      'sounds good',
+      'got it',
+      'bye',
+      'goodbye',
+      'gn',
+      'gm',
+      'good morning',
+      'good night',
     };
     if (greetings.contains(m)) return true;
     // State-related keywords keep the rich context — even in a short message.
     const stateKeywords = [
-      'focus', 'capacity', 'arousal', 'recovery', 'sleep', 'stress',
-      'state', 'session', 'last', 'recent', 'today', 'week', 'summary',
-      'how am i', 'how was', 'how is', 'how are',
+      'focus',
+      'capacity',
+      'arousal',
+      'recovery',
+      'sleep',
+      'stress',
+      'state',
+      'session',
+      'last',
+      'recent',
+      'today',
+      'week',
+      'summary',
+      'how am i',
+      'how was',
+      'how is',
+      'how are',
     ];
     for (final kw in stateKeywords) {
       if (m.contains(kw)) return false;
@@ -161,10 +195,7 @@ class SyniContextBuilder {
 
     void put(String key, HSIAxisValue? axis) {
       if (axis == null) return;
-      snapshot[key] = {
-        'value': axis.value,
-        'confidence': axis.confidence,
-      };
+      snapshot[key] = {'value': axis.value, 'confidence': axis.confidence};
     }
 
     put('focus', axes.focus);
@@ -172,9 +203,10 @@ class SyniContextBuilder {
     put('arousal', axes.arousal);
 
     if (snapshot.isEmpty) return null;
-    snapshot['observed_at_utc'] =
-        DateTime.fromMillisecondsSinceEpoch(state.timestampMs, isUtc: true)
-            .toIso8601String();
+    snapshot['observed_at_utc'] = DateTime.fromMillisecondsSinceEpoch(
+      state.timestampMs,
+      isUtc: true,
+    ).toIso8601String();
     return snapshot;
   }
 
@@ -213,8 +245,10 @@ class SyniContextBuilder {
   /// shape. Falls back to stored HSI windows when a session summary is
   /// unavailable; degrades to a timestamp-only digest on parse failure.
   Future<Map<String, dynamic>> _digestSession(SessionRecord s) async {
-    final startedAt =
-        DateTime.fromMillisecondsSinceEpoch(s.startUtc, isUtc: true);
+    final startedAt = DateTime.fromMillisecondsSinceEpoch(
+      s.startUtc,
+      isUtc: true,
+    );
     final digest = <String, dynamic>{
       'started_at_utc': startedAt.toIso8601String(),
     };
@@ -269,9 +303,7 @@ class SyniContextBuilder {
         'windows → ${means.length} axes (no summary path)',
       );
     } catch (e) {
-      SynheartLogger.log(
-        '[syni] session ${s.sessionId}: digest failed: $e',
-      );
+      SynheartLogger.log('[syni] session ${s.sessionId}: digest failed: $e');
     }
 
     return digest;

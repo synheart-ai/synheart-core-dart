@@ -24,9 +24,9 @@ class SyniModule {
     agent.SyniCloudConfig? cloudConfig,
     SyniContextBuilder? contextBuilder,
     HSIState? Function()? hsiSnapshot,
-  })  : _agent = syniAgent ?? agent.SyniAgent(cloudConfig: cloudConfig),
-        _contextBuilder =
-            contextBuilder ?? SyniContextBuilder(liveState: hsiSnapshot);
+  }) : _agent = syniAgent ?? agent.SyniAgent(cloudConfig: cloudConfig),
+       _contextBuilder =
+           contextBuilder ?? SyniContextBuilder(liveState: hsiSnapshot);
 
   final agent.SyniAgent _agent;
   final SyniContextBuilder _contextBuilder;
@@ -50,8 +50,7 @@ class SyniModule {
   Future<void> install({
     required agent.SyniPersona persona,
     required agent.SyniModelSpec model,
-  }) =>
-      _agent.install(persona: persona, model: model);
+  }) => _agent.install(persona: persona, model: model);
 
   /// Cold-start restore — if the model is already on disk, bind [persona]
   /// and load the engine without re-downloading. See
@@ -59,8 +58,7 @@ class SyniModule {
   Future<bool> restoreInstallIfReady({
     required agent.SyniPersona persona,
     required agent.SyniModelSpec model,
-  }) =>
-      _agent.restoreInstallIfReady(persona: persona, model: model);
+  }) => _agent.restoreInstallIfReady(persona: persona, model: model);
 
   /// Free the engine + worker isolate (keeps the downloaded model on disk).
   Future<void> uninstall() => _agent.uninstall();
@@ -77,8 +75,7 @@ class SyniModule {
     agent.SyniExecutionMode mode = agent.SyniExecutionMode.localFirst,
   }) async {
     final hsiContext = await _contextBuilder.build(message: message);
-    return _agent.chat(message,
-        hsiContext: hsiContext, seed: seed, mode: mode);
+    return _agent.chat(message, hsiContext: hsiContext, seed: seed, mode: mode);
   }
 
   /// Streaming counterpart to [chat].
@@ -88,8 +85,12 @@ class SyniModule {
     agent.SyniExecutionMode mode = agent.SyniExecutionMode.localFirst,
   }) async* {
     final hsiContext = await _contextBuilder.build(message: message);
-    yield* _agent.chatStream(message,
-        hsiContext: hsiContext, seed: seed, mode: mode);
+    yield* _agent.chatStream(
+      message,
+      hsiContext: hsiContext,
+      seed: seed,
+      mode: mode,
+    );
   }
 
   /// For testing / shutdown.

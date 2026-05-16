@@ -32,10 +32,7 @@ class CoverageInfo {
   final int windowCount;
   final double coveragePct;
 
-  const CoverageInfo({
-    required this.windowCount,
-    this.coveragePct = 0.0,
-  });
+  const CoverageInfo({required this.windowCount, this.coveragePct = 0.0});
 
   Map<String, dynamic> toJson() => {
     'window_count': windowCount,
@@ -120,8 +117,11 @@ class AppMetric {
     required this.count,
   });
 
-  Map<String, dynamic> toJson() =>
-      {'name': name, 'value': value, 'count': count};
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'value': value,
+    'count': count,
+  };
 
   factory AppMetric.fromJson(Map<String, dynamic> json) => AppMetric(
     name: json['name'] as String,
@@ -140,7 +140,8 @@ class InsightMetrics {
   };
 
   factory InsightMetrics.fromJson(Map<String, dynamic> json) => InsightMetrics(
-    metrics: (json['metrics'] as List<dynamic>?)
+    metrics:
+        (json['metrics'] as List<dynamic>?)
             ?.map((e) => AppMetric.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],

@@ -4399,9 +4399,11 @@ class SessionRecord {
   final String mode;
   final int createdAtUtc;
   final int startUtc;
+
   /// `null` while the session is still active; set to the runtime's
   /// `ended_at_ms` once the session is closed.
   final int? endedAtUtc;
+
   /// `'active'` while a session is in flight; `'closed'` once
   /// `stopSession` (or an orphan sweep) has finalized it.
   final String state;
@@ -4437,6 +4439,7 @@ class SessionRecord {
       }
       return 0;
     }
+
     int? readIntOpt(List<String> keys) {
       for (final k in keys) {
         final v = map[k];
