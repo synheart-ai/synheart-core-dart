@@ -28,6 +28,8 @@ import 'modules/behavior/behavior_module.dart';
 import 'modules/behavior/behavior_code.dart';
 import 'modules/behavior/behavior_events.dart';
 import 'modules/breathing/breathing_module.dart';
+import 'modules/syni/syni_module.dart';
+import 'package:syni/agent.dart' show SyniCloudConfig;
 import 'models/behavior_session_results.dart';
 import 'package:synheart_behavior/synheart_behavior.dart' as sb;
 import 'config/synheart_mode.dart';
@@ -251,6 +253,59 @@ class Synheart {
     return [];
   }
 
+  /// Mark a stranded `state='active'` session as closed without going
+  /// through the normal stop-session lifecycle. Returns `true` on success
+  /// (or when the session was already closed).
+  ///
+  /// Used by [sweepOrphanSessions]; prefer that helper over calling this
+  /// directly unless you know exactly which session id to close.
+  static Future<bool> closeOrphanSession(String sessionId) async {
+    if (_coreRuntime == null) return false;
+    return _coreRuntime!.closeOrphanSession(sessionId);
+  }
+
+  /// Close every `state='active'` session whose `startUtc` is older than
+  /// `olderThan` ago. Returns the number of sessions actually closed.
+  ///
+  /// Call this once on app start to clean up sessions the host failed to
+  /// finalize cleanly (app force-killed mid-session, OS reclaim, sudden
+  /// reboot, etc.). Without this they accumulate in [listSessions] as
+  /// eternally-active and pollute downstream summaries / histories.
+  ///
+  /// `olderThan` defaults to 6 hours, which is generous for app sessions
+  /// (typical sessions are minutes) and avoids racing a session a user
+  /// just started and backgrounded briefly.
+  static Future<int> sweepOrphanSessions({
+    Duration olderThan = const Duration(hours: 6),
+  }) async {
+    final sessions = await listSessions();
+    if (sessions.isEmpty) return 0;
+    final cutoffMs =
+        DateTime.now().millisecondsSinceEpoch - olderThan.inMilliseconds;
+    final orphans = sessions
+        .where((s) => s.isActive && s.startUtc > 0 && s.startUtc < cutoffMs)
+        .toList();
+    if (orphans.isEmpty) return 0;
+    SynheartLogger.log(
+      '[synheart] sweepOrphanSessions: closing ${orphans.length} stranded '
+      'session(s) older than ${olderThan.inHours}h',
+    );
+    var closed = 0;
+    for (final s in orphans) {
+      try {
+        if (await closeOrphanSession(s.sessionId)) {
+          closed += 1;
+        }
+      } catch (e) {
+        SynheartLogger.log(
+          '[synheart] sweepOrphanSessions: closeOrphanSession(${s.sessionId}) '
+          'threw: $e',
+        );
+      }
+    }
+    return closed;
+  }
+
   /// Get a session summary (decrypted) for the given session.
   static Future<Map<String, dynamic>?> getSessionSummary(
     String sessionId,
@@ -269,22 +324,30 @@ class Synheart {
   }
 
   /// Get decrypted HSI window artifacts for a session.
+  ///
+  /// Each element is a full HSI 1.3 window payload. The native runtime may
+  /// emit each window as either a JSON string or a map; this normalizes to
+  /// `Map<String, dynamic>`.
   static Future<List<Map<String, dynamic>>> getHSIWindows(
     String sessionId, {
     WindowRange? range,
   }) async {
-    if (_coreRuntime != null) {
-      final raw = _coreRuntime!.getHsiWindows(
-        sessionId,
-        startMs: range?.startMs ?? 0,
-        endMs: range?.endMs ?? 0,
-        limit: range?.limit ?? 0,
+    if (_coreRuntime == null) return const [];
+    final raw = _coreRuntime!.getHsiWindows(
+      sessionId,
+      startMs: range?.startMs ?? 0,
+      endMs: range?.endMs ?? 0,
+      limit: range?.limit ?? 0,
+    );
+    if (raw == null) return const [];
+    return raw.map<Map<String, dynamic>>((e) {
+      if (e is Map<String, dynamic>) return e;
+      if (e is Map) return Map<String, dynamic>.from(e);
+      if (e is String) return jsonDecode(e) as Map<String, dynamic>;
+      throw FormatException(
+        'unexpected HSI window element type: ${e.runtimeType}',
       );
-      if (raw != null) {
-        return raw.cast<Map<String, dynamic>>();
-      }
-    }
-    return [];
+    }).toList();
   }
 
   // --- Storage & retention ---
@@ -1932,6 +1995,56 @@ class Synheart {
   /// Returns null until the core runtime bridge is initialized.
   static BreathingModule? get breathing =>
       _coreRuntime == null ? null : BreathingModule(_coreRuntime!);
+
+  // -------------------------------------------------------------------------
+  // Syni — adaptive AI agent (gated feature)
+  // -------------------------------------------------------------------------
+  //
+  // Lazily constructed once `consent.syni == true`. The module performs its
+  // own install lifecycle (model download, persona materialization, engine
+  // load on a worker isolate). See `lib/src/modules/syni/syni_module.dart`.
+
+  static SyniModule? _syni;
+  static SyniCloudConfig? _syniCloudConfig;
+
+  /// Inject (or clear) the cloud config used by Syni's hybrid router.
+  ///
+  /// With a config set, `Synheart.syni!.hasCloud` is true and chat calls can
+  /// route to `syni-service` (per `SyniExecutionMode`). Without it, Syni
+  /// runs local-only.
+  ///
+  /// Resets the cached `SyniModule` so the next `Synheart.syni` access picks
+  /// up the new config. Safe to call before or after `initialize()`.
+  static void configureSyniCloud(SyniCloudConfig? config) {
+    _syniCloudConfig = config;
+    _syni = null;
+  }
+
+  /// Adaptive AI client. Returns null until the Synheart facade is running.
+  /// Once non-null the caller drives `install`, `chat`, and `uninstall`
+  /// directly on it.
+  ///
+  /// Operational status follows the four-authority model — `chat()` only
+  /// succeeds after `install()` reaches [SyniInstalled], and the capability
+  /// gate (`isFeatureOperational(SynheartFeature.syni)`) returns true only
+  /// when installed.
+  ///
+  /// **V1 note**: this getter does NOT yet check `consent.syni` because
+  /// `ConsentForm` does not expose a `syni` channel — there is no way for a
+  /// user to grant syni consent through the public form. For V1 the explicit
+  /// `install()` call (which downloads a multi-GB model) functions as the
+  /// opt-in moment. Re-enable the consent check once `ConsentForm` grows a
+  /// `syni` field and host apps surface it in their consent UI.
+  static SyniModule? get syni {
+    // Gate on SDK *initialization*, not session-running state — Syni is
+    // usable any time after `initialize()`, independent of whether a
+    // session is active.
+    if (!shared._isConfigured) return null;
+    return _syni ??= SyniModule(
+      cloudConfig: _syniCloudConfig,
+      hsiSnapshot: () => Synheart.currentHSIState,
+    );
+  }
 
   /// Get the core runtime bridge (for diagnostics and direct FFI access).
   CoreRuntimeBridge? get coreRuntime => _coreRuntime;
@@ -4257,7 +4370,10 @@ class Synheart {
       case SynheartFeature.cloud:
         return cap.capability(Module.cloud) != CapabilityLevel.none;
       case SynheartFeature.syni:
-        return true; // no capability gate for syni yet
+        // Syni runs independent of the wearable capability lattice. Real
+        // operational gating (model installed, engine loaded) lives in
+        // SyniModule and is composed at the four-authority layer.
+        return _syni?.isInstalled ?? false;
     }
   }
 
@@ -4379,6 +4495,14 @@ class SessionRecord {
   final String mode;
   final int createdAtUtc;
   final int startUtc;
+
+  /// `null` while the session is still active; set to the runtime's
+  /// `ended_at_ms` once the session is closed.
+  final int? endedAtUtc;
+
+  /// `'active'` while a session is in flight; `'closed'` once
+  /// `stopSession` (or an orphan sweep) has finalized it.
+  final String state;
   final String appId;
   final String appVersion;
   final String deviceId;
@@ -4390,19 +4514,45 @@ class SessionRecord {
     required this.mode,
     required this.createdAtUtc,
     required this.startUtc,
+    this.endedAtUtc,
+    this.state = 'active',
     this.appId = '',
     this.appVersion = '',
     this.deviceId = '',
     this.platform = 'flutter',
   });
 
+  /// True iff the session is still marked `'active'` in storage.
+  /// Used by [Synheart.sweepOrphanSessions] to find candidates.
+  bool get isActive => state == 'active';
+
   factory SessionRecord.fromMap(Map<String, dynamic> map) {
+    int readInt(List<String> keys) {
+      for (final k in keys) {
+        final v = map[k];
+        if (v is int) return v;
+        if (v is num) return v.toInt();
+      }
+      return 0;
+    }
+
+    int? readIntOpt(List<String> keys) {
+      for (final k in keys) {
+        final v = map[k];
+        if (v is int) return v;
+        if (v is num) return v.toInt();
+      }
+      return null;
+    }
+
     return SessionRecord(
       sessionId: map['session_id'] as String? ?? '',
       subjectId: map['subject_id'] as String? ?? '',
       mode: map['mode'] as String? ?? 'personal',
-      createdAtUtc: map['created_at_utc'] as int? ?? 0,
-      startUtc: map['start_utc'] as int? ?? 0,
+      createdAtUtc: readInt(['created_at_utc', 'created_at_ms']),
+      startUtc: readInt(['started_at_ms', 'start_utc']),
+      endedAtUtc: readIntOpt(['ended_at_ms', 'end_utc']),
+      state: map['state'] as String? ?? 'active',
       appId: map['app_id'] as String? ?? '',
       appVersion: map['app_version'] as String? ?? '',
       deviceId: map['device_id'] as String? ?? '',

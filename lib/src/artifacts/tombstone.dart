@@ -40,7 +40,7 @@ class TombstoneArtifact {
 
   factory TombstoneArtifact.fromJson(Map<String, dynamic> json) =>
       TombstoneArtifact(
-        header: ArtifactHeader.fromJson(json),
+        header: ArtifactHeader.fromJson(json['header'] as Map<String, dynamic>),
         tombstone: TombstoneData.fromJson(
           json['tombstone'] as Map<String, dynamic>,
         ),

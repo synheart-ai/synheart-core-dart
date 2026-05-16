@@ -78,7 +78,7 @@ class HSIWindowArtifact {
 
   factory HSIWindowArtifact.fromJson(Map<String, dynamic> json) =>
       HSIWindowArtifact(
-        header: ArtifactHeader.fromJson(json),
+        header: ArtifactHeader.fromJson(json['header'] as Map<String, dynamic>),
         window: WindowData.fromJson(json['window'] as Map<String, dynamic>),
         provenance: Provenance.fromJson(
           json['provenance'] as Map<String, dynamic>,

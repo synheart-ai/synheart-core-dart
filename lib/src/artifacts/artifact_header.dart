@@ -25,30 +25,30 @@ class SchemaRef {
 }
 
 class ArtifactHeader {
-  final String artifactVersion;
+  final int version;
   final String type;
   final String artifactId;
   final String subjectId;
   final String? sessionId;
   final TimeRange timeRange;
-  final int? seq;
+  final int seq;
   final SchemaRef schema;
   final int createdAtMs;
 
   ArtifactHeader({
-    this.artifactVersion = '1',
+    this.version = 1,
     required this.type,
     this.artifactId = '',
     required this.subjectId,
     this.sessionId,
     required this.timeRange,
-    this.seq,
+    this.seq = 0,
     required this.schema,
     int? createdAtMs,
   }) : createdAtMs = createdAtMs ?? DateTime.now().millisecondsSinceEpoch;
 
   Map<String, dynamic> toJson() => {
-    'artifact_version': artifactVersion,
+    'version': version,
     'type': type,
     'artifact_id': artifactId,
     'subject_id': subjectId,
@@ -60,14 +60,14 @@ class ArtifactHeader {
   };
 
   factory ArtifactHeader.fromJson(Map<String, dynamic> json) => ArtifactHeader(
-    artifactVersion: json['artifact_version'] as String,
+    version: (json['version'] as num?)?.toInt() ?? 1,
     type: json['type'] as String,
     artifactId: json['artifact_id'] as String? ?? '',
     subjectId: json['subject_id'] as String,
     sessionId: json['session_id'] as String?,
     timeRange: TimeRange.fromJson(json['time_range'] as Map<String, dynamic>),
-    seq: json['seq'] as int?,
+    seq: (json['seq'] as num?)?.toInt() ?? 0,
     schema: SchemaRef.fromJson(json['schema'] as Map<String, dynamic>),
-    createdAtMs: json['created_at_ms'] as int,
+    createdAtMs: (json['created_at_ms'] as num).toInt(),
   );
 }

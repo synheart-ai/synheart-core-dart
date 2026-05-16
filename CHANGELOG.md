@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-16
+
+### Added
+- `Synheart.syni` — gated Syni client surface with install lifecycle +
+  chat + chatStream, delegating to `package:syni`'s `SyniAgent`.
+- `SyniContextBuilder` — projects this SDK's HSI (live state + stored
+  session history) into the runtime's conditioning contract.
+  HSI-version-agnostic; iterates whatever axes the runtime emitted.
+- Trivial-message context skip — for greetings / acks, ship only the
+  persona prefix instead of full HSI + history (~30–50% prefill
+  reduction on short messages).
+- `SyniSpecPersona` re-exported from `package:syni` so consumers can
+  `SyniSpecPersona.load('focus.coach.v1')` for canonical prompts.
+- `Synheart.{closeOrphanSession, sweepOrphanSessions}` — host-side
+  orphan cleanup. Sweep on app start closes `state='active'` sessions
+  older than 6h that the runtime never finalized (force-kill, OS
+  reclaim, sudden reboot).
+- `Synheart.configureSyniCloud(...)` — injects cloud client config;
+  `Synheart.syni.hasCloud` + per-call `SyniExecutionMode` routes
+  between local and cloud.
+- Cold-start restore — `SyniAgent.restoreInstallIfReady` checks disk
+  before download flow; consumers don't re-prompt for an install when
+  the model is already cached.
+
+### Changed
+- `syni` dependency switched from `path: ../syni-flutter` to
+  `^0.1.0` (now published on pub.dev).
+- `SessionSummaryArtifact` parser rewritten to match the runtime's
+  actual wire format (nested `header` block, `started_at_ms` /
+  `ended_at_ms` keys, nullable per-axis aggregates, structured
+  `SessionAggregates` keyed by axis name).
+- `SessionRecord` now reads `started_at_ms` from the FFI (was missing —
+  surfaced as 1970-01-01 timestamps in downstream digests). `state`
+  and `endedAtUtc` exposed for the sweep's filter.
+
 ## [0.3.0] - 2026-05-14
 
 ### Added
