@@ -143,3 +143,96 @@ class DataDeletionList {
   final List<DataDeletionRequest> requests;
   final int total;
 }
+
+/// Real-time status update for a deletion request, pushed from the cloud
+/// over the RAMEN stream. Narrower than [DataDeletionRequest] — only the
+/// fields the cloud emits on each lifecycle transition plus the envelope
+/// fields RAMEN routes by.
+///
+/// Subscribe via [Synheart.onDataDeletionUpdate] to avoid polling
+/// `dataDeletionStatus` after [Synheart.requestDataDeletion].
+class DataDeletionEvent {
+  const DataDeletionEvent({
+    required this.requestId,
+    required this.userId,
+    required this.appId,
+    required this.orgId,
+    required this.tenantId,
+    required this.status,
+    required this.statusRaw,
+    required this.emittedAt,
+    this.result,
+    this.errorMessage,
+  });
+
+  final String requestId;
+  final String userId;
+  final String appId;
+  final String orgId;
+  final String tenantId;
+
+  /// Parsed status; never null. [DataDeletionStatus.unknown] for any wire
+  /// value this SDK version doesn't recognize.
+  final DataDeletionStatus status;
+
+  /// Raw wire string — log this when [status] is [DataDeletionStatus.unknown].
+  final String statusRaw;
+
+  /// Per-layer purge stats — present when [status] is
+  /// [DataDeletionStatus.completed]. Same shape as
+  /// [DataDeletionRequest.result].
+  final Map<String, dynamic>? result;
+
+  /// Set when [status] is [DataDeletionStatus.failed].
+  final String? errorMessage;
+
+  /// Timestamp the cloud emitted the event (best-effort, UTC).
+  final DateTime emittedAt;
+
+  /// Parse from the JSON the runtime delivers from a RAMEN stream callback.
+  /// `envelope` is the top-level event map (`event_type`, `payload_json`,
+  /// `created_at`, …); `payload` is the parsed inner payload.
+  ///
+  /// `appId` and `userId` come from the RAMEN connection-level identifiers
+  /// captured by [Synheart.startVendorSync] — the runtime event envelope
+  /// only carries event-level fields.
+  factory DataDeletionEvent.fromRuntimeJson({
+    required Map<String, dynamic> envelope,
+    required Map<String, dynamic> payload,
+    required String appId,
+    required String userId,
+  }) {
+    DateTime emittedAt;
+    final raw = envelope['created_at']?.toString();
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        emittedAt = DateTime.parse(raw).toUtc();
+      } catch (_) {
+        emittedAt = DateTime.now().toUtc();
+      }
+    } else {
+      emittedAt = DateTime.now().toUtc();
+    }
+
+    final rawStatus = payload['status']?.toString() ?? 'unknown';
+    return DataDeletionEvent(
+      requestId: payload['request_id']?.toString() ?? '',
+      userId: userId,
+      appId: appId,
+      orgId: payload['org_id']?.toString() ?? '',
+      tenantId: payload['tenant_id']?.toString() ?? '',
+      status: DataDeletionStatus.fromWire(rawStatus),
+      statusRaw: rawStatus,
+      result: (payload['result'] as Map?)?.cast<String, dynamic>(),
+      errorMessage:
+          (payload['error_message'] as String?)?.trim().isEmpty == false
+          ? payload['error_message'] as String
+          : null,
+      emittedAt: emittedAt,
+    );
+  }
+
+  @override
+  String toString() =>
+      'DataDeletionEvent($requestId, status=$statusRaw, userId=$userId)';
+}

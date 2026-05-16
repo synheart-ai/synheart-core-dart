@@ -3430,16 +3430,31 @@ class Synheart {
     return _coreRuntime?.exportLongitudinalSnapshot();
   }
 
-  // ── Vendor Sync (RAMEN via native stream-runtime) ────────────────
+  // ── Realtime event stream (RAMEN via native stream-runtime) ──────
 
-  /// Start the RAMEN streaming connection.
+  /// `true` when the RAMEN stream callback should auto-route vendor.*
+  /// events through [processVendorEvent]. Set by [startVendorSync] (and
+  /// cleared by [stopVendorSync]). Other consumers — e.g.
+  /// [onDataDeletionUpdate] — don't depend on it; they ride the same
+  /// connection regardless.
+  static bool _vendorAutoRouteEnabled = false;
+
+  /// Start the RAMEN streaming connection — the primitive shared by every
+  /// real-time event surface (data deletion updates, vendor sync, future
+  /// account events, etc.).
+  ///
+  /// Use this directly when you only want non-vendor events
+  /// (e.g. [onDataDeletionUpdate]). Use [startVendorSync] when you also
+  /// want vendor data auto-routed through [processVendorEvent].
   ///
   /// [config] must include `host`, `port`, `app_id`, `device_id`, `user_id`.
   /// Optional: `api_key`, `use_tls`, `providers`, `event_types`.
   ///
-  /// Stream events are automatically routed through [processVendorEvent]
-  /// for normalization and storage.
-  static void startVendorSync(Map<String, dynamic> config) {
+  /// Connection-level consent: requires `CloudUpload` only — the umbrella
+  /// "we connect to your cloud" consent. Per-event-type consent is
+  /// enforced at the dispatch layer (see [_vendorAutoRouteEnabled] for
+  /// vendor events).
+  static void startEventStream(Map<String, dynamic> config) {
     final bridge = _coreRuntime;
     if (bridge == null) {
       SynheartLogger.stream('Cannot start: runtime not initialized');
@@ -3475,6 +3490,14 @@ class Synheart {
         // auto-route below kicks in.
         _emitRawRamenEvent(event);
 
+        // Customer-facing GDPR data deletion events have a separate
+        // typed stream — they're not vendor data, so skip the
+        // vendor-routing fall-through after emitting.
+        if (eventType.startsWith('user.data_deletion.')) {
+          _emitDataDeletionUpdate(event);
+          return;
+        }
+
         // Skip the auto-route for ping-flavored events: their inline
         // payload is empty by design (Garmin / Oura / Fitbit only send
         // a notification). The app must subscribe to [rawRamenEvents]
@@ -3509,24 +3532,30 @@ class Synheart {
           'event_id=$eventId seq=$seq payload=$preview',
         );
 
-        processVendorEvent(
-          provider: provider,
-          eventType: eventType,
-          payload: payload,
-          eventId: eventId,
-          seq: seq,
-        );
+        // Vendor data routing is gated on the customer having opted into
+        // vendor sync. Apps using the stream only for non-vendor events
+        // (e.g. data deletion updates) get the raw event on
+        // [rawRamenEvents] without auto-routing into the vendor pipeline.
+        if (_vendorAutoRouteEnabled) {
+          processVendorEvent(
+            provider: provider,
+            eventType: eventType,
+            payload: payload,
+            eventId: eventId,
+            seq: seq,
+          );
 
-        // Mirror sleep events into Baselines.ingestVendorSleep — same fan-out
-        // the backfill path performs. Baselines looks for the raw vendor
-        // record under `<provider>_data`, so wrap it accordingly.
-        if (eventType.contains('sleep')) {
-          final wrapped = <String, dynamic>{
-            '${provider}_data': payload,
-            'timestamp': DateTime.now().toUtc().toIso8601String(),
-          };
-          // ignore: discarded_futures — fire-and-forget, matches backfill
-          Baselines.ingestVendorSleep(provider: provider, payload: wrapped);
+          // Mirror sleep events into Baselines.ingestVendorSleep — same fan-out
+          // the backfill path performs. Baselines looks for the raw vendor
+          // record under `<provider>_data`, so wrap it accordingly.
+          if (eventType.contains('sleep')) {
+            final wrapped = <String, dynamic>{
+              '${provider}_data': payload,
+              'timestamp': DateTime.now().toUtc().toIso8601String(),
+            };
+            // ignore: discarded_futures — fire-and-forget, matches backfill
+            Baselines.ingestVendorSleep(provider: provider, payload: wrapped);
+          }
         }
       } catch (e) {
         SynheartLogger.stream('event parse failed: $e', error: e);
@@ -3536,14 +3565,34 @@ class Synheart {
     bridge.startStream(config);
   }
 
-  /// Stop the RAMEN streaming connection.
-  static void stopVendorSync() {
+  /// Stop the RAMEN streaming connection. Clears the vendor auto-route
+  /// flag as a side effect — call [startVendorSync] again to re-enable.
+  static void stopEventStream() {
     SynheartLogger.stream('Stopping RAMEN');
     _coreRuntime?.stopStream();
     _coreRuntime?.clearStreamCallback();
+    _vendorAutoRouteEnabled = false;
     _vendorAppId = '';
     _vendorUserId = '';
   }
+
+  /// Start the RAMEN connection AND enable vendor-event auto-routing
+  /// through [processVendorEvent]. Equivalent to [startEventStream] for
+  /// the connection, plus a one-line flag flip on the dispatch layer.
+  ///
+  /// Use this when your app pulls vendor data (Whoop / Garmin / Oura /
+  /// Fitbit) and wants the runtime to normalize + store events as they
+  /// arrive. Use [startEventStream] when you only want non-vendor
+  /// events (data deletion, future account events).
+  static void startVendorSync(Map<String, dynamic> config) {
+    _vendorAutoRouteEnabled = true;
+    startEventStream(config);
+  }
+
+  /// Stop the RAMEN streaming connection. Alias of [stopEventStream] —
+  /// kept for back-compat with callers that paired it with
+  /// [startVendorSync].
+  static void stopVendorSync() => stopEventStream();
 
   /// Get the current vendor sync connection state.
   ///
@@ -3594,6 +3643,53 @@ class Synheart {
         userId: _vendorUserId,
       ),
     );
+  }
+
+  // ── Customer data deletion: real-time updates from RAMEN ──────────
+
+  static final StreamController<DataDeletionEvent> _dataDeletionUpdates =
+      StreamController<DataDeletionEvent>.broadcast();
+
+  /// Real-time status transitions for [requestDataDeletion]. The cloud
+  /// publishes one event per lifecycle change (`scheduled`, `completed`,
+  /// `failed`, `cancelled`) over the same RAMEN stream that vendor
+  /// events use.
+  ///
+  /// Prerequisites: a live RAMEN connection ([startVendorSync] called).
+  /// If the SDK isn't connected when the event lands, RAMEN replays
+  /// missed events on reconnect via its persistent cursor — your handler
+  /// still runs, just later.
+  ///
+  /// Typical use:
+  /// ```dart
+  /// final sub = Synheart.onDataDeletionUpdate.listen((event) {
+  ///   if (event.status == DataDeletionStatus.completed) {
+  ///     // Tell the user their data is gone.
+  ///   }
+  /// });
+  /// await Synheart.requestDataDeletion(reason: 'user-initiated');
+  /// ```
+  static Stream<DataDeletionEvent> get onDataDeletionUpdate =>
+      _dataDeletionUpdates.stream;
+
+  /// Internal: parse a `user.data_deletion.*` envelope and emit on the
+  /// typed stream. Best-effort — a parse failure logs and continues.
+  static void _emitDataDeletionUpdate(Map<String, dynamic> envelope) {
+    if (_dataDeletionUpdates.isClosed) return;
+    try {
+      final raw = envelope['payload_json']?.toString() ?? '{}';
+      final payload = jsonDecode(raw) as Map<String, dynamic>;
+      _dataDeletionUpdates.add(
+        DataDeletionEvent.fromRuntimeJson(
+          envelope: envelope,
+          payload: payload,
+          appId: _vendorAppId,
+          userId: _vendorUserId,
+        ),
+      );
+    } catch (e) {
+      SynheartLogger.stream('data deletion event parse failed: $e', error: e);
+    }
   }
 
   /// Query stored vendor events from the Core runtime.
