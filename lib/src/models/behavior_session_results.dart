@@ -68,9 +68,9 @@ class BehaviorSessionResults {
       durationMs: summary.durationMs,
       tapRate: tapRate,
       keystrokeRate: keystrokeRate,
-      focusHint: metrics?.focusHint ?? 0.0,
-      interactionIntensity: metrics?.interactionIntensity ?? 0.0,
-      burstiness: metrics?.burstiness ?? 0.0,
+      focusHint: metrics.focusHint,
+      interactionIntensity: metrics.interactionIntensity,
+      burstiness: metrics.burstiness,
       totalEvents: summary.activitySummary.totalEvents,
       summary: summary,
     );
