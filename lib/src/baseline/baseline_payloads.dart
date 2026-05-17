@@ -29,7 +29,7 @@ class AxisStats {
 }
 
 /// Marker for any typed baseline payload. Bounds the generic payload
-/// extractor surface on `BaselineSnapshots`.
+/// extractor surface on the snapshot facade.
 abstract class BaselinePayload {
   /// Per-payload schema version. Independent across kinds — a bump on
   /// one kind does not force changes on the others.

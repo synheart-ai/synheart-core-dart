@@ -42,9 +42,8 @@ export 'src/artifacts/session_summary.dart';
 export 'src/artifacts/tombstone.dart';
 
 // Baseline-snapshot typed envelope. Typed builders + per-kind
-// extractors, no `Map<String, dynamic>` round-tripping.
-// `BaselineSnapshots` is the host-facing read facade
-// (`Synheart.baselineSnapshots`).
+// extractors, no `Map<String, dynamic>` round-tripping. The
+// host-facing read facade lives on `Synheart.baselineSnapshots`.
 export 'src/baseline/baseline_kind.dart';
 export 'src/baseline/baseline_payloads.dart';
 export 'src/baseline/baseline_envelope.dart';
