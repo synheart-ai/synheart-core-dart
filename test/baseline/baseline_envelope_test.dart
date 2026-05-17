@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:synheart_core/src/artifacts/artifact_header.dart';
 import 'package:synheart_core/src/baseline/baseline_envelope.dart';
 import 'package:synheart_core/src/baseline/baseline_kind.dart';
-import 'package:synheart_core/src/baseline/baseline_payloads.dart';
 
 BaselineEnvelope buildWearEnvelope({String artifactId = 'bs_test'}) {
   return BaselineEnvelope(

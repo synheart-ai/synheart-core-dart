@@ -47,6 +47,7 @@ import 'modules/consent/consent_token.dart';
 import 'modules/consent/consent_ui.dart';
 import 'models/canonical_wearable_event.dart';
 import 'models/readiness_score.dart';
+import 'baseline/baseline_snapshots.dart';
 import 'models/recovery_score.dart';
 import 'models/sleep_score.dart';
 import 'modules/baselines/baselines.dart';
@@ -87,6 +88,15 @@ import 'package:synheart_session/synheart_session.dart';
 class Synheart {
   static Synheart? _instance;
   static Synheart get shared => _instance ??= Synheart._();
+
+  /// Typed baseline-snapshot access — see [BaselineSnapshots] for the
+  /// per-kind getters (`latest<T>(...)`, `watch(...)`).
+  ///
+  /// Distinct from the legacy [Baselines] class which orchestrates
+  /// vendor-sleep ingestion and score caching. [baselineSnapshots] is
+  /// the typed read surface for the umbrella baseline envelope shape.
+  static final BaselineSnapshots _baselineSnapshots = BaselineSnapshots();
+  static BaselineSnapshots get baselineSnapshots => _baselineSnapshots;
 
   /// core runtime bridge (FFI). Null when native lib unavailable.
   static CoreRuntimeBridge? _coreRuntime;
@@ -400,6 +410,7 @@ class Synheart {
       shared._currentSessionHandle = null;
       shared._isRunning = false;
       Baselines.reset();
+    _baselineSnapshots.reset();
       return;
     }
     // Stop if running
@@ -409,6 +420,7 @@ class Synheart {
 
     shared._currentSessionHandle = null;
     Baselines.reset();
+    _baselineSnapshots.reset();
   }
 
   /// Request account deletion — wipes local data and requests server-side deletion.
@@ -549,6 +561,7 @@ class Synheart {
       _coreRuntime!.wipeLocalData();
     }
     Baselines.reset();
+    _baselineSnapshots.reset();
     try {
       await shared._consentModule?.revokeConsent();
     } catch (_) {}
@@ -3995,6 +4008,7 @@ class Synheart {
     // Drop in-memory Baselines caches (latest score, last source,
     // dedupe map) so the next snapshot read returns cold-start.
     Baselines.reset();
+    _baselineSnapshots.reset();
 
     SynheartLogger.log('[Synheart] Local data deleted');
   }

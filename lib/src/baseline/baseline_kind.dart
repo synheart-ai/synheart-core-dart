@@ -1,14 +1,13 @@
 /// Discriminator for what kind of baseline a snapshot carries.
 ///
-/// Mirror of `BaselineKind` in `synheart-engine-types::baseline`. Wire
-/// form is the stable lowercase dotted string used as the cloud +
-/// on-device dispatch column (`session.hsi_axes`,
+/// Wire form is the stable lowercase dotted string used as the cloud
+/// + on-device dispatch column (`session.hsi_axes`,
 /// `session.srm_metrics`, `longitudinal.wear`).
 ///
-/// Adding a future kind: register a new variant + wire string here AND
-/// in the Rust enum at the same time. `fromWire` returns null for
-/// unknown wires so older SDKs reading a snapshot produced by a newer
-/// runtime degrade gracefully (log + skip rather than panic).
+/// Adding a future kind: register a new variant + wire string here in
+/// lockstep with the Rust enum. `fromWire` returns null for unknown
+/// wires so older SDKs reading a snapshot produced by a newer runtime
+/// degrade gracefully (log + skip rather than panic).
 enum BaselineKind {
   sessionHsiAxes('session.hsi_axes'),
   sessionSrmMetrics('session.srm_metrics'),
@@ -33,10 +32,9 @@ enum BaselineKind {
   bool get isSessionScoped => wire.startsWith('session.');
 }
 
-/// Maturity status of a session-level SRM metric. Mirrors
-/// `SrmMetricStatus` in engine-types. Distinct from
-/// [WearableBaselineStatusWire] — session SRM doesn't decay within a
-/// session, so no `STALE` variant.
+/// Maturity status of a session-level SRM metric. Distinct from the
+/// longitudinal wearable status — session SRM doesn't decay within a
+/// session, so there's no `STALE` variant here.
 enum SrmMetricStatus {
   empty('EMPTY'),
   warming('WARMING'),

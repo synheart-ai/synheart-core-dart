@@ -2,12 +2,11 @@ import '../models/sleep_score.dart' show WearableReferenceView;
 import 'baseline_kind.dart';
 
 /// Mean / std / confidence triplet for one axis or metric.
-/// Mirror of `AxisStats` in `synheart-engine-types::baseline`.
 class AxisStats {
   final double mean;
   final double std;
 
-  /// 0.0–1.0. Same semantics as `WearableConfidence` per-dimension.
+  /// 0.0–1.0. Same semantics as the per-dimension wearable confidence.
   final double confidence;
 
   const AxisStats({
@@ -29,9 +28,8 @@ class AxisStats {
   );
 }
 
-/// Marker for any typed baseline payload. Lets the generic
-/// `BaselineEnvelope<T extends BaselinePayload>` bound future
-/// extractors / readers in step 4b.
+/// Marker for any typed baseline payload. Bounds the generic payload
+/// extractor surface on `BaselineSnapshots`.
 abstract class BaselinePayload {
   /// Per-payload schema version. Independent across kinds — a bump on
   /// one kind does not force changes on the others.
@@ -42,10 +40,9 @@ abstract class BaselinePayload {
 // kind = "session.hsi_axes"
 // ---------------------------------------------------------------------------
 
-/// HSI axes aggregator output for one session. Mirror of
-/// `HsiAxesBaseline`. `axes` is a string-keyed map (not a fixed
-/// 4-field struct) so future HSI versions can publish additional axes
-/// without a payload schema bump.
+/// HSI axes aggregator output for one session. `axes` is a
+/// string-keyed map (not a fixed 4-field struct) so future HSI
+/// versions can publish additional axes without a payload schema bump.
 class HsiAxesBaseline implements BaselinePayload {
   @override
   final int schemaVersion;
@@ -78,7 +75,7 @@ class HsiAxesBaseline implements BaselinePayload {
 // kind = "session.srm_metrics"
 // ---------------------------------------------------------------------------
 
-/// Per-metric session SRM baseline. Mirror of `SrmMetricBaseline`.
+/// Per-metric session SRM baseline.
 class SrmMetricBaseline {
   final double muTilde;
   final double sigmaTilde;
@@ -110,7 +107,7 @@ class SrmMetricBaseline {
       );
 }
 
-/// SrmEngine's per-session output. Mirror of `SessionSrmMetricsBaseline`.
+/// `SrmEngine`'s per-session output.
 class SessionSrmMetricsBaseline implements BaselinePayload {
   @override
   final int schemaVersion;
@@ -146,8 +143,7 @@ class SessionSrmMetricsBaseline implements BaselinePayload {
 // kind = "longitudinal.wear"
 // ---------------------------------------------------------------------------
 
-/// Payload wrapper for the `longitudinal.wear` kind. Mirror of
-/// `LongitudinalWearPayload` in core-runtime's baseline module.
+/// Payload wrapper for the `longitudinal.wear` kind.
 ///
 /// The bare [WearableReferenceView] is already reachable via
 /// `Synheart.wearableReference` (FFI hot path); this wrapper adds the
@@ -163,9 +159,8 @@ class LongitudinalWearBaseline implements BaselinePayload {
   });
 
   Map<String, dynamic> toJson() {
-    // The Rust LongitudinalWearPayload uses `#[serde(flatten)]` on
-    // the reference field — the wire shape is the reference's fields
-    // at the top level alongside `schema_version`. Mirror that here.
+    // Wire shape: the reference's fields are top-level alongside
+    // `schema_version` (flat, no nested `reference` object).
     final dims = <String, dynamic>{};
     reference.dimensions.forEach((k, v) => dims[k] = v);
     if (reference.recentSleepScoreMedian != null) {
@@ -189,7 +184,7 @@ class LongitudinalWearBaseline implements BaselinePayload {
         schemaVersion: (json['schema_version'] as num?)?.toInt() ?? 1,
         reference: WearableReferenceView.fromJson(
           // WearableReferenceView.fromJson expects `Map<String, Object?>`
-          // with status / model_version / dimensions / confidence — that's
+          // with status / model_version / dimensions / confidence —
           // the same flattened shape we emit in toJson above.
           json.cast<String, Object?>(),
         ),
