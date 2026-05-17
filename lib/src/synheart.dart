@@ -90,13 +90,34 @@ class Synheart {
   static Synheart get shared => _instance ??= Synheart._();
 
   /// Typed baseline-snapshot access — see [BaselineSnapshots] for the
-  /// per-kind getters (`latest<T>(...)`, `watch(...)`).
+  /// per-kind getters.
   ///
   /// Distinct from the legacy [Baselines] class which orchestrates
   /// vendor-sleep ingestion and score caching. [baselineSnapshots] is
   /// the typed read surface for the umbrella baseline envelope shape.
+  /// Cloud hooks ([BaselineSnapshots.upload] / [BaselineSnapshots.restoreAll])
+  /// are wired automatically when the runtime bridge is configured;
+  /// [BaselineSnapshots.isCloudWired] reports whether they're ready.
   static final BaselineSnapshots _baselineSnapshots = BaselineSnapshots();
   static BaselineSnapshots get baselineSnapshots => _baselineSnapshots;
+
+  /// Wire the baseline cloud hooks against the runtime bridge.
+  /// Called immediately after [_coreRuntime] is assigned so consumers
+  /// can call `Synheart.baselineSnapshots.upload(...)` /
+  /// `restoreAll(...)` as soon as the SDK is initialized.
+  static void _wireBaselineCloudHooks(CoreRuntimeBridge bridge) {
+    _baselineSnapshots.wireCloud(
+      uploader: bridge.baselineUpload,
+      sweep: bridge.baselineListLatest,
+    );
+  }
+
+  /// Clear the baseline cloud hooks. Called when the runtime bridge
+  /// is torn down so subsequent upload/restore calls fail fast with
+  /// `BaselineCloudUnavailable` instead of dereferencing a dead bridge.
+  static void _clearBaselineCloudHooks() {
+    _baselineSnapshots.wireCloud(uploader: null, sweep: null);
+  }
 
   /// core runtime bridge (FFI). Null when native lib unavailable.
   static CoreRuntimeBridge? _coreRuntime;
@@ -706,6 +727,7 @@ class Synheart {
         SynheartLogger.log(
           '[Synheart] core runtime bridge loaded (ensureRuntimeBridge)',
         );
+        _wireBaselineCloudHooks(_coreRuntime!);
         // SMK storage callbacks must be registered immediately after handle
         // creation and before any session lifecycle APIs.
         final storageRc = _coreRuntime!.setStorageCallbacks();
@@ -934,6 +956,7 @@ class Synheart {
       }
       if (_coreRuntime != null) {
         SynheartLogger.log('[Synheart] core runtime bridge loaded');
+        _wireBaselineCloudHooks(_coreRuntime!);
         // SMK storage callbacks must be registered immediately after handle
         // creation and before any session lifecycle APIs.
         final storageRc = _coreRuntime!.setStorageCallbacks();
@@ -991,6 +1014,7 @@ class Synheart {
     } catch (e) {
       SynheartLogger.log('[Synheart] core runtime bridge unavailable: $e');
       _coreRuntime = null;
+      _clearBaselineCloudHooks();
     }
 
     try {
@@ -4435,6 +4459,7 @@ class Synheart {
 
       _coreRuntime?.dispose();
       _coreRuntime = null;
+      _clearBaselineCloudHooks();
 
       await _moduleManager.disposeAll();
 
@@ -4463,6 +4488,7 @@ class Synheart {
       _behaviorModule = null;
       _coreRuntime?.dispose();
       _coreRuntime = null;
+      _clearBaselineCloudHooks();
       _activationManager = null;
       _pendingConsent = null;
 

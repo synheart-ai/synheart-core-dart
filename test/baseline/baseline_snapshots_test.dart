@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:synheart_core/src/artifacts/artifact_header.dart';
 import 'package:synheart_core/src/baseline/baseline_envelope.dart';
@@ -151,21 +153,200 @@ void main() {
     });
   });
 
-  group('Cloud paths (Phase 2 stubs)', () {
-    test('restoreAll throws UnimplementedError until wired', () {
-      expect(
-        () => BaselineSnapshots().restoreAll(subjectId: 'usr_alice'),
-        throwsA(isA<UnimplementedError>()),
-      );
+  group('Cloud wiring', () {
+    test('isCloudWired is false before wireCloud is called', () {
+      expect(BaselineSnapshots().isCloudWired, isFalse);
     });
 
-    test('upload throws UnimplementedError until wired', () {
+    test('isCloudWired is true after wireCloud with both hooks', () {
+      final s = BaselineSnapshots();
+      s.wireCloud(
+        uploader: (_) async => {'success': true},
+        sweep: (_) async => {
+          'success': true,
+          'body': {'snapshots': []},
+        },
+      );
+      expect(s.isCloudWired, isTrue);
+    });
+
+    test('upload before wireCloud throws BaselineCloudUnavailable', () {
       expect(
         () => BaselineSnapshots().upload(
           buildEnvelope(BaselineKind.longitudinalWear),
         ),
-        throwsA(isA<UnimplementedError>()),
+        throwsA(isA<BaselineCloudUnavailable>()),
       );
     });
+
+    test('restoreAll before wireCloud throws BaselineCloudUnavailable', () {
+      expect(
+        () => BaselineSnapshots().restoreAll(subjectId: 'usr_alice'),
+        throwsA(isA<BaselineCloudUnavailable>()),
+      );
+    });
+  });
+
+  group('Cloud upload', () {
+    test('successful upload calls the uploader with the envelope JSON',
+        () async {
+      final s = BaselineSnapshots();
+      String? capturedJson;
+      s.wireCloud(
+        uploader: (envJson) async {
+          capturedJson = envJson;
+          return {
+            'success': true,
+            'status_code': 200,
+            'body': {'artifact_id': 'bs_x', 'status': 'stored'},
+          };
+        },
+        sweep: (_) async => null,
+      );
+
+      final envelope = buildEnvelope(BaselineKind.longitudinalWear);
+      await s.upload(envelope);
+
+      expect(capturedJson, isNotNull);
+      final decoded = jsonDecode(capturedJson!) as Map<String, dynamic>;
+      expect(decoded['kind'], 'longitudinal.wear');
+      expect(decoded['header']['subject_id'], 'usr_alice');
+    });
+
+    test('upload throws BaselineCloudUnavailable when FFI returns null', () {
+      final s = BaselineSnapshots();
+      s.wireCloud(uploader: (_) async => null, sweep: (_) async => null);
+      expect(
+        () => s.upload(buildEnvelope(BaselineKind.longitudinalWear)),
+        throwsA(isA<BaselineCloudUnavailable>()),
+      );
+    });
+
+    test('upload throws BaselineCloudError when cloud returns success=false',
+        () {
+      final s = BaselineSnapshots();
+      s.wireCloud(
+        uploader: (_) async => {
+          'success': false,
+          'status_code': 403,
+          'error_message': 'device not signed',
+        },
+        sweep: (_) async => null,
+      );
+      expect(
+        () => s.upload(buildEnvelope(BaselineKind.longitudinalWear)),
+        throwsA(
+          isA<BaselineCloudError>()
+              .having((e) => e.statusCode, 'statusCode', 403)
+              .having((e) => e.message, 'message', 'device not signed'),
+        ),
+      );
+    });
+
+    test('upload throws BaselineCloudError on internal error envelope', () {
+      final s = BaselineSnapshots();
+      s.wireCloud(
+        uploader: (_) async => {'error': 'invalid handle'},
+        sweep: (_) async => null,
+      );
+      expect(
+        () => s.upload(buildEnvelope(BaselineKind.longitudinalWear)),
+        throwsA(isA<BaselineCloudError>()),
+      );
+    });
+  });
+
+  group('Cloud restoreAll', () {
+    Map<String, dynamic> envelopeWire(BaselineKind kind, String id) {
+      return buildEnvelope(kind, id: id).toJson();
+    }
+
+    test('restoreAll populates the cache from cloud-returned envelopes',
+        () async {
+      final s = BaselineSnapshots();
+      s.wireCloud(
+        uploader: (_) async => null,
+        sweep: (subjectId) async {
+          expect(subjectId, 'usr_alice');
+          return {
+            'success': true,
+            'status_code': 200,
+            'body': {
+              'snapshots': [
+                envelopeWire(BaselineKind.longitudinalWear, 'bs_wear'),
+                envelopeWire(BaselineKind.sessionHsiAxes, 'bs_hsi'),
+              ],
+            },
+          };
+        },
+      );
+
+      final restored = await s.restoreAll(subjectId: 'usr_alice');
+      expect(restored.length, 2);
+
+      // Cache is now populated; typed getters return real values.
+      final wear = s.latestLongitudinalWear();
+      final hsi = s.latestHsiAxes();
+      expect(wear, isNotNull);
+      expect(hsi, isNotNull);
+      expect(wear!.reference.dimensions['hrv_rmssd_ms'], 55.0);
+      expect(hsi!.axes['sleep']?.mean, 0.6);
+    });
+
+    test('restoreAll returns empty list when subject has no baselines',
+        () async {
+      final s = BaselineSnapshots();
+      s.wireCloud(
+        uploader: (_) async => null,
+        sweep: (_) async => {
+          'success': true,
+          'body': {'snapshots': []},
+        },
+      );
+      final restored = await s.restoreAll(subjectId: 'usr_alice');
+      expect(restored, isEmpty);
+      expect(s.envelopesByKind(), isEmpty);
+    });
+
+    test('restoreAll skips envelopes with unknown kinds (forward-compat)',
+        () async {
+      final s = BaselineSnapshots();
+      final wear = envelopeWire(BaselineKind.longitudinalWear, 'bs_wear');
+      final future = {
+        ...wear,
+        'kind': 'future.behavior',
+      };
+      s.wireCloud(
+        uploader: (_) async => null,
+        sweep: (_) async => {
+          'success': true,
+          'body': {
+            'snapshots': [wear, future],
+          },
+        },
+      );
+      final restored = await s.restoreAll(subjectId: 'usr_alice');
+      expect(restored.length, 1, reason: 'unknown kind silently skipped');
+      expect(s.latestLongitudinalWear(), isNotNull);
+    });
+
+    test(
+      'restoreAll throws BaselineCloudError when cloud returns success=false',
+      () {
+        final s = BaselineSnapshots();
+        s.wireCloud(
+          uploader: (_) async => null,
+          sweep: (_) async => {
+            'success': false,
+            'status_code': 500,
+            'error_message': 'storage error',
+          },
+        );
+        expect(
+          () => s.restoreAll(subjectId: 'usr_alice'),
+          throwsA(isA<BaselineCloudError>()),
+        );
+      },
+    );
   });
 }

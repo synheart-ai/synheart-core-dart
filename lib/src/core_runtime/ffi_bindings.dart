@@ -269,6 +269,28 @@ typedef _ListDataDeletionsC =
 typedef _ListDataDeletionsDart =
     Pointer<Utf8> Function(Pointer<Void> h, int limit, int offset);
 
+// Baseline cloud bridge (POST /v1/baseline/snapshot + GET latest).
+typedef _BaselineUploadC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> envelopeJson);
+typedef _BaselineUploadDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> envelopeJson);
+typedef _BaselineGetLatestC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> subjectId,
+      Pointer<Utf8> kind,
+    );
+typedef _BaselineGetLatestDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> subjectId,
+      Pointer<Utf8> kind,
+    );
+typedef _BaselineListLatestC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> subjectId);
+typedef _BaselineListLatestDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> subjectId);
+
 // Vendor events
 typedef _IngestVendorEventC =
     Int32 Function(Pointer<Void> h, Pointer<Utf8> json);
@@ -821,6 +843,60 @@ class SynheartCoreFFI {
       .lookupFunction<_ListDataDeletionsC, _ListDataDeletionsDart>(
         'synheart_core_list_data_deletions',
       );
+
+  /// `POST /v1/baseline/snapshot` — uploads a serialized
+  /// [BaselineEnvelope] to the sync-service. Returns a JSON cstring
+  /// `{success, status_code, body, error_message}`; caller frees via
+  /// [freeString]. `{"error": "..."}` on internal failure.
+  ///
+  /// Optional symbol — null on runtime binaries that pre-date the
+  /// baseline FFI bridge. Bridge callers branch on null.
+  late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)?
+  baselineUpload = () {
+    try {
+      return _lib.lookupFunction<_BaselineUploadC, _BaselineUploadDart>(
+        'synheart_core_baseline_upload',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  /// `GET /v1/baseline/snapshot/latest?subject_id&kind` — single-kind
+  /// restore. JSON cstring with the cloud response.
+  ///
+  /// Optional symbol; see [baselineUpload].
+  late final Pointer<Utf8> Function(
+    Pointer<Void>,
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+  )?
+  baselineGetLatest = () {
+    try {
+      return _lib.lookupFunction<_BaselineGetLatestC, _BaselineGetLatestDart>(
+        'synheart_core_baseline_get_latest',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  /// `GET /v1/baseline/snapshot/latest?subject_id` — first-launch
+  /// sweep returning one envelope per kind for the subject.
+  ///
+  /// Optional symbol; see [baselineUpload].
+  late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)?
+  baselineListLatest = () {
+    try {
+      return _lib.lookupFunction<
+        _BaselineListLatestC,
+        _BaselineListLatestDart
+      >('synheart_core_baseline_list_latest');
+    } catch (_) {
+      return null;
+    }
+  }();
+
   late final setRetentionDays = _lib
       .lookupFunction<_RetentionC, _RetentionDart>(
         'synheart_core_set_retention_days',

@@ -1195,6 +1195,103 @@ class CoreRuntimeBridge {
     });
   }
 
+  // ── Baseline cloud bridge ──────────────────────────────────────────
+
+  /// True when the linked runtime binary exports the baseline cloud
+  /// FFI symbols. Older runtimes return false and the upload/restore
+  /// helpers below short-circuit.
+  bool get isBaselineCloudAvailable =>
+      _ffi.baselineUpload != null &&
+      _ffi.baselineGetLatest != null &&
+      _ffi.baselineListLatest != null;
+
+  /// `POST /v1/baseline/snapshot` — upload a baseline envelope to the
+  /// cloud. [envelopeJson] is the serialized envelope. Returns the
+  /// decoded cloud response `{success, status_code, body, error_message}`
+  /// or `{"error": "..."}` on internal failure. Null when the runtime
+  /// binary doesn't ship the symbol.
+  Future<Map<String, dynamic>?> baselineUpload(String envelopeJson) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final upload = ffi.baselineUpload;
+      if (upload == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final envPtr = envelopeJson.toNativeUtf8();
+      try {
+        final resPtr = upload(handle, envPtr.cast());
+        if (resPtr == nullptr) return null;
+        final str = resPtr.toDartString();
+        ffi.coreFreeString(resPtr);
+        return jsonDecode(str) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      } finally {
+        malloc.free(envPtr);
+      }
+    });
+  }
+
+  /// `GET /v1/baseline/snapshot/latest?subject_id&kind` — single-kind
+  /// restore. Decoded cloud response or null when the runtime binary
+  /// doesn't ship the symbol.
+  Future<Map<String, dynamic>?> baselineGetLatest(
+    String subjectId,
+    String kind,
+  ) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final get = ffi.baselineGetLatest;
+      if (get == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final subjPtr = subjectId.toNativeUtf8();
+      final kindPtr = kind.toNativeUtf8();
+      try {
+        final resPtr = get(handle, subjPtr.cast(), kindPtr.cast());
+        if (resPtr == nullptr) return null;
+        final str = resPtr.toDartString();
+        ffi.coreFreeString(resPtr);
+        return jsonDecode(str) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      } finally {
+        malloc.free(subjPtr);
+        malloc.free(kindPtr);
+      }
+    });
+  }
+
+  /// `GET /v1/baseline/snapshot/latest?subject_id` — sweep returning
+  /// one envelope per kind for the subject.
+  Future<Map<String, dynamic>?> baselineListLatest(String subjectId) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final list = ffi.baselineListLatest;
+      if (list == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final subjPtr = subjectId.toNativeUtf8();
+      try {
+        final resPtr = list(handle, subjPtr.cast());
+        if (resPtr == nullptr) return null;
+        final str = resPtr.toDartString();
+        ffi.coreFreeString(resPtr);
+        return jsonDecode(str) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      } finally {
+        malloc.free(subjPtr);
+      }
+    });
+  }
+
   /// List recent deletion requests for this caller's org. Mostly useful for
   /// dashboards / audit views; most apps will only call
   /// [requestDataDeletion] + [getDataDeletion].
