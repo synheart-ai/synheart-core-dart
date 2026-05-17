@@ -2,8 +2,7 @@ import '../artifacts/artifact_header.dart';
 import 'baseline_kind.dart';
 import 'baseline_payloads.dart';
 
-/// Engine reference embedded in every baseline envelope. Mirror of
-/// `BaselineEngine` in engine-types.
+/// Engine reference embedded in every baseline envelope.
 class BaselineEngineRef {
   final String name;
   final String version;
@@ -32,9 +31,10 @@ class BaselineEngineRef {
       );
 }
 
-/// Coverage metadata — how much input fed this snapshot, and how many
-/// dimensions / axes / metrics it covers. Used by the merge rule
-/// (RFC §13) and by readers gating on freshness.
+/// Coverage metadata — how much input fed this snapshot, and how
+/// many dimensions / axes / metrics it covers. Used by cross-device
+/// merge (per-kind, prefer higher observations / dimensions /
+/// recency) and by readers gating on freshness.
 class BaselineCoverage {
   final int windowStartMs;
   final int windowEndMs;
@@ -69,9 +69,7 @@ class BaselineCoverage {
 }
 
 /// One baseline snapshot, ready to upload to the cloud or restore
-/// locally. Mirror of `BaselineEnvelope` in
-/// `synheart-core-runtime::baseline::envelope` — same field set, same
-/// wire shape, same `bs_<48hex>` `artifactId` derivation.
+/// locally.
 ///
 /// Payload is held as `Map<String, dynamic>` (the raw JSON) so the
 /// envelope stays kind-agnostic — one Dart class for all kinds, one
