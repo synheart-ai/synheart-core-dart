@@ -653,6 +653,21 @@ class Synheart {
     return shared._activationManager?.activatedFeatures() ?? {};
   }
 
+  /// True when all four authority gates for [feature] are open —
+  /// the developer has activated it, the user granted the required
+  /// consent, the platform capability lattice allows it, and a
+  /// session is active. Equivalent to the internal
+  /// `_reevaluateFeature` gate; exposed so host UI can show
+  /// affordances only when calling into the feature will actually
+  /// succeed (e.g. the synsync sync card).
+  static bool isFeatureOperational(SynheartFeature feature) {
+    final s = shared;
+    final activated = s._activationManager?.isActivated(feature) ?? false;
+    final hasConsent = s._hasConsentForFeature(feature);
+    final capabilityAllowed = s._isCapabilityAllowed(feature);
+    return activated && hasConsent && capabilityAllowed && s._isRunning;
+  }
+
   /// Initialize Synheart Core SDK
   ///
   /// This must be called before any other operations.
@@ -4250,6 +4265,14 @@ class Synheart {
       case SynheartFeature.cloud:
         // Cloud connector removed — managed by core runtime bridge.
         break;
+      case SynheartFeature.synsync:
+        // No module to start/stop — synsync is a host-driven feature:
+        // hosts call Synheart.baselineSnapshots.upload(...) /
+        // restoreAll(...) when they want to sync. The
+        // operational gate just controls whether those calls succeed
+        // (failing fast with BaselineCloudUnavailable when the
+        // feature isn't activated / consented / running).
+        break;
       case SynheartFeature.syni:
         break;
     }
@@ -4417,6 +4440,12 @@ class Synheart {
       case SynheartFeature.phoneContext:
         return cap.capability(Module.phone) != CapabilityLevel.none;
       case SynheartFeature.cloud:
+        return cap.capability(Module.cloud) != CapabilityLevel.none;
+      case SynheartFeature.synsync:
+        // Synsync rides the same capability tier as cloud — it's a
+        // cloud-bound operation (baseline upload + restore), gated
+        // on the same "has the customer activated cloud features?"
+        // signal. No separate capability lattice entry needed.
         return cap.capability(Module.cloud) != CapabilityLevel.none;
       case SynheartFeature.syni:
         // Syni runs independent of the wearable capability lattice. Real

@@ -17,6 +17,14 @@ enum SynheartFeature {
   /// Cloud upload connector
   cloud('cloudUpload'),
 
+  /// Synsync — cross-device baseline-snapshot upload + restore.
+  /// Lets a baseline computed on Device A be restored on Device B
+  /// for the same user. Hosts call into it via
+  /// `Synheart.baselineSnapshots.upload(...)` and `restoreAll(...)`.
+  /// Gates on `cloudUpload` consent — synsync is fundamentally a
+  /// cloud-bound operation, same tier as the existing cloud feature.
+  synsync('cloudUpload'),
+
   /// Syni hooks integration
   syni('syni');
 
