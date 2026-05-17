@@ -35,9 +35,21 @@ export 'src/config/synheart_errors.dart';
 // Artifacts (RFC-CORE-0006 Tier A)
 export 'src/artifacts/artifact_header.dart';
 export 'src/artifacts/hsi_window.dart';
-export 'src/artifacts/baseline_snapshot.dart';
+// The legacy 4-axis `src/artifacts/baseline_snapshot.dart` was retired
+// in step 4 of srm_baseline_schema_rfc.md (it was the Dart side of the
+// never-shipped hardcoded `BaselineSnapshotArtifact`). The replacement
+// is the typed envelope below — see `lib/src/baseline/`.
 export 'src/artifacts/session_summary.dart';
 export 'src/artifacts/tombstone.dart';
+
+// Baseline-snapshot typed envelope (srm_baseline_schema_rfc.md §15).
+// Mirror of synheart-core-runtime/crates/core-runtime/src/baseline/ and
+// synheart-engine-types/baseline. Typed builders + extractors per kind,
+// no Map<String, dynamic> round-tripping. Step 4b will add the
+// `Synheart.baselineSnapshots.latest<T>()` reader on top of these.
+export 'src/baseline/baseline_kind.dart';
+export 'src/baseline/baseline_payloads.dart';
+export 'src/baseline/baseline_envelope.dart';
 
 // Session model
 export 'src/models/session_handle.dart';
