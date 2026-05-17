@@ -290,6 +290,8 @@ typedef _BaselineListLatestC =
     Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> subjectId);
 typedef _BaselineListLatestDart =
     Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> subjectId);
+typedef _BaselineHydrateLocalC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _BaselineHydrateLocalDart = Pointer<Utf8> Function(Pointer<Void> h);
 
 // Vendor events
 typedef _IngestVendorEventC =
@@ -896,6 +898,25 @@ class SynheartCoreFFI {
       return null;
     }
   }();
+
+  /// Read the latest locally-persisted baseline envelope per kind for
+  /// the configured subject. Returns the same `{snapshots: [...]}`
+  /// shape as the cloud restore endpoint. No network — pure on-device
+  /// SQLite + decryption. Used by the auto-hydrate-on-init path so
+  /// the typed cache survives app cold starts.
+  ///
+  /// Optional symbol; see [baselineUpload].
+  late final Pointer<Utf8> Function(Pointer<Void>)? baselineHydrateLocal =
+      () {
+        try {
+          return _lib.lookupFunction<
+            _BaselineHydrateLocalC,
+            _BaselineHydrateLocalDart
+          >('synheart_core_baseline_hydrate_local');
+        } catch (_) {
+          return null;
+        }
+      }();
 
   late final setRetentionDays = _lib
       .lookupFunction<_RetentionC, _RetentionDart>(

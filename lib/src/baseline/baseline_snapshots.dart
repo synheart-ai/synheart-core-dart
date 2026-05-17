@@ -16,6 +16,12 @@ typedef BaselineCloudUploader =
 typedef BaselineCloudSweep =
     Future<Map<String, dynamic>?> Function(String subjectId);
 
+/// Hook signature for "read every latest baseline envelope per kind
+/// for the configured subject from local storage". No network — pure
+/// SQLite + decryption. Same `{snapshots: [...]}` shape as the cloud
+/// sweep, so the same parser handles both.
+typedef BaselineLocalHydrator = Future<Map<String, dynamic>?> Function();
+
 /// Thrown when an upload / restore is attempted before cloud hooks
 /// have been wired (typically: runtime hasn't been configured yet,
 /// or the linked runtime binary doesn't ship the baseline FFI).
@@ -73,6 +79,7 @@ class BaselineSnapshots {
   final Map<BaselineKind, BaselineEnvelope> _cache = {};
   BaselineCloudUploader? _uploader;
   BaselineCloudSweep? _sweep;
+  BaselineLocalHydrator? _localHydrator;
 
   /// The most recent envelope for [kind], or `null` if no producer
   /// has cached one yet. Synchronous — reads in-memory state.
@@ -124,12 +131,19 @@ class BaselineSnapshots {
   /// Pass `null` to clear (e.g. after disposing the runtime bridge);
   /// subsequent upload/restore calls then throw
   /// [BaselineCloudUnavailable] until rewired.
+  ///
+  /// [localHydrator] is the local-storage read path used by
+  /// [hydrateFromLocal] for cold-start cache hydration. Optional —
+  /// when null, [hydrateFromLocal] is a no-op (e.g. older runtime
+  /// binaries that don't export the hydrate FFI).
   void wireCloud({
     required BaselineCloudUploader? uploader,
     required BaselineCloudSweep? sweep,
+    BaselineLocalHydrator? localHydrator,
   }) {
     _uploader = uploader;
     _sweep = sweep;
+    _localHydrator = localHydrator;
   }
 
   /// True when cloud hooks are wired (the runtime bridge is configured
@@ -137,6 +151,49 @@ class BaselineSnapshots {
   /// gate UI affordances that would otherwise call [upload] /
   /// [restoreAll] and throw.
   bool get isCloudWired => _uploader != null && _sweep != null;
+
+  // ---- Local hydration ------------------------------------------------
+
+  /// Populate the in-memory cache from locally-persisted artifacts.
+  /// Called by `Synheart` on bridge construction so the typed getters
+  /// ([latestHsiAxes], [latestSrmMetrics], [latestLongitudinalWear])
+  /// return real data immediately after app cold-start, without
+  /// waiting on a cloud round-trip.
+  ///
+  /// No-op when the runtime binary doesn't ship the hydrate FFI
+  /// (typed getters keep returning null until a producer caches or
+  /// [restoreAll] succeeds).
+  ///
+  /// Returns the list of envelopes that successfully landed in the
+  /// cache (empty when nothing was on disk or the symbol was
+  /// missing). Forward-compat: envelopes whose `kind` this SDK
+  /// can't decode are silently skipped, same as [restoreAll].
+  Future<List<BaselineEnvelope>> hydrateFromLocal() async {
+    final hydrator = _localHydrator;
+    if (hydrator == null) return const [];
+    final resp = await hydrator();
+    if (resp == null) return const [];
+    if (resp['error'] is String) return const [];
+
+    final raw = resp['snapshots'];
+    if (raw is! List) return const [];
+
+    final out = <BaselineEnvelope>[];
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      try {
+        final envelope = BaselineEnvelope.fromJson(
+          entry.cast<String, dynamic>(),
+        );
+        cache(envelope);
+        out.add(envelope);
+      } on FormatException {
+        // Forward-compat: skip envelopes the SDK can't decode.
+        continue;
+      }
+    }
+    return out;
+  }
 
   // ---- Cloud paths ----------------------------------------------------
 

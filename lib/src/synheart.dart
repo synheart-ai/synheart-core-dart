@@ -104,12 +104,35 @@ class Synheart {
   /// Wire the baseline cloud hooks against the runtime bridge.
   /// Called immediately after [_coreRuntime] is assigned so consumers
   /// can call `Synheart.baselineSnapshots.upload(...)` /
-  /// `restoreAll(...)` as soon as the SDK is initialized.
+  /// `restoreAll(...)` as soon as the SDK is initialized. Also kicks
+  /// off a best-effort local hydration so the typed getters return
+  /// real data after app cold-start without waiting on a cloud
+  /// round-trip.
   static void _wireBaselineCloudHooks(CoreRuntimeBridge bridge) {
     _baselineSnapshots.wireCloud(
       uploader: bridge.baselineUpload,
       sweep: bridge.baselineListLatest,
+      localHydrator: bridge.baselineHydrateLocal,
     );
+    // Fire-and-forget: SMK may not be ready yet (storage callbacks
+    // are wired in the same code path right after this call). The
+    // FFI returns `{"error": ...}` and the facade no-ops cleanly in
+    // that case; first session-end or first restoreAll will populate
+    // the cache instead. Schedule on the microtask queue so the
+    // bridge-config sync path completes first.
+    Future.microtask(() async {
+      try {
+        final restored = await _baselineSnapshots.hydrateFromLocal();
+        if (restored.isNotEmpty) {
+          SynheartLogger.log(
+            '[Synheart] baseline cache hydrated from local: '
+            '${restored.length} envelope(s)',
+          );
+        }
+      } catch (e) {
+        SynheartLogger.log('[Synheart] baseline hydrate skipped: $e');
+      }
+    });
   }
 
   /// Clear the baseline cloud hooks. Called when the runtime bridge

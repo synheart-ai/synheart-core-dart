@@ -1266,6 +1266,32 @@ class CoreRuntimeBridge {
     });
   }
 
+  /// Read the latest locally-persisted baseline envelope per kind
+  /// (synchronous on-device SQLite read + decryption — no network).
+  /// Returns the same `{snapshots: [...]}` shape as the cloud restore
+  /// path, so the Dart-side facade can use the same parser. Null
+  /// when the runtime binary doesn't ship the symbol.
+  Future<Map<String, dynamic>?> baselineHydrateLocal() async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final fn = ffi.baselineHydrateLocal;
+      if (fn == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      try {
+        final resPtr = fn(handle);
+        if (resPtr == nullptr) return null;
+        final str = resPtr.toDartString();
+        ffi.coreFreeString(resPtr);
+        return jsonDecode(str) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
   /// `GET /v1/baseline/snapshot/latest?subject_id` — sweep returning
   /// one envelope per kind for the subject.
   Future<Map<String, dynamic>?> baselineListLatest(String subjectId) async {
