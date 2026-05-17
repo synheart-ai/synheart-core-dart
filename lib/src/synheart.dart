@@ -674,6 +674,17 @@ class Synheart {
   /// Whether the SDK has been initialized via [initialize] or [configure].
   static bool get isInitialized => shared._isConfigured;
 
+  /// The subject_id this SDK instance was configured for, or null when
+  /// not yet configured. Used by per-subject operations like
+  /// `Synheart.baselineSnapshots.restoreAll(subjectId: ...)`.
+  static String? get subjectId {
+    final id = shared._config?.subjectId;
+    if (id != null && id.isNotEmpty) return id;
+    final userId = shared._userId;
+    if (userId != null && userId.isNotEmpty) return userId;
+    return null;
+  }
+
   /// Ensure the core runtime bridge is loaded.
   ///
   /// Call this after [initialize] if another module may have initialized
