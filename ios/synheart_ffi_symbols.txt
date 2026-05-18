@@ -95,7 +95,7 @@ _synheart_core_upload_queue_length
 _synheart_core_wellness_json
 _synheart_core_wipe_local_data
 _synheart_core_push_vendor_vitals
-# RFC-SLEEP-SCORE-PIPELINE-0001
+# Sleep score
 _synheart_core_sleep_score_compute_json
 _synheart_core_sleep_score_compute_json_traced
 _synheart_core_attach_sleep_score_json

@@ -163,9 +163,9 @@ class HSI11Window {
 class HSI11Axes {
   // Domains carried over / introduced across HSI 1.0–1.3.
   // `physiological` is canonical in every version. `engagement`, `behavior`,
-  // `context` are 1.0–1.2 only (dissolved in 1.3 per RFC-HSI-0010 §11).
-  // `kinematic`, `digital`, `cognitive`, `affective` are introduced in 1.3
-  // (RFC-HSI-0010 §4). The struct intentionally carries the union — older
+  // `context` are 1.0–1.2 only (dissolved in 1.3).
+  // `kinematic`, `digital`, `cognitive`, `affective` are introduced in 1.3.
+  // The struct intentionally carries the union — older
   // payloads populate the legacy fields, 1.3 payloads populate the new ones.
   final HSI11Domain? physiological;
   final HSI11Domain? engagement;

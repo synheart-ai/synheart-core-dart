@@ -1,6 +1,4 @@
 /// Deterministic error codes for Synheart Core.
-///
-/// See RFC-CORE-0007 Section 14.
 class SynheartError implements Exception {
   final String code;
   final String message;

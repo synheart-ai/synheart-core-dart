@@ -1,7 +1,7 @@
 /// Result of evaluating breathing compliance over the current RR window.
 ///
 /// Mirrors the breathing runtime's `ComplianceResult` JSON shape from
-/// the native runtime. See RFC-Breathing-001 for verdict semantics.
+/// the native runtime.
 library;
 
 /// Numeric metrics computed by the 4-pillar detector.

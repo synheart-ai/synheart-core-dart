@@ -40,7 +40,7 @@ class DeviceAuthConfig {
   String get resolvedCapabilityBaseUrl => capabilityBaseUrl ?? authBaseUrl;
 }
 
-/// Storage sub-configuration (RFC-CORE-0004).
+/// Storage sub-configuration.
 class StorageConfig {
   final bool enabled;
   final int? retentionDays;
@@ -48,7 +48,7 @@ class StorageConfig {
   const StorageConfig({this.enabled = true, this.retentionDays});
 }
 
-/// Sync sub-configuration (RFC-CORE-0005).
+/// Sync sub-configuration.
 class SyncConfig {
   final bool enabled;
   final String baseUrl;
@@ -59,7 +59,7 @@ class SyncConfig {
   });
 }
 
-/// Privacy sub-configuration (RFC-CORE-0003).
+/// Privacy sub-configuration.
 class PrivacyConfig {
   final bool allowResearch;
 
@@ -68,7 +68,7 @@ class PrivacyConfig {
 
 /// Configuration for Synheart Core SDK
 class SynheartConfig {
-  // ── RFC-CORE-0007 fields ───────────────────────────────────────────────
+  // ── Core fields ────────────────────────────────────────────────────────
 
   /// Developer-provided app identifier.
   final String appId;

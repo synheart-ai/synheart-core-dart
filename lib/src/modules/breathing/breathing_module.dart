@@ -3,7 +3,7 @@
 /// All RR samples pushed via [`CoreRuntimeBridge.pushRr`] (i.e. Tier-1 BLE
 /// chest-strap data) automatically feed the breathing detector. This module
 /// configures the target rate / population profile and reads back the
-/// current verdict. See RFC-Breathing-001 for the algorithm.
+/// current verdict.
 library;
 
 import '../../core_runtime/core_runtime_bridge.dart';

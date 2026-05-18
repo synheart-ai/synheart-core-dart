@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-/// An app-level metric event recorded during a session (RFC-CORE-0007 §4).
+/// An app-level metric event recorded during a session.
 ///
 /// Only persisted in Insight and Research modes. In Personal mode,
 /// the call succeeds silently but the data is dropped.
