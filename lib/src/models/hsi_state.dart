@@ -48,7 +48,7 @@ class HSIAxes {
 ///
 /// Returns null when the domain is missing, not a list, or when no matching
 /// reading is found. Skips readings with `score: null` (categorical or
-/// "could not compute" — RFC-HSI-0008 §6.2: consumers MUST NOT treat null
+/// "could not compute" — consumers MUST NOT treat null
 /// as zero), since the `HSIAxisValue` shape requires a numeric value.
 HSIAxisValue? _findAxisReading(Object? domain, String name) {
   if (domain is! List) return null;
@@ -66,12 +66,12 @@ HSIAxisValue? _findAxisReading(Object? domain, String name) {
   return null;
 }
 
-/// HSI 1.3 parse path (RFC-HSI-0010 §4 canonical 5-domain set).
+/// HSI 1.3 parse path (canonical 5-domain set).
 /// `focus`/`capacity` → `axes.cognitive[]`, `valence`/`arousal` → `axes.affective[]`,
 /// `sleep_score` → `axes.physiological[]`. We surface `arousal` (not `valence`)
 /// as the affective axis to keep parity with the legacy 4-axis model. The
 /// canonical `sleep_score` member is preferred; `sleep` is tolerated for
-/// forward-compat producers (RFC-HSI-0008 §6.5).
+/// forward-compat producers.
 HSIAxes _parseAxesV13(Object? axes) {
   if (axes is! Map) return const HSIAxes();
   return HSIAxes(
@@ -224,7 +224,7 @@ Tiers _deriveTiers(Map<String, dynamic> payload) {
   return Tiers(physiological: physio, kinematic: kin, digital: dig);
 }
 
-/// Typed HSI state emitted by `Synheart.onStateUpdate` (RFC-CORE-0007 §3).
+/// Typed HSI state emitted by `Synheart.onStateUpdate`.
 ///
 /// Provides typed axis accessors and retains `rawJson` for diagnostic use.
 /// `modalities` and `tiers` are derived from `meta.provenance.sources[*]

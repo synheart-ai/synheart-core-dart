@@ -79,8 +79,7 @@ enum BaselineSource {
   }
 }
 
-/// Host-facing facade over the RFC-SLEEP-SCORE-PIPELINE-0001 baseline
-/// surface.
+/// Host-facing facade over the sleep-score baseline surface.
 ///
 /// Wraps the three primitives already exposed on [Synheart]:
 /// `computeSleepScore`, `attachSleepScore`, `wearableReference` — and
@@ -248,7 +247,7 @@ class Baselines {
     _suppressAutoPull = false;
   }
 
-  // ─── Ingest batching (RFC-DERIVED-SCORES-BATCH) ───────────────────
+  // ─── Ingest batching ──────────────────────────────────────────────
   //
   // Recovery + Readiness are derived scores that the SDK historically
   // recomputed after every [ingestVendorSleep]. A 30-day vendor pull
@@ -777,7 +776,7 @@ class Baselines {
                 overnight: tonightOvernight,
                 raw: v.raw,
               );
-              // Recovery Score (RFC-RECOVERY-SCORE-0001): only emits
+              // Recovery Score: only emits
               // when overnight HR or HRV is present. Skip silently
               // when the payload is sleep-only (e.g. self-report).
               SynheartLogger.stream(
@@ -1313,7 +1312,7 @@ class Baselines {
 
   static double? _numDouble(Object? v) => _num(v)?.toDouble();
 
-  // ─── Recovery Score (RFC-RECOVERY-SCORE-0001) ─────────────────────
+  // ─── Recovery Score ───────────────────────────────────────────────
 
   /// Extract overnight HR + HRV from a vendor payload. Different
   /// providers nest these fields differently — this helper centralizes
@@ -1456,7 +1455,7 @@ class Baselines {
   ///
   /// Sleep-only nights (no overnight HR/HRV in the payload) are
   /// short-circuited at the call site — the engine refuses to emit a
-  /// score in that case anyway, per RFC §"No sleep-only recovery".
+  /// score in that case anyway (no sleep-only recovery).
   static void _settleDerivedScores(
     NightRaw tonightRaw,
     OvernightPhysiology tonightOvernight,
@@ -1520,7 +1519,7 @@ class Baselines {
     }
   }
 
-  // ─── Readiness Score (RFC-READINESS-SCORE-0001) ───────────────────
+  // ─── Readiness Score ──────────────────────────────────────────────
 
   /// Bounded ring of the last 7 Recovery Scores. Used to compute the
   /// recovery slope (points/day) for the Readiness fatigue context.

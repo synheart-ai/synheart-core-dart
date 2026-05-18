@@ -57,8 +57,6 @@ class WindowData {
 }
 
 /// A time-windowed HSI state representation.
-///
-/// See RFC-CORE-0006 Section 6.2.
 class HSIWindowArtifact {
   final ArtifactHeader header;
   final WindowData window;

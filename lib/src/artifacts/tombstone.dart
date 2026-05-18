@@ -25,8 +25,6 @@ class TombstoneData {
 }
 
 /// Propagates deletion across devices/apps.
-///
-/// See RFC-CORE-0006 Section 6.4.
 class TombstoneArtifact {
   final ArtifactHeader header;
   final TombstoneData tombstone;

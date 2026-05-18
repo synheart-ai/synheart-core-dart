@@ -79,7 +79,7 @@ typedef _IngestBatchC =
 typedef _IngestBatchDart =
     Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> json, int now);
 
-// Breathing compliance (RFC-Breathing-001).
+// Breathing compliance.
 typedef _BreathingSetTargetBpmC = Void Function(Pointer<Void> h, Double bpm);
 typedef _BreathingSetTargetBpmDart = void Function(Pointer<Void> h, double bpm);
 typedef _BreathingSetWindowSecsC = Void Function(Pointer<Void> h, Int32 secs);
@@ -121,7 +121,7 @@ typedef _CurrentWorkoutKindDart = int Function(Pointer<Void> h);
 typedef _PersonalizationContextJsonC = Pointer<Utf8> Function(Pointer<Void> h);
 typedef _PersonalizationContextJsonDart =
     Pointer<Utf8> Function(Pointer<Void> h);
-// Daily Recovery Score attach (RFC-RECOVERY-SCORE-0001).
+// Daily Recovery Score attach.
 typedef _AttachRecoveryScoreC = Int32 Function(Pointer<Void> h, Uint8 score);
 typedef _AttachRecoveryScoreDart = int Function(Pointer<Void> h, int score);
 typedef _SrmPushWearableDailyC =
@@ -185,7 +185,7 @@ typedef _LoadCapDart =
 typedef _JsonReturnC = Pointer<Utf8> Function(Pointer<Void> h);
 typedef _JsonReturnDart = Pointer<Utf8> Function(Pointer<Void> h);
 
-// ── Batch sleep score (RFC-SLEEP-SCORE-PIPELINE-0001) ──
+// ── Batch sleep score ──
 // compute: (handle, input_json) -> *char (handle reserved, may be null)
 typedef _SleepScoreComputeC =
     Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> inputJson);
@@ -639,7 +639,7 @@ class SynheartCoreFFI {
     'synheart_core_push_hr',
   );
 
-  // Breathing compliance (RFC-Breathing-001).
+  // Breathing compliance.
   late final breathingSetTargetBpm = _lib
       .lookupFunction<_BreathingSetTargetBpmC, _BreathingSetTargetBpmDart>(
         'synheart_core_breathing_set_target_bpm',
@@ -847,7 +847,7 @@ class SynheartCoreFFI {
     'synheart_core_set_sync_enabled',
   );
 
-  // Ambient capture gate (RFC §13). Drives whether the runtime forwards
+  // Ambient capture gate. Drives whether the runtime forwards
   // out-of-session HSI windows to the host's hsi callback. Default off
   // — a host that never calls `setAmbientCapture` continues to behave
   // like the legacy session-only build. Returns `1` for on, `0` for
@@ -875,7 +875,7 @@ class SynheartCoreFFI {
         'synheart_core_load_srm_snapshot',
       );
 
-  // ── Batch nightly sleep score (RFC-SLEEP-SCORE-PIPELINE-0001) ──
+  // ── Batch nightly sleep score ──
   late final sleepScoreComputeJson = _lib
       .lookupFunction<_SleepScoreComputeC, _SleepScoreComputeDart>(
         'synheart_core_sleep_score_compute_json',
@@ -885,7 +885,7 @@ class SynheartCoreFFI {
         'synheart_core_sleep_score_compute_json_traced',
       );
 
-  // ── Daily recovery score (RFC-RECOVERY-SCORE-0001) ──
+  // ── Daily recovery score ──
   // Same `(handle, input_json)` shape as sleep-score; reuse typedefs.
   late final recoveryScoreComputeJson = _lib
       .lookupFunction<_SleepScoreComputeC, _SleepScoreComputeDart>(
@@ -896,7 +896,7 @@ class SynheartCoreFFI {
         'synheart_core_recovery_score_compute_json_traced',
       );
 
-  // ── Daily readiness score (RFC-READINESS-SCORE-0001) ──
+  // ── Daily readiness score ──
   // Same `(handle, input_json)` shape; reuse typedefs.
   late final readinessScoreComputeJson = _lib
       .lookupFunction<_SleepScoreComputeC, _SleepScoreComputeDart>(

@@ -121,8 +121,6 @@ class BaselineData {
 }
 
 /// A compact representation of the user's baseline state.
-///
-/// See RFC-CORE-0006 Section 6.1.
 class BaselineSnapshotArtifact {
   final ArtifactHeader header;
   final BaselineData baseline;

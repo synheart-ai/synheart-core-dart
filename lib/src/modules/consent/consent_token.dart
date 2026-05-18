@@ -39,7 +39,7 @@ class ConsentToken {
   /// Create from JSON response
   ///
   /// Supports multiple API response formats:
-  /// 1. RFC format: { "token": "...", "expires_at": "2026-01-10T19:00:00Z", "profile_id": "...", "scopes": [...] }
+  /// 1. Canonical format: { "token": "...", "expires_at": "2026-01-10T19:00:00Z", "profile_id": "...", "scopes": [...] }
   /// 2. Actual API format: { "access_token": "...", "expires_in": 86400, "consent_profile_id": "...", "token_type": "Bearer" }
   factory ConsentToken.fromJson(Map<String, dynamic> json) {
     // Safely extract token (required field)

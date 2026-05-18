@@ -1,10 +1,10 @@
-// Typed Dart models for the RFC-RECOVERY-SCORE-0001 daily scorer.
+// Typed Dart models for the daily recovery scorer.
 //
 // Mirrors the JSON shapes produced by the Synheart Runtime's
 // `RecoveryScore` computation. Field names use snake_case JSON
 // keys for cross-language portability.
 //
-// Three-stage scoring per RFC §"Adaptation Logic":
+// Three-stage scoring:
 //   - Stage 1 (FirstDay):     1 night of sleep + (HR or HRV)
 //   - Stage 2 (ShortHistory): ≥ 3 nights with HR/HRV trends
 //   - Stage 3 (Personalized): ≥ 7 nights + stable wearable baselines

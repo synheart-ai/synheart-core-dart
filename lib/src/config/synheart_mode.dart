@@ -2,8 +2,6 @@
 ///
 /// Modes control what data is persisted and what may be uploaded.
 /// The runtime pipeline is mode-agnostic — modes only affect storage behavior.
-///
-/// See RFC-CORE-0003 for the full specification.
 enum SynheartMode {
   /// Privacy-first consumer mode. Only HSI snapshots, session summaries,
   /// and baselines are persisted. No raw biosignals, no app metrics.

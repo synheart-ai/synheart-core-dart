@@ -1,4 +1,4 @@
-// Typed Dart models for the RFC-READINESS-SCORE-0001 daily scorer.
+// Typed Dart models for the daily readiness scorer.
 //
 // Mirrors the JSON shapes produced by the Synheart Runtime's
 // `ReadinessScore` computation. Field names use snake_case JSON

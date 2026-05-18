@@ -140,7 +140,7 @@ class Synheart {
   // Watch session module
   WatchSessionModule? _watchSessionModule;
 
-  // Main data-collection session (Session SDK) — RFC: open/close sessions via Session SDK
+  // Main data-collection session (Session SDK) — open/close sessions via Session SDK
   SynheartSession? _mainSession;
   String? _activeMainSessionId;
   StreamSubscription<SessionEvent>? _mainSessionSubscription;
@@ -153,7 +153,7 @@ class Synheart {
   StreamSubscription? _sessionHsiSubscription;
   StreamSubscription? _sessionWearSubscription;
 
-  // Activation manager (RFC-0005 four-authority model)
+  // Activation manager (four-authority model)
   ActivationManager? _activationManager;
 
   // Behavior session tracking
@@ -195,7 +195,7 @@ class Synheart {
 
   // --- Typed state subscription ---
 
-  /// Stream of typed [HSIState] updates (RFC-CORE-0007 §3).
+  /// Stream of typed [HSIState] updates.
   ///
   /// Wraps raw JSON from [onHSIUpdate] into typed objects with axis accessors.
   static Stream<HSIState> get onStateUpdate => shared._hsvStream.stream.map(
@@ -564,7 +564,7 @@ class Synheart {
     }
   }
 
-  /// Toggle the runtime's ambient-capture HSI emission gate (RFC §13).
+  /// Toggle the runtime's ambient-capture HSI emission gate.
   /// Synchronous — defers to the FFI atomic flag, no I/O. No-op when
   /// the runtime hasn't initialised. Default `false` (gate off): the
   /// runtime forwards out-of-session windows only when this is set to
@@ -594,7 +594,7 @@ class Synheart {
     return const SyncStatus(enabled: false);
   }
 
-  // Activation API (RFC-0005)
+  // Activation API
 
   /// Activate a feature. If all four authorities are satisfied
   /// (activation, consent, capability, session), the feature's module starts.
@@ -1239,11 +1239,11 @@ class Synheart {
 
   /// Start a session — activates permitted modules and begins signal collection.
   ///
-  /// Per RFC §5.2: Core must activate permitted modules, route normalized
+  /// Core must activate permitted modules, route normalized
   /// signals to synheart-engine, enable HSV updates, and enable optional HSI export.
   ///
   /// Must be called after initialize(). No data collection occurs until
-  /// this method is called (RFC §3.3).
+  /// this method is called.
   ///
   /// At least one feature must be enabled (via [SynheartConfig] or [activate])
   /// or this throws a [StateError].
@@ -1305,7 +1305,7 @@ class Synheart {
 
   /// Stop the current session — halts module streaming and clears ephemeral buffers.
   ///
-  /// Per RFC §5.2: Core must halt module streaming, stop synheart-engine updates,
+  /// Core must halt module streaming, stop synheart-engine updates,
   /// clear ephemeral buffers, and prevent further HSI export.
   static Future<void> stopSession() async {
     if (_coreRuntime != null) {
@@ -1984,7 +1984,7 @@ class Synheart {
   /// Get behavior module for recording events
   BehaviorModule? get behaviorModule => _behaviorModule;
 
-  /// Breathing compliance detector (RFC-Breathing-001).
+  /// Breathing compliance detector.
   /// Returns null until the core runtime bridge is initialized.
   /// Use [Synheart.breathing] (static) from app code; this instance getter
   /// exists for symmetry with the other module getters.
@@ -2602,7 +2602,7 @@ class Synheart {
 
     SynheartLogger.log('[Synheart] Starting all data collection modules..');
 
-    // Open main collection session via Session SDK (RFC: session boundary)
+    // Open main collection session via Session SDK (session boundary)
     final sessionId = 'core_${DateTime.now().millisecondsSinceEpoch}';
     final sec =
         durationSec ?? 86400; // default 24h — long-lived; stop explicitly
@@ -3281,7 +3281,7 @@ class Synheart {
     );
   }
 
-  // ── Sleep Score (RFC-SLEEP-SCORE-PIPELINE-0001) ──────────────────
+  // ── Sleep Score ──────────────────────────────────────────────────
 
   /// Compute a batch [SleepScoreResult] from a [SleepScoreInput].
   ///
@@ -3300,12 +3300,12 @@ class Synheart {
     return _coreRuntime?.attachSleepScore(result) ?? -1;
   }
 
-  // ── Recovery Score (RFC-RECOVERY-SCORE-0001) ──────────────────────
+  // ── Recovery Score ────────────────────────────────────────────────
 
   /// Compute a daily Recovery Score from a JSON-encoded
   /// `RecoveryScoreInput`.
   ///
-  /// Three-stage scoring per RFC-RECOVERY-SCORE-0001:
+  /// Three-stage scoring:
   /// - Stage 1 (FirstDay): 1 night of sleep + (HR or HRV)
   /// - Stage 2 (ShortHistory): ≥ 3 nights with HR/HRV trends
   /// - Stage 3 (Personalized): ≥ 7 nights + stable wearable baselines
@@ -3350,7 +3350,7 @@ class Synheart {
     }
   }
 
-  // ── Readiness Score (RFC-READINESS-SCORE-0001) ────────────────────
+  // ── Readiness Score ───────────────────────────────────────────────
 
   /// Compute a daily Readiness Score from a JSON-encoded
   /// `ReadinessScoreInput`. Combines today's Recovery Score with
@@ -4131,7 +4131,7 @@ class Synheart {
     _reevaluateAllFeatures();
   }
 
-  // Feature Reevaluation (RFC-0005 Four-Authority Model)
+  // Feature Reevaluation (Four-Authority Model)
 
   /// Reevaluate whether a single feature should be operational.
   ///
