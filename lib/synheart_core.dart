@@ -35,9 +35,20 @@ export 'src/config/synheart_errors.dart';
 // Artifacts (RFC-CORE-0006 Tier A)
 export 'src/artifacts/artifact_header.dart';
 export 'src/artifacts/hsi_window.dart';
-export 'src/artifacts/baseline_snapshot.dart';
+// Note: the legacy 4-axis BaselineSnapshotArtifact (previously at
+// `src/artifacts/baseline_snapshot.dart`) was never deployed. The
+// replacement is the typed envelope below.
 export 'src/artifacts/session_summary.dart';
 export 'src/artifacts/tombstone.dart';
+
+// Baseline-snapshot typed envelope. Typed builders + per-kind
+// extractors, no `Map<String, dynamic>` round-tripping.
+// `BaselineSnapshots` is the host-facing read facade
+// (`Synheart.baselineSnapshots`).
+export 'src/baseline/baseline_kind.dart';
+export 'src/baseline/baseline_payloads.dart';
+export 'src/baseline/baseline_envelope.dart';
+export 'src/baseline/baseline_snapshots.dart';
 
 // Session model
 export 'src/models/session_handle.dart';

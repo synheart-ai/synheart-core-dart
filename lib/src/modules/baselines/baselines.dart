@@ -672,16 +672,15 @@ class Baselines {
           // engine sees newest-first.
           priorsNewestFirst: _recentNights.reversed.toList(growable: false),
         );
-        // Full JSON dump is big (the priors array alone is ~7×200 chars
-        // per call) and only useful when actively diagnosing the
-        // engine. Gate behind kDebugMode so release builds don't pay
-        // the serialization cost; debug builds still see it.
-        if (kDebugMode) {
-          SynheartLogger.stream(
-            'Baselines: scoreInput[${v.variantId}] '
-            '${input.toJsonString()}',
-          );
-        }
+        // The full JSON dump (priors array + per-night sleep details) is
+        // both noisy and contains PII; emit only a summary at stream-level
+        // and keep the full payload out of logs entirely. Recover it via
+        // the engine input if needed by re-running with a local print.
+        SynheartLogger.stream(
+          'Baselines: scoreInput[${v.variantId}] '
+          'nights=${_recentNights.length} '
+          'latestWake=${v.raw.wakeCalendarDate}',
+        );
         final result = Synheart.computeSleepScore(input);
         if (result == null) {
           SynheartLogger.stream(

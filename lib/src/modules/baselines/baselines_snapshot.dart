@@ -62,8 +62,8 @@ class BaselinesSnapshot {
       latestSleepScore == null &&
       recentSleepScores.isEmpty;
 
-  /// True when the reference is present and reports `Stable` status.
-  bool get isStable => (reference?.status ?? '').toLowerCase() == 'stable';
+  /// True when the reference is present and reports `READY` status — all five primary SRM dimensions are mature enough for personalized scoring.
+  bool get isReady => (reference?.status ?? '').toLowerCase() == 'ready';
 
   /// Number of prior nights behind the live score, when available.
   int? get priorNightCount => latestSleepScore?.priorNightCount;

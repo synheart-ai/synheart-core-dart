@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
+import '../core/logger.dart';
 import 'sdk_ffi.dart';
 
 // ── C function typedefs (native + Dart) ─────────────────────────────────
@@ -269,6 +270,28 @@ typedef _ListDataDeletionsC =
 typedef _ListDataDeletionsDart =
     Pointer<Utf8> Function(Pointer<Void> h, int limit, int offset);
 
+// Baseline local hydrate (cross-device transport rides the sync engine).
+typedef _BaselineHydrateLocalC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _BaselineHydrateLocalDart = Pointer<Utf8> Function(Pointer<Void> h);
+
+// Baseline offline export/import (.srm.synheart file share).
+typedef _BaselineExportOfflineC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> passphrase);
+typedef _BaselineExportOfflineDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> passphrase);
+typedef _BaselineImportOfflineC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> passphrase,
+      Pointer<Utf8> blobB64,
+    );
+typedef _BaselineImportOfflineDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> passphrase,
+      Pointer<Utf8> blobB64,
+    );
+
 // Vendor events
 typedef _IngestVendorEventC =
     Int32 Function(Pointer<Void> h, Pointer<Utf8> json);
@@ -300,6 +323,26 @@ typedef _SetSyncC = Void Function(Pointer<Void> h, Int32 enabled);
 typedef _SetSyncDart = void Function(Pointer<Void> h, int enabled);
 typedef _SyncNowC = Pointer<Utf8> Function(Pointer<Void> h);
 typedef _SyncNowDart = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncCreateSpaceC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> deviceName);
+typedef _SyncCreateSpaceDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> deviceName);
+typedef _SyncJoinSpaceC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> pairingToken,
+      Pointer<Utf8> deviceName,
+    );
+typedef _SyncJoinSpaceDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> pairingToken,
+      Pointer<Utf8> deviceName,
+    );
+typedef _SyncGeneratePairingC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncGeneratePairingDart = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncStatusC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncStatusDart = Pointer<Utf8> Function(Pointer<Void> h);
 
 // Generic `(handle) -> int32` shape — used by ambient-capture get,
 // and any future read-only flag accessor. Kept here rather than
@@ -514,15 +557,24 @@ class SynheartCoreFFI {
   /// `synheart install runtime` or `synheart runtime install --from`)
   /// 2. bare `<libname>` (system loader path — DYLD/LD_LIBRARY_PATH, PATH)
   ///
-  /// iOS is statically linked (DynamicLibrary.process()). Android loads via
-  /// jniLibs/ auto-discovery by the Android loader.
+  /// iOS loads `SynheartCoreRuntime.framework` (embedded by the
+  /// vendored xcframework via the synheart_core podspec). Android
+  /// loads via jniLibs/ auto-discovery by the Android loader.
   static SynheartCoreFFI? load() {
     if (_instance != null) return _instance;
 
     DynamicLibrary? lib;
     try {
       if (Platform.isIOS) {
-        lib = DynamicLibrary.process(); // statically linked
+        // iOS embeds SynheartCoreRuntime.framework into Runner.app/Frameworks/
+        // and the dynamic loader maps it at app start. Its symbols are
+        // therefore already in the process by the time Dart FFI runs, so
+        // DynamicLibrary.process() resolves them without needing a path.
+        // dlopen() with the literal relative string "SynheartCoreRuntime.
+        // framework/SynheartCoreRuntime" fails because dlopen wants an
+        // absolute path or @rpath-prefixed install name — and we don't
+        // want to hardcode either.
+        lib = DynamicLibrary.process();
       } else if (Platform.isAndroid) {
         lib = DynamicLibrary.open('libsynheart_core_runtime.so');
       } else if (Platform.isMacOS) {
@@ -532,7 +584,17 @@ class SynheartCoreFFI {
       } else if (Platform.isWindows) {
         lib = _openDesktop('windows', 'synheart_core_runtime.dll');
       }
-    } catch (_) {
+    } catch (e, st) {
+      // Surface instead of swallowing — silent failures were why an iOS
+      // misconfiguration (missing framework, bad install_name) used to
+      // bubble up as a generic "core runtime bridge unavailable" with no
+      // clue what actually went wrong.
+      SynheartLogger.log(
+        '[Synheart FFI] DynamicLibrary load failed: $e',
+        name: 'synheart.ffi',
+        error: e,
+        stackTrace: st,
+      );
       return null;
     }
 
@@ -616,6 +678,19 @@ class SynheartCoreFFI {
       .lookupFunction<_FreeStringC, _FreeStringDart>(
         'synheart_core_free_string',
       );
+
+  /// Returns null when the symbol isn't exported (older runtime build).
+  /// Caller MUST free the returned pointer via [coreFreeString].
+  late final coreLastError = () {
+    try {
+      return _lib
+          .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+            'synheart_core_last_error',
+          );
+    } catch (_) {
+      return null;
+    }
+  }();
 
   late final startSession = _lib
       .lookupFunction<_StartSessionC, _StartSessionDart>(
@@ -821,6 +896,63 @@ class SynheartCoreFFI {
       .lookupFunction<_ListDataDeletionsC, _ListDataDeletionsDart>(
         'synheart_core_list_data_deletions',
       );
+
+  /// Read the latest locally-persisted baseline envelope per kind for
+  /// the configured subject. Returns `{snapshots: [...]}`. No network —
+  /// pure on-device SQLite + decryption. Used by the
+  /// auto-hydrate-on-init path so the typed baseline cache survives
+  /// app cold starts.
+  ///
+  /// Optional symbol — null on older runtime binaries that don't
+  /// export it. Bridge callers branch on null.
+  ///
+  /// Cross-device baseline transport rides the existing sync engine;
+  /// there's no separate cloud-baseline FFI surface here.
+  late final Pointer<Utf8> Function(Pointer<Void>)? baselineHydrateLocal =
+      () {
+        try {
+          return _lib.lookupFunction<
+            _BaselineHydrateLocalC,
+            _BaselineHydrateLocalDart
+          >('synheart_core_baseline_hydrate_local');
+        } catch (_) {
+          return null;
+        }
+      }();
+
+  /// Encrypt every cached baseline envelope into an offline-export
+  /// blob keyed by passphrase. Optional symbol — null on older
+  /// runtime binaries without the offline export FFI.
+  late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)?
+  baselineExportOffline = () {
+    try {
+      return _lib.lookupFunction<
+        _BaselineExportOfflineC,
+        _BaselineExportOfflineDart
+      >('synheart_core_baseline_export_offline');
+    } catch (_) {
+      return null;
+    }
+  }();
+
+  /// Decrypt a `.srm.synheart` blob and import its envelopes.
+  /// Optional symbol — null on older runtime binaries.
+  late final Pointer<Utf8> Function(
+    Pointer<Void>,
+    Pointer<Utf8>,
+    Pointer<Utf8>,
+  )?
+  baselineImportOffline = () {
+    try {
+      return _lib.lookupFunction<
+        _BaselineImportOfflineC,
+        _BaselineImportOfflineDart
+      >('synheart_core_baseline_import_offline');
+    } catch (_) {
+      return null;
+    }
+  }();
+
   late final setRetentionDays = _lib
       .lookupFunction<_RetentionC, _RetentionDart>(
         'synheart_core_set_retention_days',
@@ -862,6 +994,22 @@ class SynheartCoreFFI {
   late final syncNow = _lib.lookupFunction<_SyncNowC, _SyncNowDart>(
     'synheart_core_sync_now',
   );
+  late final syncCreateSpace = _lib
+      .lookupFunction<_SyncCreateSpaceC, _SyncCreateSpaceDart>(
+        'synheart_core_sync_create_space',
+      );
+  late final syncJoinSpace = _lib
+      .lookupFunction<_SyncJoinSpaceC, _SyncJoinSpaceDart>(
+        'synheart_core_sync_join_space',
+      );
+  late final syncGeneratePairing = _lib
+      .lookupFunction<_SyncGeneratePairingC, _SyncGeneratePairingDart>(
+        'synheart_core_sync_generate_pairing',
+      );
+  late final syncStatus = _lib
+      .lookupFunction<_SyncStatusC, _SyncStatusDart>(
+        'synheart_core_sync_status',
+      );
 
   late final baselinesJson = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
     'synheart_core_baselines_json',
