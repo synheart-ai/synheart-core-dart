@@ -49,6 +49,9 @@ app.*.map.json
 # Native runtime binaries — installed via the Synheart CLI.
 # Not committed to this repo.
 ios/Frameworks/SynheartCoreRuntime.xcframework/
+# Symlink the podspec prepare_command creates at pod-install time,
+# pointing at the consumer app's vendor dir.
+ios/SynheartCoreRuntime.xcframework
 lib/libsynheart_core_runtime.dylib
 native/
 

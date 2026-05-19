@@ -95,30 +95,26 @@ class Synheart {
   /// Distinct from the legacy [Baselines] class which orchestrates
   /// vendor-sleep ingestion and score caching. [baselineSnapshots] is
   /// the typed read surface for the umbrella baseline envelope shape.
-  /// Cloud hooks ([BaselineSnapshots.upload] / [BaselineSnapshots.restoreAll])
-  /// are wired automatically when the runtime bridge is configured;
-  /// [BaselineSnapshots.isCloudWired] reports whether they're ready.
+  /// Cross-device transport rides the sync engine — no upload/restore
+  /// hooks live on this facade. A local-hydration hook is wired
+  /// automatically when the runtime bridge is configured so the typed
+  /// getters survive app cold-start.
   static final BaselineSnapshots _baselineSnapshots = BaselineSnapshots();
   static BaselineSnapshots get baselineSnapshots => _baselineSnapshots;
 
-  /// Wire the baseline cloud hooks against the runtime bridge.
-  /// Called immediately after [_coreRuntime] is assigned so consumers
-  /// can call `Synheart.baselineSnapshots.upload(...)` /
-  /// `restoreAll(...)` as soon as the SDK is initialized. Also kicks
-  /// off a best-effort local hydration so the typed getters return
-  /// real data after app cold-start without waiting on a cloud
-  /// round-trip.
+  /// Wire the baseline local-hydration hook against the runtime
+  /// bridge. Called immediately after [_coreRuntime] is assigned so
+  /// the typed getters on [baselineSnapshots] return real data after
+  /// app cold-start (including envelopes pulled from other devices by
+  /// the sync engine). Cross-device transport rides the sync engine,
+  /// so there are no upload/restore hooks here.
   static void _wireBaselineCloudHooks(CoreRuntimeBridge bridge) {
-    _baselineSnapshots.wireCloud(
-      uploader: bridge.baselineUpload,
-      sweep: bridge.baselineListLatest,
-      localHydrator: bridge.baselineHydrateLocal,
-    );
+    _baselineSnapshots.wireLocalHydrator(bridge.baselineHydrateLocal);
     // Fire-and-forget: SMK may not be ready yet (storage callbacks
     // are wired in the same code path right after this call). The
     // FFI returns `{"error": ...}` and the facade no-ops cleanly in
-    // that case; first session-end or first restoreAll will populate
-    // the cache instead. Schedule on the microtask queue so the
+    // that case; first session-end or sync-pull will populate the
+    // cache instead. Schedule on the microtask queue so the
     // bridge-config sync path completes first.
     Future.microtask(() async {
       try {
@@ -135,11 +131,11 @@ class Synheart {
     });
   }
 
-  /// Clear the baseline cloud hooks. Called when the runtime bridge
-  /// is torn down so subsequent upload/restore calls fail fast with
-  /// `BaselineCloudUnavailable` instead of dereferencing a dead bridge.
+  /// Clear the baseline local-hydration hook. Called when the runtime
+  /// bridge is torn down so subsequent hydrate calls fail fast instead
+  /// of dereferencing a dead bridge.
   static void _clearBaselineCloudHooks() {
-    _baselineSnapshots.wireCloud(uploader: null, sweep: null);
+    _baselineSnapshots.wireLocalHydrator(null);
   }
 
   /// core runtime bridge (FFI). Null when native lib unavailable.
@@ -646,6 +642,62 @@ class Synheart {
     return const SyncResult();
   }
 
+  /// Create a sync-space on this device and return
+  /// `{sync_space_id, recovery_key}`. The recovery_key is the only
+  /// way to rejoin if the device is lost — surface it to the user.
+  /// Null when the runtime bridge isn't ready.
+  static Map<String, dynamic>? syncCreateSpace({String? deviceName}) =>
+      _coreRuntime?.syncCreateSpace(deviceName: deviceName);
+
+  /// Mint a short-lived pairing token for another device to join the
+  /// current sync-space. Returns `{token, expires_in}`. Null when
+  /// the runtime bridge or sync engine isn't ready.
+  static Map<String, dynamic>? syncGeneratePairing() =>
+      _coreRuntime?.syncGeneratePairing();
+
+  /// Join an existing sync-space using a token from
+  /// [syncGeneratePairing]. Returns `{sync_space_id, status}` on
+  /// success. Null when the runtime bridge isn't ready.
+  static Map<String, dynamic>? syncJoinSpace({
+    required String pairingToken,
+    String? deviceName,
+  }) => _coreRuntime?.syncJoinSpace(
+        pairingToken: pairingToken,
+        deviceName: deviceName,
+      );
+
+  /// Snapshot of the sync-engine state.
+  static Map<String, dynamic>? syncStatusSnapshot() =>
+      _coreRuntime?.syncStatus();
+
+  /// Encode every locally-cached baseline envelope into a
+  /// passphrase-encrypted `.srm.synheart` blob the user can share
+  /// via any OS channel (AirDrop, Quick Share, email, etc.). Used
+  /// when cloud sync isn't an option. Returns null when the runtime
+  /// bridge isn't ready or no envelopes are cached.
+  static Future<Uint8List?> baselineExportOffline({
+    required String passphrase,
+  }) async {
+    final bridge = _coreRuntime;
+    if (bridge == null) return null;
+    return bridge.baselineExportOffline(passphrase: passphrase);
+  }
+
+  /// Decrypt + import a `.srm.synheart` blob. Returns
+  /// `{imported, skipped, errors, kinds, exporter_device_id,
+  /// created_at_ms}` on success; an `{"error": ...}` map for wrong
+  /// passphrase / tampered blob; null when the runtime bridge isn't
+  /// ready. Callers should hydrate the typed cache afterwards:
+  /// `await Synheart.baselineSnapshots.hydrateFromLocal()`.
+  static Future<Map<String, dynamic>?> baselineImportOffline({
+    required String passphrase,
+    required Uint8List blob,
+  }) async {
+    final bridge = _coreRuntime;
+    if (bridge == null) return null;
+    return bridge.baselineImportOffline(passphrase: passphrase, blob: blob);
+  }
+
   /// Get current sync status.
   static Future<SyncStatus> getSyncStatus() async {
     return const SyncStatus(enabled: false);
@@ -713,8 +765,7 @@ class Synheart {
   static bool get isInitialized => shared._isConfigured;
 
   /// The subject_id this SDK instance was configured for, or null when
-  /// not yet configured. Used by per-subject operations like
-  /// `Synheart.baselineSnapshots.restoreAll(subjectId: ...)`.
+  /// not yet configured. Used by per-subject operations across the SDK.
   static String? get subjectId {
     final id = shared._config?.subjectId;
     if (id != null && id.isNotEmpty) return id;
@@ -780,23 +831,21 @@ class Synheart {
         // SMK storage callbacks must be registered immediately after handle
         // creation and before any session lifecycle APIs.
         final storageRc = _coreRuntime!.setStorageCallbacks();
-        if (storageRc == 0) {
+        if (storageRc == -2) {
           SynheartLogger.log(
-            '[Synheart] Native secure-storage callbacks attached (synheart_native_secure_*).',
-          );
-        } else if (storageRc == -2) {
-          SynheartLogger.log(
-            '[Synheart] ⚠️ Core build lacks synheart_core_set_storage_callbacks; state will not persist.',
+            '[Synheart] Core build lacks synheart_core_set_storage_callbacks; state will not persist.',
           );
         } else if (storageRc == -3) {
           SynheartLogger.log(
-            '[Synheart] ⚠️ synheart_native_secure_* symbols not found — consent tokens and device records will not persist across app restarts.',
+            '[Synheart] synheart_native_secure_* symbols not found — consent tokens and device records will not persist across app restarts.',
           );
-        } else {
+        } else if (storageRc != 0) {
           SynheartLogger.log(
             '[Synheart] synheart_core_set_storage_callbacks failed: $storageRc',
           );
         }
+        // Success path (storageRc == 0) is intentionally silent — bootstrap
+        // chatter. Surface only if attachment failed.
       }
     } catch (e) {
       SynheartLogger.log('[Synheart] core runtime bridge unavailable: $e');
@@ -1009,23 +1058,21 @@ class Synheart {
         // SMK storage callbacks must be registered immediately after handle
         // creation and before any session lifecycle APIs.
         final storageRc = _coreRuntime!.setStorageCallbacks();
-        if (storageRc == 0) {
+        if (storageRc == -2) {
           SynheartLogger.log(
-            '[Synheart] Native secure-storage callbacks attached (synheart_native_secure_*).',
-          );
-        } else if (storageRc == -2) {
-          SynheartLogger.log(
-            '[Synheart] ⚠️ Core build lacks synheart_core_set_storage_callbacks; state will not persist.',
+            '[Synheart] Core build lacks synheart_core_set_storage_callbacks; state will not persist.',
           );
         } else if (storageRc == -3) {
           SynheartLogger.log(
-            '[Synheart] ⚠️ synheart_native_secure_* symbols not found — consent tokens and device records will not persist across app restarts.',
+            '[Synheart] synheart_native_secure_* symbols not found — consent tokens and device records will not persist across app restarts.',
           );
-        } else {
+        } else if (storageRc != 0) {
           SynheartLogger.log(
             '[Synheart] synheart_core_set_storage_callbacks failed: $storageRc',
           );
         }
+        // Success path (storageRc == 0) is intentionally silent — bootstrap
+        // chatter. Surface only if attachment failed.
 
         if (_coreRuntime!.deviceAuthTemporarilyDisabledForSubjectCompat) {
           SynheartLogger.log(
@@ -1041,7 +1088,7 @@ class Synheart {
           final table = PlatformNativeSdkCryptoCallbacks.tryCreateRawTable();
           if (table == null) {
             SynheartLogger.log(
-              '[Synheart] ⚠️ synheart_native_* crypto symbols not found — '
+              '[Synheart] synheart_native_* crypto symbols not found — '
               'device auth will fail. Ensure synheart_auth plugin is '
               'registered and libsynheart_native_crypto.so is bundled.',
             );
@@ -1053,9 +1100,7 @@ class Synheart {
               );
             } else {
               _sdkCryptoCallbacksAttached = true;
-              SynheartLogger.log(
-                '[Synheart] Native crypto callbacks attached (synheart_native_*).',
-              );
+              // Success path is intentionally silent — bootstrap chatter.
             }
           }
         }
@@ -4201,19 +4246,21 @@ class Synheart {
 
   /// Handle consent changes — reevaluate all features via the four-authority model.
   void _onConsentChanged(ConsentSnapshot newConsent) {
-    SynheartLogger.log('[Synheart] Consent changed:');
-    SynheartLogger.log(' - Biosignals: ${newConsent.biosignals}');
-    SynheartLogger.log(' - Behavior: ${newConsent.behavior}');
-    SynheartLogger.log(' - PhoneContext: ${newConsent.phoneContext}');
-    SynheartLogger.log(' - Cloud Upload: ${newConsent.cloudUpload}');
-    SynheartLogger.log(' - Syni: ${newConsent.syni}');
-    SynheartLogger.log(' - Vendor Sync: ${newConsent.vendorSync}');
-    SynheartLogger.log(' - Research: ${newConsent.research}');
     // Background HRV / live HRV is not part of the consent snapshot
     // (it's a separate runtime gate, not a granted-channel) but it's
     // the user-facing toggle next to consents on the privacy screen,
-    // so log it alongside for parity.
-    SynheartLogger.log(' - Background HRV: ${getAmbientCapture()}');
+    // so include it alongside for parity.
+    SynheartLogger.log(
+      '[Synheart] Consent changed: '
+      'biosignals=${newConsent.biosignals} '
+      'behavior=${newConsent.behavior} '
+      'phoneContext=${newConsent.phoneContext} '
+      'cloudUpload=${newConsent.cloudUpload} '
+      'syni=${newConsent.syni} '
+      'vendorSync=${newConsent.vendorSync} '
+      'research=${newConsent.research} '
+      'backgroundHrv=${getAmbientCapture()}',
+    );
 
     _reevaluateAllFeatures();
   }
@@ -4289,12 +4336,9 @@ class Synheart {
         // Cloud connector removed — managed by core runtime bridge.
         break;
       case SynheartFeature.synsync:
-        // No module to start/stop — synsync is a host-driven feature:
-        // hosts call Synheart.baselineSnapshots.upload(...) /
-        // restoreAll(...) when they want to sync. The
-        // operational gate just controls whether those calls succeed
-        // (failing fast with BaselineCloudUnavailable when the
-        // feature isn't activated / consented / running).
+        // No module to start/stop — baselines ride the existing sync
+        // engine. The operational gate controls whether the sync
+        // engine pushes/pulls baseline artifacts.
         break;
       case SynheartFeature.syni:
         break;

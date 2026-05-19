@@ -13,6 +13,8 @@ import 'package:ffi/ffi.dart';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/logger.dart';
+
 import '../models/sleep_score.dart';
 import 'ffi_bindings.dart';
 import 'platform_native_sdk_storage_callbacks.dart';
@@ -233,7 +235,45 @@ class CoreRuntimeBridge {
     final cJson = jsonEncode(runtimeConfig).toNativeUtf8();
     try {
       final handle = ffi.coreNew(cJson.cast());
-      if (handle == nullptr) return null;
+      if (handle == nullptr) {
+        // Pull Rust's last-error message (set by synheart_core_new on every
+        // nullptr return). Falls back to a keys/empty dump for older
+        // runtime builds that don't export the symbol.
+        String? reason;
+        final lastErr = ffi.coreLastError;
+        if (lastErr != null) {
+          final p = lastErr();
+          if (p != nullptr) {
+            reason = p.toDartString();
+            ffi.coreFreeString(p);
+          }
+        }
+        if (reason != null) {
+          SynheartLogger.log(
+            '[Synheart FFI] coreNew failed: $reason',
+            name: 'synheart.ffi',
+          );
+        } else {
+          // Older runtime build without the last-error symbol — fall back
+          // to listing which Dart-side fields look empty so the operator
+          // still has something to grep on. Avoids logging values
+          // (some are sensitive).
+          final emptyFields = <String>[];
+          runtimeConfig.forEach((k, v) {
+            if (v == null) {
+              emptyFields.add('$k=null');
+            } else if (v is String && v.isEmpty) {
+              emptyFields.add('$k=""');
+            }
+          });
+          SynheartLogger.log(
+            '[Synheart FFI] coreNew returned nullptr (no last-error symbol). '
+            'keys=${runtimeConfig.keys.toList()} empty=$emptyFields',
+            name: 'synheart.ffi',
+          );
+        }
+        return null;
+      }
       // §1b: logging after core creation — avoids crash from async
       // NativeCallable.listener trampoline during synchronous coreNew.
       initRuntimeLogging(ffi: ffi);
@@ -938,6 +978,49 @@ class CoreRuntimeBridge {
     return _callJson(() => _ffi.syncNow(_handle));
   }
 
+  /// Create a new sync-space on the cloud and become its first
+  /// device. Returns `{sync_space_id, recovery_key}` — the recovery
+  /// key is the SRK fragment the user must store; without it a lost
+  /// device cannot rejoin. Returns null when the engine isn't wired.
+  Map<String, dynamic>? syncCreateSpace({String? deviceName}) {
+    final name = deviceName ?? '';
+    return _withCString(name, (p) {
+      return _callJson(() => _ffi.syncCreateSpace(_handle, p.cast()));
+    });
+  }
+
+  /// Generate a short-lived pairing token on the current sync-space.
+  /// Returns `{token, expires_in}` — show the token to the user so a
+  /// second device can call [syncJoinSpace] with it.
+  Map<String, dynamic>? syncGeneratePairing() {
+    return _callJson(() => _ffi.syncGeneratePairing(_handle));
+  }
+
+  /// Join an existing sync-space using a pairing token from
+  /// [syncGeneratePairing]. Returns `{sync_space_id, status}` on
+  /// success. The new device becomes the second member of the space
+  /// and the next [syncNow] will pull every artifact the originator
+  /// has pushed.
+  Map<String, dynamic>? syncJoinSpace({
+    required String pairingToken,
+    String? deviceName,
+  }) {
+    final name = deviceName ?? '';
+    return _withCString(pairingToken, (tokenPtr) {
+      return _withCString(name, (namePtr) {
+        return _callJson(
+          () => _ffi.syncJoinSpace(_handle, tokenPtr.cast(), namePtr.cast()),
+        );
+      });
+    });
+  }
+
+  /// Snapshot of the sync-engine state: `{enabled, sync_space_id,
+  /// device_count}`. Use for the "paired with N devices" UI line.
+  Map<String, dynamic>? syncStatus() {
+    return _callJson(() => _ffi.syncStatus(_handle));
+  }
+
   // ── Vendor Events ────────────────────────────────────────────────────
 
   /// Ingest a canonical vendor event (JSON map from CanonicalWearableEvent.toMap()).
@@ -1195,82 +1278,16 @@ class CoreRuntimeBridge {
     });
   }
 
-  // ── Baseline cloud bridge ──────────────────────────────────────────
-
-  /// True when the linked runtime binary exports the baseline cloud
-  /// FFI symbols. Older runtimes return false and the upload/restore
-  /// helpers below short-circuit.
-  bool get isBaselineCloudAvailable =>
-      _ffi.baselineUpload != null &&
-      _ffi.baselineGetLatest != null &&
-      _ffi.baselineListLatest != null;
-
-  /// `POST /v1/baseline/snapshot` — upload a baseline envelope to the
-  /// cloud. [envelopeJson] is the serialized envelope. Returns the
-  /// decoded cloud response `{success, status_code, body, error_message}`
-  /// or `{"error": "..."}` on internal failure. Null when the runtime
-  /// binary doesn't ship the symbol.
-  Future<Map<String, dynamic>?> baselineUpload(String envelopeJson) async {
-    if (_disposed) return null;
-    final handleAddr = _handle.address;
-    return Isolate.run(() {
-      final ffi = SynheartCoreFFI.load();
-      if (ffi == null) return null;
-      final upload = ffi.baselineUpload;
-      if (upload == null) return null;
-      final handle = Pointer<Void>.fromAddress(handleAddr);
-      final envPtr = envelopeJson.toNativeUtf8();
-      try {
-        final resPtr = upload(handle, envPtr.cast());
-        if (resPtr == nullptr) return null;
-        final str = resPtr.toDartString();
-        ffi.coreFreeString(resPtr);
-        return jsonDecode(str) as Map<String, dynamic>;
-      } catch (_) {
-        return null;
-      } finally {
-        malloc.free(envPtr);
-      }
-    });
-  }
-
-  /// `GET /v1/baseline/snapshot/latest?subject_id&kind` — single-kind
-  /// restore. Decoded cloud response or null when the runtime binary
-  /// doesn't ship the symbol.
-  Future<Map<String, dynamic>?> baselineGetLatest(
-    String subjectId,
-    String kind,
-  ) async {
-    if (_disposed) return null;
-    final handleAddr = _handle.address;
-    return Isolate.run(() {
-      final ffi = SynheartCoreFFI.load();
-      if (ffi == null) return null;
-      final get = ffi.baselineGetLatest;
-      if (get == null) return null;
-      final handle = Pointer<Void>.fromAddress(handleAddr);
-      final subjPtr = subjectId.toNativeUtf8();
-      final kindPtr = kind.toNativeUtf8();
-      try {
-        final resPtr = get(handle, subjPtr.cast(), kindPtr.cast());
-        if (resPtr == nullptr) return null;
-        final str = resPtr.toDartString();
-        ffi.coreFreeString(resPtr);
-        return jsonDecode(str) as Map<String, dynamic>;
-      } catch (_) {
-        return null;
-      } finally {
-        malloc.free(subjPtr);
-        malloc.free(kindPtr);
-      }
-    });
-  }
+  // ── Baseline local bridge ──────────────────────────────────────────
+  //
+  // Cross-device baseline transport rides the existing sync engine
+  // (`/v1/sync/`); there's no separate baseline cloud bridge here.
 
   /// Read the latest locally-persisted baseline envelope per kind
   /// (synchronous on-device SQLite read + decryption — no network).
-  /// Returns the same `{snapshots: [...]}` shape as the cloud restore
-  /// path, so the Dart-side facade can use the same parser. Null
-  /// when the runtime binary doesn't ship the symbol.
+  /// Returns `{snapshots: [...]}` so the Dart-side facade can parse
+  /// envelopes uniformly. Null when the runtime binary doesn't ship
+  /// the symbol.
   Future<Map<String, dynamic>?> baselineHydrateLocal() async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
@@ -1292,20 +1309,60 @@ class CoreRuntimeBridge {
     });
   }
 
-  /// `GET /v1/baseline/snapshot/latest?subject_id` — sweep returning
-  /// one envelope per kind for the subject.
-  Future<Map<String, dynamic>?> baselineListLatest(String subjectId) async {
+  /// Encrypt every cached baseline envelope into a passphrase-keyed
+  /// offline blob (`.srm.synheart`). Returns the raw bytes ready for
+  /// the OS share sheet, or null when the runtime binary doesn't
+  /// ship the FFI / no envelopes are cached / the passphrase is
+  /// empty.
+  Future<Uint8List?> baselineExportOffline({required String passphrase}) async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
     return Isolate.run(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
-      final list = ffi.baselineListLatest;
-      if (list == null) return null;
+      final fn = ffi.baselineExportOffline;
+      if (fn == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
-      final subjPtr = subjectId.toNativeUtf8();
+      final passPtr = passphrase.toNativeUtf8();
       try {
-        final resPtr = list(handle, subjPtr.cast());
+        final resPtr = fn(handle, passPtr.cast());
+        if (resPtr == nullptr) return null;
+        final str = resPtr.toDartString();
+        ffi.coreFreeString(resPtr);
+        final decoded = jsonDecode(str) as Map<String, dynamic>;
+        if (decoded['error'] is String) return null;
+        final b64 = decoded['blob_b64'] as String?;
+        if (b64 == null) return null;
+        return base64Decode(b64);
+      } catch (_) {
+        return null;
+      } finally {
+        malloc.free(passPtr);
+      }
+    });
+  }
+
+  /// Decrypt + import a `.srm.synheart` blob into local storage.
+  /// Returns `{imported, skipped, errors, kinds, exporter_device_id,
+  /// created_at_ms}`. Null when the runtime binary doesn't ship the
+  /// FFI; an `{"error": ...}` map for wrong passphrase / tampered blob.
+  Future<Map<String, dynamic>?> baselineImportOffline({
+    required String passphrase,
+    required Uint8List blob,
+  }) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    final blobB64 = base64Encode(blob);
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final fn = ffi.baselineImportOffline;
+      if (fn == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final passPtr = passphrase.toNativeUtf8();
+      final blobPtr = blobB64.toNativeUtf8();
+      try {
+        final resPtr = fn(handle, passPtr.cast(), blobPtr.cast());
         if (resPtr == nullptr) return null;
         final str = resPtr.toDartString();
         ffi.coreFreeString(resPtr);
@@ -1313,7 +1370,8 @@ class CoreRuntimeBridge {
       } catch (_) {
         return null;
       } finally {
-        malloc.free(subjPtr);
+        malloc.free(passPtr);
+        malloc.free(blobPtr);
       }
     });
   }
