@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-19
+
+### Changed
+- Scrubbed internal references from the public package surface — dartdoc
+  comments, section header dividers, and barrel-file comments no longer
+  cite internal identifiers or internal documentation paths. Comments
+  and doc strings only; no code or API changes.
+
 ## [0.5.0] - 2026-05-19
 
 ### Added
