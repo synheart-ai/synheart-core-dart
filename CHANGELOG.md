@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-19
+
+### Added
+- **Cross-device sync surface.** `syncCreateSpace`, `syncJoinSpace`,
+  `syncGeneratePairing`, `syncStatus` drive the SyncEngine landed in
+  core-runtime v0.10.0.
+- **Offline export / import.** `baselineExportOffline(passphrase)` and
+  `baselineImportOffline(passphrase, bytes)` — encrypted `.srm.synheart`
+  bundle with 6-word BIP39 passphrase, never sent to the server.
+- **`BaselineLocalHydrator` facade** — `wireLocalHydrator(...)` replaces
+  the deleted `wireCloud(...)` path.
+
+### Fixed
+- **iOS framework load** — switched to `DynamicLibrary.process()` so
+  symbols resolve from the auto-loaded embedded framework. Previous
+  `dlopen` of the literal relative path silently failed; symptom was
+  "Native runtime not loaded" with no actionable error.
+- **`CoreRuntimeBridge.create` surfaces Rust's last-error message** via
+  the new `synheart_core_last_error()` FFI symbol when `coreNew` returns
+  nullptr. Replaces silent failure.
+
+### Changed (breaking)
+- **`wireCloud(...)` removed.** Migrate to `wireLocalHydrator(...)`. The
+  parallel baseline-cloud uploader is retired; baselines now ride the
+  SyncEngine.
+- **iOS podspec** moves from static `.a` + `force_load` to a vendored
+  dynamic framework + `prepare_command` symlink. Consumer apps install
+  the xcframework via the synheart CLI.
+
+### Other
+- Logging hygiene: consent-changed multi-line block collapsed; native
+  callback bootstrap silent on success; baselines `scoreInput` log no
+  longer dumps full engine JSON.
+
+### Requires
+- `synheart-core-runtime` v0.10.0 (FFI surface + sync handshake).
+
 ## [0.4.0] - 2026-05-16
 
 ### Added
