@@ -76,8 +76,7 @@ void main() {
       expect(s.latestSrmMetrics(), isNull);
     });
 
-    test('cache populates latestLongitudinalWear with the typed payload',
-        () {
+    test('cache populates latestLongitudinalWear with the typed payload', () {
       final s = BaselineSnapshots();
       s.cache(buildEnvelope(BaselineKind.longitudinalWear));
       final wear = s.latestLongitudinalWear();
@@ -102,8 +101,7 @@ void main() {
       expect(srm!.metrics['hrv_rmssd_ms']?.muTilde, 48.3);
     });
 
-    test('cache is per-kind — writing one kind does not surface another',
-        () {
+    test('cache is per-kind — writing one kind does not surface another', () {
       final s = BaselineSnapshots();
       s.cache(buildEnvelope(BaselineKind.longitudinalWear));
       expect(s.latestHsiAxes(), isNull);
@@ -158,36 +156,44 @@ void main() {
       expect(restored, isEmpty);
     });
 
-    test('hydrateFromLocal populates the cache from local snapshots',
-        () async {
+    test('hydrateFromLocal populates the cache from local snapshots', () async {
       final s = BaselineSnapshots();
-      s.wireLocalHydrator(() async => {
-            'snapshots': [
-              buildEnvelope(BaselineKind.longitudinalWear, id: 'bs_wear')
-                  .toJson(),
-              buildEnvelope(BaselineKind.sessionHsiAxes, id: 'bs_hsi')
-                  .toJson(),
-            ],
-          });
+      s.wireLocalHydrator(
+        () async => {
+          'snapshots': [
+            buildEnvelope(
+              BaselineKind.longitudinalWear,
+              id: 'bs_wear',
+            ).toJson(),
+            buildEnvelope(BaselineKind.sessionHsiAxes, id: 'bs_hsi').toJson(),
+          ],
+        },
+      );
       final restored = await s.hydrateFromLocal();
       expect(restored.length, 2);
       expect(s.latestLongitudinalWear(), isNotNull);
       expect(s.latestHsiAxes(), isNotNull);
     });
 
-    test('hydrateFromLocal skips envelopes with unknown kinds (forward-compat)',
-        () async {
-      final s = BaselineSnapshots();
-      final wear =
-          buildEnvelope(BaselineKind.longitudinalWear, id: 'bs_wear').toJson();
-      final future = {...wear, 'kind': 'future.behavior'};
-      s.wireLocalHydrator(() async => {
+    test(
+      'hydrateFromLocal skips envelopes with unknown kinds (forward-compat)',
+      () async {
+        final s = BaselineSnapshots();
+        final wear = buildEnvelope(
+          BaselineKind.longitudinalWear,
+          id: 'bs_wear',
+        ).toJson();
+        final future = {...wear, 'kind': 'future.behavior'};
+        s.wireLocalHydrator(
+          () async => {
             'snapshots': [wear, future],
-          });
-      final restored = await s.hydrateFromLocal();
-      expect(restored.length, 1, reason: 'unknown kind silently skipped');
-      expect(s.latestLongitudinalWear(), isNotNull);
-    });
+          },
+        );
+        final restored = await s.hydrateFromLocal();
+        expect(restored.length, 1, reason: 'unknown kind silently skipped');
+        expect(s.latestLongitudinalWear(), isNotNull);
+      },
+    );
 
     test('hydrateFromLocal returns empty on error envelope', () async {
       final s = BaselineSnapshots();
@@ -199,11 +205,11 @@ void main() {
 
     test('wireLocalHydrator(null) clears the hook', () async {
       final s = BaselineSnapshots();
-      s.wireLocalHydrator(() async => {
-            'snapshots': [
-              buildEnvelope(BaselineKind.longitudinalWear).toJson(),
-            ],
-          });
+      s.wireLocalHydrator(
+        () async => {
+          'snapshots': [buildEnvelope(BaselineKind.longitudinalWear).toJson()],
+        },
+      );
       s.wireLocalHydrator(null);
       final restored = await s.hydrateFromLocal();
       expect(restored, isEmpty);

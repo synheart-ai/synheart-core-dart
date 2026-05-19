@@ -65,10 +65,7 @@ void main() {
 
     test('wrong-kind extractor throws BaselineKindMismatch', () {
       final env = buildWearEnvelope();
-      expect(
-        () => env.payloadHsiAxes(),
-        throwsA(isA<BaselineKindMismatch>()),
-      );
+      expect(() => env.payloadHsiAxes(), throwsA(isA<BaselineKindMismatch>()));
       expect(
         () => env.payloadSrmMetrics(),
         throwsA(isA<BaselineKindMismatch>()),

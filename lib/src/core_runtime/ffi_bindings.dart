@@ -908,17 +908,16 @@ class SynheartCoreFFI {
   ///
   /// Cross-device baseline transport rides the existing sync engine;
   /// there's no separate cloud-baseline FFI surface here.
-  late final Pointer<Utf8> Function(Pointer<Void>)? baselineHydrateLocal =
-      () {
-        try {
-          return _lib.lookupFunction<
-            _BaselineHydrateLocalC,
-            _BaselineHydrateLocalDart
-          >('synheart_core_baseline_hydrate_local');
-        } catch (_) {
-          return null;
-        }
-      }();
+  late final Pointer<Utf8> Function(Pointer<Void>)? baselineHydrateLocal = () {
+    try {
+      return _lib
+          .lookupFunction<_BaselineHydrateLocalC, _BaselineHydrateLocalDart>(
+            'synheart_core_baseline_hydrate_local',
+          );
+    } catch (_) {
+      return null;
+    }
+  }();
 
   /// Encrypt every cached baseline envelope into an offline-export
   /// blob keyed by passphrase. Optional symbol — null on older
@@ -926,10 +925,10 @@ class SynheartCoreFFI {
   late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)?
   baselineExportOffline = () {
     try {
-      return _lib.lookupFunction<
-        _BaselineExportOfflineC,
-        _BaselineExportOfflineDart
-      >('synheart_core_baseline_export_offline');
+      return _lib
+          .lookupFunction<_BaselineExportOfflineC, _BaselineExportOfflineDart>(
+            'synheart_core_baseline_export_offline',
+          );
     } catch (_) {
       return null;
     }
@@ -944,10 +943,10 @@ class SynheartCoreFFI {
   )?
   baselineImportOffline = () {
     try {
-      return _lib.lookupFunction<
-        _BaselineImportOfflineC,
-        _BaselineImportOfflineDart
-      >('synheart_core_baseline_import_offline');
+      return _lib
+          .lookupFunction<_BaselineImportOfflineC, _BaselineImportOfflineDart>(
+            'synheart_core_baseline_import_offline',
+          );
     } catch (_) {
       return null;
     }
@@ -1006,10 +1005,9 @@ class SynheartCoreFFI {
       .lookupFunction<_SyncGeneratePairingC, _SyncGeneratePairingDart>(
         'synheart_core_sync_generate_pairing',
       );
-  late final syncStatus = _lib
-      .lookupFunction<_SyncStatusC, _SyncStatusDart>(
-        'synheart_core_sync_status',
-      );
+  late final syncStatus = _lib.lookupFunction<_SyncStatusC, _SyncStatusDart>(
+    'synheart_core_sync_status',
+  );
 
   late final baselinesJson = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
     'synheart_core_baselines_json',

@@ -102,10 +102,7 @@ void main() {
           'sleep_regularity_score': 0.71,
           'recent_sleep_score_median': 74,
         },
-        'confidence': {
-          'sleep_need_hours': 0.86,
-          'hrv_rmssd_ms': 0.79,
-        },
+        'confidence': {'sleep_need_hours': 0.86, 'hrv_rmssd_ms': 0.79},
       };
       final p = LongitudinalWearBaseline.fromJson(wire);
       expect(p.schemaVersion, 1);

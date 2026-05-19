@@ -450,7 +450,7 @@ class Synheart {
       shared._currentSessionHandle = null;
       shared._isRunning = false;
       Baselines.reset();
-    _baselineSnapshots.reset();
+      _baselineSnapshots.reset();
       return;
     }
     // Stop if running
@@ -662,9 +662,9 @@ class Synheart {
     required String pairingToken,
     String? deviceName,
   }) => _coreRuntime?.syncJoinSpace(
-        pairingToken: pairingToken,
-        deviceName: deviceName,
-      );
+    pairingToken: pairingToken,
+    deviceName: deviceName,
+  );
 
   /// Snapshot of the sync-engine state.
   static Map<String, dynamic>? syncStatusSnapshot() =>
