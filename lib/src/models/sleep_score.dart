@@ -1,4 +1,4 @@
-// Typed Dart models for the RFC-SLEEP-SCORE-PIPELINE-0001 batch scorer.
+// Typed Dart models for the batch sleep scorer.
 //
 // Mirrors the JSON shapes produced by the Synheart Runtime's
 // `SleepScore` computation. Field names use snake_case JSON keys

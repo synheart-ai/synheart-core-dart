@@ -1,5 +1,5 @@
 // Self-reported sleep questionnaire — Phase-2 input lane for the
-// RFC-SLEEP-SCORE-PIPELINE-0001 scorer. Converts a small set of
+// batch sleep scorer. Converts a small set of
 // subjective answers into the same `AggregatedNight` shape vendor
 // payloads produce, so the engine can score without special-casing.
 //

@@ -445,7 +445,7 @@ class CoreRuntimeBridge {
 
   void pushHr(int tsMs, double bpm) => _ffi.pushHr(_handle, tsMs, bpm);
 
-  // ── Breathing compliance (RFC-Breathing-001) ────────────────────────
+  // ── Breathing compliance ────────────────────────────────────────────
   // Tier-1 RR pushed via [pushRr] is auto-forwarded to the breathing
   // detector. These setters configure target/window/profile; [breathing
   // EvaluateJson] reads back the current verdict as JSON.
@@ -576,7 +576,7 @@ class CoreRuntimeBridge {
     });
   }
 
-  // ── Batch nightly sleep score (RFC-SLEEP-SCORE-PIPELINE-0001) ──────
+  // ── Batch nightly sleep score ──────────────────────────────────────
   //
   // All methods here marshal UTF-8 and free the returned native strings.
   // See the Synheart Runtime sleep-score integration spec for
@@ -602,7 +602,7 @@ class CoreRuntimeBridge {
     });
   }
 
-  /// Compute a daily Recovery Score (stateless). RFC-RECOVERY-SCORE-0001.
+  /// Compute a daily Recovery Score (stateless).
   ///
   /// [inputJson] must match `synheart_recovery_score::RecoveryScoreInput`.
   /// Returns the serialized `RecoveryScoreResult` JSON, the literal
@@ -629,7 +629,7 @@ class CoreRuntimeBridge {
     });
   }
 
-  /// Compute a daily Readiness Score (RFC-READINESS-SCORE-0001).
+  /// Compute a daily Readiness Score.
   ///
   /// [inputJson] must match `synheart_readiness_score::ReadinessScoreInput`.
   /// Returns the serialized `ReadinessScoreResult` JSON, or `null` on
@@ -665,8 +665,8 @@ class CoreRuntimeBridge {
         -1;
   }
 
-  /// Attach today's daily Recovery Score (`0.=100`) per
-  /// RFC-RECOVERY-SCORE-0001. Sticky across windows until cleared or
+  /// Attach today's daily Recovery Score (`0.=100`).
+  /// Sticky across windows until cleared or
   /// replaced. Returns `0` on success.
   int attachRecoveryScoreToday(int score) {
     final clamped = score < 0 ? 0 : (score > 255 ? 255 : score);
@@ -958,7 +958,7 @@ class CoreRuntimeBridge {
   void setSyncEnabled(bool enabled) =>
       _ffi.setSyncEnabled(_handle, enabled ? 1 : 0);
 
-  // ── Ambient capture (RFC §13) ───────────────────────────────────────
+  // ── Ambient capture ─────────────────────────────────────────────────
 
   /// Toggle the runtime's out-of-session HSI emission gate. When off
   /// (the default), the runtime forwards HSI windows only while a

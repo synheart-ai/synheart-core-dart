@@ -32,7 +32,7 @@ export 'src/config/synheart_feature.dart';
 export 'src/config/synheart_mode.dart';
 export 'src/config/synheart_errors.dart';
 
-// Artifacts (RFC-CORE-0006 Tier A)
+// Artifacts (Tier A)
 export 'src/artifacts/artifact_header.dart';
 export 'src/artifacts/hsi_window.dart';
 // Note: the legacy 4-axis BaselineSnapshotArtifact (previously at
@@ -42,9 +42,8 @@ export 'src/artifacts/session_summary.dart';
 export 'src/artifacts/tombstone.dart';
 
 // Baseline-snapshot typed envelope. Typed builders + per-kind
-// extractors, no `Map<String, dynamic>` round-tripping.
-// `BaselineSnapshots` is the host-facing read facade
-// (`Synheart.baselineSnapshots`).
+// extractors, no `Map<String, dynamic>` round-tripping. The
+// host-facing read facade lives on `Synheart.baselineSnapshots`.
 export 'src/baseline/baseline_kind.dart';
 export 'src/baseline/baseline_payloads.dart';
 export 'src/baseline/baseline_envelope.dart';
@@ -73,16 +72,16 @@ export 'package:synheart_wear/synheart_wear.dart'
 // Wearable Events
 export 'src/models/canonical_wearable_event.dart';
 
-// Sleep Score (RFC-SLEEP-SCORE-PIPELINE-0001) — typed input/result and
+// Sleep Score — typed input/result and
 // wearable reference view for the batch sleep scorer.
 export 'src/models/sleep_score.dart';
 export 'src/models/sleep_questionnaire.dart';
 
-// Recovery Score (RFC-RECOVERY-SCORE-0001) — typed input/result for
+// Recovery Score — typed input/result for
 // the daily three-stage recovery scorer.
 export 'src/models/recovery_score.dart';
 
-// Readiness Score (RFC-READINESS-SCORE-0001) — typed input/result for
+// Readiness Score — typed input/result for
 // the daily readiness scorer (Recovery + load + fatigue + history).
 export 'src/models/readiness_score.dart';
 

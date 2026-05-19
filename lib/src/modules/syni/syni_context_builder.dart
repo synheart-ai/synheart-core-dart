@@ -42,7 +42,7 @@ class SyniContextBuilder {
   _hsiWindows;
 
   /// HSI 1.3 channel names we project, with their `(axis, channel)` location
-  /// in the payload — see `hsi/schema/hsi-1.3.schema.json` (RFC-HSI-0010).
+  /// in the payload — see `hsi/schema/hsi-1.3.schema.json`.
   /// Names match the runtime contract's `axis_means` keys.
   static const _channels = <String, ({String axis, String name})>{
     'focus': (axis: 'cognitive', name: 'focus'),

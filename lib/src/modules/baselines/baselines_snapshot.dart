@@ -21,14 +21,14 @@ class BaselinesSnapshot {
   /// history — the score itself is not persisted, the Path-B ring is).
   final SleepScoreResult? latestSleepScore;
 
-  /// The most recent daily Recovery Score per RFC-RECOVERY-SCORE-0001,
+  /// The most recent daily Recovery Score,
   /// computed alongside the sleep ingest when overnight HR or HRV is
   /// available in the same payload. Null when the user has only sleep
   /// data (sleep-only recovery is forbidden by design) or the runtime
   /// hasn't computed one yet this session.
   final RecoveryScoreResult? latestRecoveryScore;
 
-  /// The most recent daily Readiness Score per RFC-READINESS-SCORE-0001,
+  /// The most recent daily Readiness Score,
   /// computed automatically each time a Recovery Score lands. Layers
   /// fatigue (sleep debt + recovery slope) and history (consecutive
   /// overload) on top of the Recovery anchor. Null until at least one
