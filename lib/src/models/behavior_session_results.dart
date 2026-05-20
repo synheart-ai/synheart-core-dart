@@ -61,16 +61,19 @@ class BehaviorSessionResults {
 
     final keystrokeRate =
         summary.typingSessionSummary?.averageTypingSpeed ?? 0.0;
-    final metrics = summary.behavioralMetrics;
+    // Declared nullable on purpose: behavior SDK >=0.3.x may emit a
+    // summary with no behavioralMetrics. Pinning the type keeps the
+    // null-aware access below valid regardless of the resolved SDK.
+    final sb.BehavioralMetrics? metrics = summary.behavioralMetrics;
 
     return BehaviorSessionResults(
       sessionId: summary.sessionId,
       durationMs: summary.durationMs,
       tapRate: tapRate,
       keystrokeRate: keystrokeRate,
-      focusHint: metrics.focusHint,
-      interactionIntensity: metrics.interactionIntensity,
-      burstiness: metrics.burstiness,
+      focusHint: metrics?.focusHint ?? 0.0,
+      interactionIntensity: metrics?.interactionIntensity ?? 0.0,
+      burstiness: metrics?.burstiness ?? 0.0,
       totalEvents: summary.activitySummary.totalEvents,
       summary: summary,
     );
