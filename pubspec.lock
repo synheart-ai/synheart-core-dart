@@ -633,10 +633,10 @@ packages:
     dependency: "direct main"
     description:
       name: synheart_behavior
-      sha256: c92cf3c83ede016940c63f12263081edf79433097c1b221bb4c45fea6fd97b07
+      sha256: "63fb09747352471f1cbea755cf464eb4277d6321ed011b5d588746d42db33889"
       url: "https://pub.dev"
     source: hosted
-    version: "0.3.0"
+    version: "0.4.0"
   synheart_session:
     dependency: "direct main"
     description:

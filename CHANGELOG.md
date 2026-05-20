@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-20
+
+### Changed
+- Bumped the `synheart_behavior` dependency to `^0.4.0`. The behavior
+  SDK is now an event producer — a session summary may arrive with no
+  `behavioralMetrics`. `BehaviorSessionResults.fromSummary` already
+  treats those metrics as optional and defaults each to 0 when absent.
+
 ## [0.5.1] - 2026-05-19
 
 ### Changed
@@ -218,7 +226,8 @@ post-tag breaking change to `processVendorEvent`.
   `synheart_behavior ^0.3.0`, `synheart_auth ^0.1.1`) instead of git
   refs.
 
-[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.5.2
 [0.2.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.2.0
 [0.1.1]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.1.1
 [0.1.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.1.0
