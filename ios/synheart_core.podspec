@@ -85,6 +85,25 @@ Pod::Spec.new do |s|
     # in TestFlight builds. The framework's own exports are public;
     # this guards against host-app strip phases.
     'STRIP_STYLE' => 'non-global',
+
+    # Force-load ONNX Runtime into the consumer app binary.
+    #
+    # SynheartCoreRuntime is a cdylib built with `-undefined
+    # dynamic_lookup` for ONNX symbols (stable/lab tiers), so
+    # `OrtGetApiBase` must resolve against a symbol already present in
+    # the process. onnxruntime-c ships ONNX as a *static* archive;
+    # nothing in the host app references it directly, so without this
+    # the linker dead-strips the whole archive — `OrtGetApiBase` binds
+    # to null and the runtime crashes on first ONNX use. Force-loading
+    # lands (and exports) the symbols in the host executable.
+    #
+    # The path points at the pod's xcframework source slice — it exists
+    # on disk after `pod install`, before linking, so it is a valid
+    # link input (the build-dir copy is a script-phase output the
+    # build system rejects). The slice is SDK-specific.
+    'SYNHEART_ONNX_SLICE[sdk=iphoneos*]' => 'ios-arm64',
+    'SYNHEART_ONNX_SLICE[sdk=iphonesimulator*]' => 'ios-arm64_x86_64-simulator',
+    'OTHER_LDFLAGS' => '$(inherited) -force_load "$(PODS_ROOT)/onnxruntime-c/onnxruntime.xcframework/$(SYNHEART_ONNX_SLICE)/onnxruntime.framework/onnxruntime"',
   }
 
   s.dependency 'Flutter'

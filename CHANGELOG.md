@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-05-21
+
+### Fixed
+- **iOS: the native runtime can now start on the ONNX-backed tiers.**
+  The podspec force-loads ONNX Runtime into the host app binary. The
+  runtime framework resolves `OrtGetApiBase` at load time, and
+  `onnxruntime-c` ships ONNX as a static archive — nothing in the host
+  app references it directly, so the linker dead-stripped the whole
+  archive and the runtime crashed on first use. Consumers no longer
+  need any per-app linker configuration; depending on `synheart_core`
+  is enough. iOS build configuration only — no Dart API change.
+
 ## [0.5.2] - 2026-05-20
 
 ### Changed
@@ -226,7 +238,8 @@ post-tag breaking change to `processVendorEvent`.
   `synheart_behavior ^0.3.0`, `synheart_auth ^0.1.1`) instead of git
   refs.
 
-[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.5.3
 [0.5.2]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.5.2
 [0.2.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.2.0
 [0.1.1]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.1.1
