@@ -1295,13 +1295,14 @@ class Synheart {
       final syniCloudOrigin =
           (resolvedConfig.cloudConfig?.baseUrl ?? 'https://api.synheart.ai')
               .replaceAll(RegExp(r'/+$'), '');
+      // Best-effort default for hosts that don't wire their own
+      // SyniCloudConfig via SyniCloudWiring. The host app (e.g.
+      // synheart-life) builds and injects its own config with real
+      // auth; this SDK-side default returns no headers so unwired
+      // hosts fail cleanly to local-only.
       configureSyniCloud(SyniCloudConfig(
         baseUrl: '$syniCloudOrigin/syni',
-        authHeaders: (method, url) async {
-          final provider = _deviceAuthProvider;
-          if (provider == null) return <String, String>{};
-          return provider.signUrl(method: method, url: url);
-        },
+        authHeaders: (_, __) async => const <String, String>{},
         tenantId: '',
         userId: resolvedConfig.subjectId.isNotEmpty
             ? resolvedConfig.subjectId
