@@ -2399,8 +2399,12 @@ class Baselines {
   ///
   /// Silently no-ops on a null/empty/malformed payload — an honest
   /// brand-new user simply has nothing to restore.
-  static void hydrateRuntimeSnapshot(String? json) {
-    if (json == null || json.isEmpty) return;
+  /// Returns `true` if a snapshot was genuinely restored into the runtime,
+  /// `false` if there was nothing to restore or the load failed (e.g. the
+  /// runtime was not ready). Callers running a one-time migration should
+  /// only drop their source blob when this returns `true`.
+  static bool hydrateRuntimeSnapshot(String? json) {
+    if (json == null || json.isEmpty) return false;
     try {
       // Both engines are lazily created — without a live pipeline the
       // load FFI fails with "runtime not available". Boot-time hydrate
@@ -2453,7 +2457,7 @@ class Baselines {
         }
       }
 
-      if (!restored) return;
+      if (!restored) return false;
 
       // Force the next snapshot read to re-seed the local ring mirror
       // from the now-restored runtime SRM instead of serving an empty
@@ -2463,12 +2467,14 @@ class Baselines {
       _localRingDays.clear();
       _latestReference = Synheart.wearableReference;
       if (!_ctrl.isClosed) _ctrl.add(snapshot);
+      return true;
     } catch (e, st) {
       SynheartLogger.stream(
         'Baselines: hydrateRuntimeSnapshot failed: $e',
         error: e,
         stackTrace: st,
       );
+      return false;
     }
   }
 
