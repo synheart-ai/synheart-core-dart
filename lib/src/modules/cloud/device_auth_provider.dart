@@ -26,13 +26,23 @@ class DeviceAuthProvider implements AuthProvider {
     final normalizedPath = path.startsWith('/') ? path : '/$path';
     final absoluteUrl =
         '${_baseUrl.replaceAll(RegExp(r'/+$'), '')}$normalizedPath';
-    final proof = _coreRuntime.buildProofHeader(
-      method.toUpperCase(),
-      absoluteUrl,
-    );
+    return signUrl(method: method, url: absoluteUrl);
+  }
+
+  /// Builds an `X-Synheart-Proof` for an absolute [url].
+  ///
+  /// Unlike [signRequest] it does no base-URL prefixing — the caller passes
+  /// the exact request URL the proof's `htu` claim must match. Used for
+  /// requests targeting a different host/prefix than this provider's base
+  /// URL (e.g. Syni cloud chat at `<origin>/syni/v1/chat`).
+  Future<Map<String, String>> signUrl({
+    required String method,
+    required String url,
+  }) async {
+    final proof = _coreRuntime.buildProofHeader(method.toUpperCase(), url);
     if (proof == null || proof.isEmpty) {
       SynheartLogger.log(
-        '[DeviceAuth] Failed to build runtime proof header for $method $normalizedPath',
+        '[DeviceAuth] Failed to build runtime proof header for $method $url',
       );
       return <String, String>{};
     }

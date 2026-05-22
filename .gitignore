@@ -32,6 +32,9 @@ migrate_working_dir/
 .pub/
 /build/
 
+# Local dependency overrides (developer-local, never committed).
+pubspec_overrides.yaml
+
 # Symbolication related
 app.*.symbols
 
