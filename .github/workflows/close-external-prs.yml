@@ -35,23 +35,29 @@ jobs:
             // PAT (classic, scope: read:org) stored as ORG_READ_TOKEN.
             const orgReadToken = process.env.ORG_READ_TOKEN;
             if (orgReadToken) {
-              const { getOctokit } = require("@actions/github");
-              const orgClient = getOctokit(orgReadToken);
-              try {
-                await orgClient.rest.orgs.checkMembershipForUser({
-                  org: context.repo.owner,
-                  username: login,
-                });
+              // github-script@v7 bundles its dependencies, so
+              // require("@actions/github") is not resolvable from the user
+              // script — call the membership REST API directly with fetch
+              // (a global in the Actions Node runtime).
+              const resp = await fetch(
+                `https://api.github.com/orgs/${context.repo.owner}/members/${login}`,
+                {
+                  headers: {
+                    authorization: `Bearer ${orgReadToken}`,
+                    accept: "application/vnd.github+json",
+                    "user-agent": "close-external-prs",
+                  },
+                },
+              );
+              if (resp.status === 204) {
                 core.info(`Skipping: @${login} is an org member of ${context.repo.owner} (verified via ORG_READ_TOKEN)`);
                 return;
-              } catch (err) {
-                if (err.status === 404) {
-                  core.info(`@${login} is not a member of ${context.repo.owner}`);
-                } else if (err.status === 302) {
-                  core.warning(`ORG_READ_TOKEN cannot view membership for @${login} (302). Treating as external.`);
-                } else {
-                  core.warning(`Membership check for @${login} errored: ${err.status} ${err.message}. Treating as external.`);
-                }
+              } else if (resp.status === 404) {
+                core.info(`@${login} is not a member of ${context.repo.owner}`);
+              } else if (resp.status === 302) {
+                core.warning(`ORG_READ_TOKEN cannot view membership for @${login} (302). Treating as external.`);
+              } else {
+                core.warning(`Membership check for @${login} errored: HTTP ${resp.status}. Treating as external.`);
               }
             } else {
               core.warning("ORG_READ_TOKEN secret is not set; private org members will be misclassified as external. Add a PAT with read:org scope.");
