@@ -2228,29 +2228,29 @@ class Baselines {
   /// migrate) a stale on-disk payload.
   static const int _runtimeSnapshotEnvelopeVersion = 2;
 
-  /// Export the native runtime's full SRM state as a JSON string for
-  /// the host to persist across an app restart.
+  /// Export the native runtime's full SRM state as a JSON string.
   ///
-  /// The native runtime has TWO independent SRM engines and the host
-  /// must persist BOTH or "Your Baselines" resets on every launch:
+  /// **As of the runtime-owned SRM-persistence change this is a
+  /// compatibility shim.** The native runtime now persists BOTH SRM
+  /// engines (the live per-dimension `srm_engine` and the Path-B
+  /// `longitudinal_srm`) into its own SQLite store automatically and
+  /// restores them on every pipeline (re)creation — the host no longer
+  /// has to round-trip a snapshot for the SRM to survive a restart.
+  ///
+  /// This method is retained so existing callers don't break and so a
+  /// host can still inspect / off-device-back-up the runtime SRM if it
+  /// wants to. It is no longer required for durability.
+  ///
+  /// The two engines this covers:
   ///
   ///  • the **live SRM engine** — the per-dimension autonomic baselines
   ///    (Resting HR, HRV, App-switching, …) with their Empty / Warming
   ///    / Ready maturity. This is what `Synheart.runtimeBaselinesJson`
   ///    reads and what the Baselines screen renders as "Baseline
-  ///    dimensions". Persisted via `synheart_core_export_srm_snapshot`.
+  ///    dimensions".
   ///
   ///  • the **longitudinal SRM** — the Path-B 7-night sleep-score ring,
   ///    the vendor daily-value buffers and the last wearable reference.
-  ///    Persisted via `synheart_core_export_longitudinal_snapshot`.
-  ///
-  /// A previous revision persisted only the longitudinal snapshot, so
-  /// the per-dimension baselines (a SEPARATE engine) were never saved
-  /// and the Baselines screen collapsed to the cold-start "Empty" card
-  /// on every restart even though sleep data round-tripped fine.
-  ///
-  /// The native runtime does NOT auto-persist either engine — its FFI
-  /// contract is "host persists; restores via load on startup".
   ///
   /// Both engines are lazily created, so this first materialises the
   /// pipeline ([Synheart.ensureRuntimePipeline]); otherwise a boot-time
@@ -2297,13 +2297,23 @@ class Baselines {
   /// Restore the native runtime's full SRM state from a payload
   /// produced by [exportRuntimeSnapshotJson].
   ///
+  /// **As of the runtime-owned SRM-persistence change the runtime
+  /// auto-restores its SRM from its own SQLite store**, so this is no
+  /// longer needed for normal startup. It is retained for two reasons:
+  ///
+  ///  1. the host's ONE-TIME migration — a host upgrading from a build
+  ///     that persisted the SRM snapshot in its own storage calls this
+  ///     once to hand the legacy blob to the runtime; the runtime's
+  ///     `load_*_snapshot` path then promotes it into SQLite and owns
+  ///     it from then on; and
+  ///  2. restoring an off-device backup of the runtime SRM.
+  ///
   /// Must be called AFTER [Synheart.initialize] (the runtime bridge has
-  /// to exist) and BEFORE the first read of [snapshot]. Restores BOTH
-  /// the live per-dimension SRM engine and the longitudinal SRM, then
-  /// drops the local ring-hydration latch so the next [snapshot] read
-  /// re-seeds the in-memory ring mirror from the freshly-restored
-  /// runtime state. Also refreshes the cached reference and emits a
-  /// snapshot so any live UI redraws.
+  /// to exist). Restores BOTH the live per-dimension SRM engine and the
+  /// longitudinal SRM, then drops the local ring-hydration latch so the
+  /// next [snapshot] read re-seeds the in-memory ring mirror from the
+  /// freshly-restored runtime state. Also refreshes the cached
+  /// reference and emits a snapshot so any live UI redraws.
   ///
   /// Accepts both the current `{v, srm, longitudinal}` envelope and the
   /// legacy bare longitudinal-snapshot payload (treated as longitudinal
