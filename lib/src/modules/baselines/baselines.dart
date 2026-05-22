@@ -2221,6 +2221,67 @@ class Baselines {
     }
   }
 
+  // ─── Runtime SRM snapshot persistence ──────────────────────────────
+
+  /// Export the native runtime's longitudinal SRM snapshot (Path-B
+  /// 7-night sleep-score ring, per-dimension buffers, last reference)
+  /// as a JSON string for the host to persist.
+  ///
+  /// The native runtime does NOT auto-persist this — its FFI contract
+  /// is "host persists; restores via load on startup". Pair this with
+  /// [hydrateRuntimeSnapshot] on app boot so the sleep ring / SRM
+  /// reference survive a process restart. Returns null when no runtime
+  /// is linked or nothing has been learned yet.
+  static String? exportRuntimeSnapshotJson() {
+    final raw = Synheart.longitudinalSnapshotJson;
+    if (raw == null || raw.isEmpty) return null;
+    return raw;
+  }
+
+  /// Restore the native runtime's longitudinal SRM snapshot from a
+  /// payload produced by [exportRuntimeSnapshotJson].
+  ///
+  /// Must be called AFTER [Synheart.initialize] (the runtime bridge has
+  /// to exist) and BEFORE the first read of [snapshot] — it reloads the
+  /// runtime SRM, then drops the local ring-hydration latch so the next
+  /// [snapshot] read re-seeds the in-memory ring mirror from the
+  /// freshly-restored runtime state. Also refreshes the cached
+  /// reference and emits a snapshot so any live UI redraws.
+  ///
+  /// Without this, every app launch starts the runtime with an empty
+  /// SRM pipeline: `recentSleepScores` is empty, `nightsLoggedCount`
+  /// is 0, and baselines collapse to the cold-start "Empty" state.
+  ///
+  /// Silently no-ops on a null/empty/malformed payload — an honest
+  /// brand-new user simply has nothing to restore.
+  static void hydrateRuntimeSnapshot(String? json) {
+    if (json == null || json.isEmpty) return;
+    try {
+      final rc = Synheart.loadLongitudinalSnapshot(json);
+      if (rc != 0) {
+        SynheartLogger.stream(
+          'Baselines: hydrateRuntimeSnapshot — '
+          'loadLongitudinalSnapshot returned $rc',
+        );
+        return;
+      }
+      // Force the next snapshot read to re-seed the local ring mirror
+      // from the now-restored runtime SRM instead of serving an empty
+      // ring cached from a read that happened before this restore.
+      _ringHydrated = false;
+      _localRing.clear();
+      _localRingDays.clear();
+      _latestReference = Synheart.wearableReference;
+      if (!_ctrl.isClosed) _ctrl.add(snapshot);
+    } catch (e, st) {
+      SynheartLogger.stream(
+        'Baselines: hydrateRuntimeSnapshot failed: $e',
+        error: e,
+        stackTrace: st,
+      );
+    }
+  }
+
   static Map<String, Object?> _recoveryToJson(RecoveryScoreResult r) => {
     'score': r.score,
     'stage': r.stage.wire,

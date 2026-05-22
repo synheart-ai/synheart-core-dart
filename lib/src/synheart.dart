@@ -3623,6 +3623,23 @@ class Synheart {
     return _coreRuntime?.exportLongitudinalSnapshot();
   }
 
+  /// Restore the longitudinal SRM snapshot exported by
+  /// [longitudinalSnapshotJson] back into the native runtime.
+  ///
+  /// The native runtime does NOT auto-persist this snapshot — its FFI
+  /// contract is "host persists; restores via
+  /// `synheart_core_load_longitudinal_snapshot` on startup". Without
+  /// this call after [initialize], a fresh app launch starts with an
+  /// empty SRM pipeline: the Path-B sleep-score ring, dimension
+  /// buffers and last reference are all gone, so baselines blank back
+  /// to the cold-start "Empty" state on every restart.
+  ///
+  /// Returns `0` on success, a non-zero error code from the runtime,
+  /// or `-1` when the native runtime is not linked.
+  static int loadLongitudinalSnapshot(String json) {
+    return _coreRuntime?.loadLongitudinalSnapshot(json) ?? -1;
+  }
+
   // ── Realtime event stream (RAMEN via native stream-runtime) ──────
 
   /// `true` when the RAMEN stream callback should auto-route vendor.*
