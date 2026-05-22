@@ -2223,48 +2223,151 @@ class Baselines {
 
   // ─── Runtime SRM snapshot persistence ──────────────────────────────
 
-  /// Export the native runtime's longitudinal SRM snapshot (Path-B
-  /// 7-night sleep-score ring, per-dimension buffers, last reference)
-  /// as a JSON string for the host to persist.
+  /// Envelope version for [exportRuntimeSnapshotJson]. Bumped when the
+  /// envelope shape changes so [hydrateRuntimeSnapshot] can reject (or
+  /// migrate) a stale on-disk payload.
+  static const int _runtimeSnapshotEnvelopeVersion = 2;
+
+  /// Export the native runtime's full SRM state as a JSON string for
+  /// the host to persist across an app restart.
   ///
-  /// The native runtime does NOT auto-persist this — its FFI contract
-  /// is "host persists; restores via load on startup". Pair this with
-  /// [hydrateRuntimeSnapshot] on app boot so the sleep ring / SRM
-  /// reference survive a process restart. Returns null when no runtime
-  /// is linked or nothing has been learned yet.
+  /// The native runtime has TWO independent SRM engines and the host
+  /// must persist BOTH or "Your Baselines" resets on every launch:
+  ///
+  ///  • the **live SRM engine** — the per-dimension autonomic baselines
+  ///    (Resting HR, HRV, App-switching, …) with their Empty / Warming
+  ///    / Ready maturity. This is what `Synheart.runtimeBaselinesJson`
+  ///    reads and what the Baselines screen renders as "Baseline
+  ///    dimensions". Persisted via `synheart_core_export_srm_snapshot`.
+  ///
+  ///  • the **longitudinal SRM** — the Path-B 7-night sleep-score ring,
+  ///    the vendor daily-value buffers and the last wearable reference.
+  ///    Persisted via `synheart_core_export_longitudinal_snapshot`.
+  ///
+  /// A previous revision persisted only the longitudinal snapshot, so
+  /// the per-dimension baselines (a SEPARATE engine) were never saved
+  /// and the Baselines screen collapsed to the cold-start "Empty" card
+  /// on every restart even though sleep data round-tripped fine.
+  ///
+  /// The native runtime does NOT auto-persist either engine — its FFI
+  /// contract is "host persists; restores via load on startup".
+  ///
+  /// Both engines are lazily created, so this first materialises the
+  /// pipeline ([Synheart.ensureRuntimePipeline]); otherwise a boot-time
+  /// export (before any session) would see no pipeline and return null.
+  ///
+  /// Returns a versioned `{v, srm, longitudinal}` envelope, or `null`
+  /// when no runtime is linked or nothing has been learned yet (an
+  /// honest brand-new user — correct cold start).
   static String? exportRuntimeSnapshotJson() {
-    final raw = Synheart.longitudinalSnapshotJson;
-    if (raw == null || raw.isEmpty) return null;
-    return raw;
+    try {
+      Synheart.ensureRuntimePipeline();
+      final srm = Synheart.exportRuntimeSRMSnapshot();
+      final longitudinal = Synheart.longitudinalSnapshotJson;
+
+      // Treat the engine's canonical "nothing learned" payloads as
+      // empty so a brand-new user writes nothing and stays cold-start.
+      final hasSrm = _hasRuntimeData(srm);
+      final hasLongitudinal = _hasRuntimeData(longitudinal);
+      if (!hasSrm && !hasLongitudinal) return null;
+
+      return jsonEncode({
+        'v': _runtimeSnapshotEnvelopeVersion,
+        if (hasSrm) 'srm': srm,
+        if (hasLongitudinal) 'longitudinal': longitudinal,
+      });
+    } catch (e, st) {
+      SynheartLogger.stream(
+        'Baselines: exportRuntimeSnapshotJson failed: $e',
+        error: e,
+        stackTrace: st,
+      );
+      return null;
+    }
   }
 
-  /// Restore the native runtime's longitudinal SRM snapshot from a
-  /// payload produced by [exportRuntimeSnapshotJson].
+  /// True when a runtime snapshot payload carries real learned state
+  /// (not null, empty, or the engine's canonical empty `{}` object).
+  static bool _hasRuntimeData(String? raw) {
+    if (raw == null) return false;
+    final t = raw.trim();
+    return t.isNotEmpty && t != '{}';
+  }
+
+  /// Restore the native runtime's full SRM state from a payload
+  /// produced by [exportRuntimeSnapshotJson].
   ///
   /// Must be called AFTER [Synheart.initialize] (the runtime bridge has
-  /// to exist) and BEFORE the first read of [snapshot] — it reloads the
-  /// runtime SRM, then drops the local ring-hydration latch so the next
-  /// [snapshot] read re-seeds the in-memory ring mirror from the
-  /// freshly-restored runtime state. Also refreshes the cached
-  /// reference and emits a snapshot so any live UI redraws.
+  /// to exist) and BEFORE the first read of [snapshot]. Restores BOTH
+  /// the live per-dimension SRM engine and the longitudinal SRM, then
+  /// drops the local ring-hydration latch so the next [snapshot] read
+  /// re-seeds the in-memory ring mirror from the freshly-restored
+  /// runtime state. Also refreshes the cached reference and emits a
+  /// snapshot so any live UI redraws.
   ///
-  /// Without this, every app launch starts the runtime with an empty
-  /// SRM pipeline: `recentSleepScores` is empty, `nightsLoggedCount`
-  /// is 0, and baselines collapse to the cold-start "Empty" state.
+  /// Accepts both the current `{v, srm, longitudinal}` envelope and the
+  /// legacy bare longitudinal-snapshot payload (treated as longitudinal
+  /// only — the SRM dimensions were never persisted by that revision,
+  /// so they honestly cold-start).
   ///
   /// Silently no-ops on a null/empty/malformed payload — an honest
   /// brand-new user simply has nothing to restore.
   static void hydrateRuntimeSnapshot(String? json) {
     if (json == null || json.isEmpty) return;
     try {
-      final rc = Synheart.loadLongitudinalSnapshot(json);
-      if (rc != 0) {
-        SynheartLogger.stream(
-          'Baselines: hydrateRuntimeSnapshot — '
-          'loadLongitudinalSnapshot returned $rc',
-        );
-        return;
+      // Both engines are lazily created — without a live pipeline the
+      // load FFI fails with "runtime not available". Boot-time hydrate
+      // runs before any session, so materialise the pipeline first.
+      Synheart.ensureRuntimePipeline();
+
+      String? srmJson;
+      String? longitudinalJson;
+
+      final decoded = _tryDecode(json);
+      if (decoded is Map &&
+          decoded['v'] is int &&
+          (decoded.containsKey('srm') ||
+              decoded.containsKey('longitudinal'))) {
+        // Current envelope.
+        srmJson = decoded['srm'] as String?;
+        longitudinalJson = decoded['longitudinal'] as String?;
+      } else {
+        // Legacy bare longitudinal snapshot (pre-envelope revision).
+        longitudinalJson = json;
       }
+
+      var restored = false;
+
+      // 1. Live per-dimension SRM engine — the Empty/Warming/Ready
+      //    baselines the Baselines screen renders. THIS is the layer
+      //    the old longitudinal-only fix missed.
+      if (_hasRuntimeData(srmJson)) {
+        final ok = Synheart.loadRuntimeSRMSnapshot(srmJson!);
+        if (!ok) {
+          SynheartLogger.stream(
+            'Baselines: hydrateRuntimeSnapshot — '
+            'loadRuntimeSRMSnapshot returned false',
+          );
+        } else {
+          restored = true;
+        }
+      }
+
+      // 2. Longitudinal SRM — Path-B sleep ring + vendor buffers.
+      if (_hasRuntimeData(longitudinalJson)) {
+        final rc = Synheart.loadLongitudinalSnapshot(longitudinalJson!);
+        if (rc != 0) {
+          SynheartLogger.stream(
+            'Baselines: hydrateRuntimeSnapshot — '
+            'loadLongitudinalSnapshot returned $rc',
+          );
+        } else {
+          restored = true;
+        }
+      }
+
+      if (!restored) return;
+
       // Force the next snapshot read to re-seed the local ring mirror
       // from the now-restored runtime SRM instead of serving an empty
       // ring cached from a read that happened before this restore.
@@ -2279,6 +2382,15 @@ class Baselines {
         error: e,
         stackTrace: st,
       );
+    }
+  }
+
+  /// Best-effort JSON decode; returns `null` on malformed input.
+  static Object? _tryDecode(String json) {
+    try {
+      return jsonDecode(json);
+    } catch (_) {
+      return null;
     }
   }
 

@@ -2575,6 +2575,19 @@ class Synheart {
     return _coreRuntime?.loadSrmSnapshot(json) ?? false;
   }
 
+  /// Ensure the native engine pipeline exists, creating a default one if
+  /// none is live yet.
+  ///
+  /// The runtime lazily creates its `Pipeline` — before the first session
+  /// (or sleep-score attach) there is no pipeline, so
+  /// [exportRuntimeSRMSnapshot] returns `null` and [loadRuntimeSRMSnapshot]
+  /// fails with "runtime not available". Persistence round-trips on app
+  /// boot run before any of those triggers, so they must materialise the
+  /// pipeline first. No-op when a pipeline already exists.
+  static void ensureRuntimePipeline() {
+    _coreRuntime?.ensurePipeline();
+  }
+
   /// The native synheart-engine version, or `null` if unavailable.
   static String? get runtimeVersion => CoreRuntimeBridge.version();
 
