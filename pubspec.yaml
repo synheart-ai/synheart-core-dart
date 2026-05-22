@@ -31,7 +31,7 @@ dependencies:
   ffi: ^2.1.0
 
   # Syni client — Flutter SDK for on-device LLM inference (pub.dev).
-  syni: ^0.1.0
+  syni: ^0.2.0
 
   # Core dependencies
   rxdart: ^0.28.0

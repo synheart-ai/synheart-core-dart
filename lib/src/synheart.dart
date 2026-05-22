@@ -1288,6 +1288,29 @@ class Synheart {
 
       // Runtime-only policy: no SDK-side auth API configuration/networking here.
 
+      // Wire Syni's hybrid router to the cloud. authHeaders is lazy — it
+      // resolves _deviceAuthProvider at call time (device auth registers
+      // later, during consent / auto-heal) and builds an X-Synheart-Proof
+      // bound to the exact request URL.
+      final syniCloudOrigin =
+          (resolvedConfig.cloudConfig?.baseUrl ?? 'https://api.synheart.ai')
+              .replaceAll(RegExp(r'/+$'), '');
+      configureSyniCloud(SyniCloudConfig(
+        baseUrl: '$syniCloudOrigin/syni',
+        authHeaders: (method, url) async {
+          final provider = _deviceAuthProvider;
+          if (provider == null) return <String, String>{};
+          return provider.signUrl(method: method, url: url);
+        },
+        tenantId: '',
+        userId: resolvedConfig.subjectId.isNotEmpty
+            ? resolvedConfig.subjectId
+            : (_userId ?? ''),
+        orgId: resolvedConfig.cloudConfig?.orgId ?? '',
+        appId: resolvedConfig.appId,
+        deviceId: resolvedConfig.deviceId,
+      ));
+
       if (autoStart) {
         SynheartLogger.log('[Synheart] Starting all modules..');
         await _moduleManager.startAll();
@@ -2141,7 +2164,7 @@ class Synheart {
   /// Inject (or clear) the cloud config used by Syni's hybrid router.
   ///
   /// With a config set, `Synheart.syni!.hasCloud` is true and chat calls can
-  /// route to `syni-service` (per `SyniExecutionMode`). Without it, Syni
+  /// route to the Syni cloud (per `SyniExecutionMode`). Without it, Syni
   /// runs local-only.
   ///
   /// Resets the cached `SyniModule` so the next `Synheart.syni` access picks

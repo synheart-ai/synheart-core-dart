@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `Synheart.configure()` now wires Syni's hybrid router to the cloud — it
+  builds the `SyniCloudConfig` and authenticates Syni cloud-chat requests
+  with an `X-Synheart-Proof` device-attestation header (produced by
+  core-runtime). `Synheart.syni` cloud chat needs no extra host-app setup.
+- `DeviceAuthProvider.signUrl` — builds an `X-Synheart-Proof` for an
+  absolute URL (no base-URL prefixing); `signRequest` now delegates to it.
+
+### Changed
+- Bumped the `syni` dependency to `^0.2.0`, whose `SyniCloudConfig`
+  replaced the static `authToken` with the request-aware `authHeaders`.
+
 ## [0.5.3] - 2026-05-21
 
 ### Fixed
