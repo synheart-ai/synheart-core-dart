@@ -1295,14 +1295,23 @@ class Synheart {
       final syniCloudOrigin =
           (resolvedConfig.cloudConfig?.baseUrl ?? 'https://api.synheart.ai')
               .replaceAll(RegExp(r'/+$'), '');
-      // Best-effort default for hosts that don't wire their own
-      // SyniCloudConfig via SyniCloudWiring. The host app (e.g.
-      // synheart-life) builds and injects its own config with real
-      // auth; this SDK-side default returns no headers so unwired
-      // hosts fail cleanly to local-only.
+      // SDK-side default for hosts that don't wire their own
+      // SyniCloudConfig. Lazily produce X-Synheart-Proof headers via
+      // the core runtime — Synheart.buildProofHeader works for both
+      // the Dart DeviceAuthProvider path *and* the core-runtime ABI
+      // path (sdkDeviceAuthAbi=true), where _deviceAuthProvider is
+      // never assigned. Hosts with custom auth can still override by
+      // calling configureSyniCloud(...) themselves; hosts with no
+      // device auth get null/empty and fall through.
       configureSyniCloud(SyniCloudConfig(
         baseUrl: '$syniCloudOrigin/syni',
-        authHeaders: (_, __) async => const <String, String>{},
+        authHeaders: (method, url) async {
+          final proof = Synheart.buildProofHeader(method.toUpperCase(), url);
+          if (proof == null || proof.isEmpty) {
+            return const <String, String>{};
+          }
+          return {'X-Synheart-Proof': proof};
+        },
         tenantId: '',
         userId: resolvedConfig.subjectId.isNotEmpty
             ? resolvedConfig.subjectId
