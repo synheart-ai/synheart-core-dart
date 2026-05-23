@@ -1303,23 +1303,25 @@ class Synheart {
       // never assigned. Hosts with custom auth can still override by
       // calling configureSyniCloud(...) themselves; hosts with no
       // device auth get null/empty and fall through.
-      configureSyniCloud(SyniCloudConfig(
-        baseUrl: '$syniCloudOrigin/syni',
-        authHeaders: (method, url) async {
-          final proof = Synheart.buildProofHeader(method.toUpperCase(), url);
-          if (proof == null || proof.isEmpty) {
-            return const <String, String>{};
-          }
-          return {'X-Synheart-Proof': proof};
-        },
-        tenantId: '',
-        userId: resolvedConfig.subjectId.isNotEmpty
-            ? resolvedConfig.subjectId
-            : (_userId ?? ''),
-        orgId: resolvedConfig.cloudConfig?.orgId ?? '',
-        appId: resolvedConfig.appId,
-        deviceId: resolvedConfig.deviceId,
-      ));
+      configureSyniCloud(
+        SyniCloudConfig(
+          baseUrl: '$syniCloudOrigin/syni',
+          authHeaders: (method, url) async {
+            final proof = Synheart.buildProofHeader(method.toUpperCase(), url);
+            if (proof == null || proof.isEmpty) {
+              return const <String, String>{};
+            }
+            return {'X-Synheart-Proof': proof};
+          },
+          tenantId: '',
+          userId: resolvedConfig.subjectId.isNotEmpty
+              ? resolvedConfig.subjectId
+              : (_userId ?? ''),
+          orgId: resolvedConfig.cloudConfig?.orgId ?? '',
+          appId: resolvedConfig.appId,
+          deviceId: resolvedConfig.deviceId,
+        ),
+      );
 
       if (autoStart) {
         SynheartLogger.log('[Synheart] Starting all modules..');
