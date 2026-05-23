@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-23
+
 ### Added
 - `Synheart.configure()` now wires Syni's hybrid router to the cloud — it
   builds the `SyniCloudConfig` and authenticates Syni cloud-chat requests
@@ -16,8 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   absolute URL (no base-URL prefixing); `signRequest` now delegates to it.
 
 ### Changed
-- Bumped the `syni` dependency to `^0.2.0`, whose `SyniCloudConfig`
+- Bumped the `syni` dependency to `^0.3.0`, whose `SyniCloudConfig`
   replaced the static `authToken` with the request-aware `authHeaders`.
+  Consumers building a `SyniCloudConfig` directly need to update to the
+  new shape; consumers using `Synheart.configure()` are unaffected.
+- The SDK-side default `SyniCloudConfig.authHeaders` closure lazily
+  attaches `X-Synheart-Proof` via `Synheart.buildProofHeader` — works
+  whether device auth resolves through the Dart `DeviceAuthProvider`
+  or the core-runtime ABI registration path (`sdkDeviceAuthAbi=true`).
 
 ## [0.5.3] - 2026-05-21
 
