@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-24
+
+### Added
+- **Consent surface for Syni.** `ConsentForm.syni`, the parameter
+  `Synheart.grantConsent(..., syni: bool)`, and `ConsentSnapshot.syni`
+  are now exposed end-to-end so hosts can track and persist the user's
+  consent for on-device or cloud LLM processing alongside the other
+  channels. Backward compatible — `syni` defaults to `false` everywhere
+  so existing callers compile unchanged.
+- **Canonical channel iteration.** New `ConsentTypeMeta` extension on
+  `ConsentType` exposes `wireKey`, `displayName`, `valueOn` (typed
+  accessor for `ConsentEffectiveState`), and `valueOnForm` (typed
+  accessor for `ConsentForm`). Plus `ConsentEffectiveState.toChannelMap()`
+  / `ConsentForm.toChannelMap()` and `ConsentForm.fromChannelMap(...)`.
+  Hosts can now iterate `ConsentType.values` rather than hardcoding each
+  channel — adding a new channel becomes a single change in the SDK
+  enum plus its metadata; consumers pick it up automatically.
+- **`Synheart.consentChanges`** — public broadcast stream of
+  `ConsentSnapshot`s. Emits on any grant or revoke so hosts that render
+  consent in multiple places (e.g. a profile counter alongside a
+  consent screen) can stay in sync without polling
+  `consentEffectiveStateTyped` or re-dispatching reads.
+- **`Synheart.syni.bindPersona(SyniPersona)`** (passthrough to
+  `package:syni`'s new `SyniAgent.bindPersona`). Cloud chat needs only
+  a persona plus a configured cloud client; hosts that pick
+  `SyniExecutionMode.cloudOnly` can call this once instead of running
+  `install()` purely to attach a persona. Requires `syni: ^0.3.2`.
+
+### Changed
+- `syni` dependency bumped to `^0.3.2` (carries `bindPersona` + the
+  fix that lets `cloudOnly` chat run without a local install).
+- `ConsentEffectiveState.hasAnyGrant` now includes `syni` — previously
+  the flag was tracked through the rest of the state but missing from
+  this convenience getter.
+
+### Fixed
+- `consentSubmitFormTyped` now propagates the form's `syni` value to
+  the runtime via the per-type grant/revoke FFI when the runtime's
+  form parser doesn't carry the key directly. Without this a host
+  setting `syni` on the typed form would see the other channels update
+  but `syni` stay at its previous value.
+
 ## [0.6.0] - 2026-05-23
 
 ### Added
@@ -258,7 +300,8 @@ post-tag breaking change to `processVendorEvent`.
   `synheart_behavior ^0.3.0`, `synheart_auth ^0.1.1`) instead of git
   refs.
 
-[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.6.1
 [0.5.3]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.5.3
 [0.5.2]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.5.2
 [0.2.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.2.0

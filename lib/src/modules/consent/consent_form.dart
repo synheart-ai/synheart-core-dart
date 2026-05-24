@@ -19,6 +19,7 @@ class ConsentForm {
     required this.allowCloud,
     required this.allowResearch,
     required this.allowVendorSync,
+    this.syni = false,
   });
 
   /// Profile id the runtime resolved this form against. `"offline-default"`
@@ -46,6 +47,40 @@ class ConsentForm {
   /// Top-level switch: vendor sync (Whoop/Garmin/etc.) permitted.
   final bool allowVendorSync;
 
+  /// Feature toggle: on-device + cloud Syni (LLM coach) permitted.
+  ///
+  /// The runtime tracks this independently of biosignals / cloud upload
+  /// (consumers should still gate cloud-Syni on [allowCloud] for the
+  /// same reason RAMEN does — see the SDK README).
+  final bool syni;
+
+  /// Build a [ConsentForm] from a channel map — the symmetric inverse of
+  /// `ConsentForm.toChannelMap()` (defined in `consent_type_meta.dart`).
+  ///
+  /// Convenience for hosts that already track consent state as a
+  /// `Map<ConsentType, bool>` (the recommended shape for iterating
+  /// channels generically). Avoids spelling out every named field at the
+  /// call site, and adding a new channel doesn't require updating every
+  /// `ConsentForm(...)` invocation.
+  factory ConsentForm.fromChannelMap({
+    required String profileId,
+    required ConsentTier consentTier,
+    required Map<ConsentType, bool> channels,
+  }) {
+    bool get(ConsentType t) => channels[t] ?? false;
+    return ConsentForm(
+      profileId: profileId,
+      biosignals: get(ConsentType.biosignals),
+      phoneContext: get(ConsentType.phoneContext),
+      behavior: get(ConsentType.behavior),
+      consentTier: consentTier,
+      allowCloud: get(ConsentType.cloudUpload),
+      allowResearch: get(ConsentType.research),
+      allowVendorSync: get(ConsentType.vendorSync),
+      syni: get(ConsentType.syni),
+    );
+  }
+
   factory ConsentForm.fromJson(Map<String, dynamic> json) {
     return ConsentForm(
       profileId: (json['profile_id'] ?? '').toString(),
@@ -56,6 +91,7 @@ class ConsentForm {
       allowCloud: json['allow_cloud'] == true,
       allowResearch: json['allow_research'] == true,
       allowVendorSync: json['allow_vendor_sync'] == true,
+      syni: json['syni'] == true,
     );
   }
 
@@ -69,6 +105,7 @@ class ConsentForm {
       'allow_cloud': allowCloud,
       'allow_research': allowResearch,
       'allow_vendor_sync': allowVendorSync,
+      'syni': syni,
     };
   }
 
@@ -81,6 +118,7 @@ class ConsentForm {
     bool? allowCloud,
     bool? allowResearch,
     bool? allowVendorSync,
+    bool? syni,
   }) {
     return ConsentForm(
       profileId: profileId ?? this.profileId,
@@ -91,6 +129,7 @@ class ConsentForm {
       allowCloud: allowCloud ?? this.allowCloud,
       allowResearch: allowResearch ?? this.allowResearch,
       allowVendorSync: allowVendorSync ?? this.allowVendorSync,
+      syni: syni ?? this.syni,
     );
   }
 
@@ -105,7 +144,8 @@ class ConsentForm {
         other.consentTier == consentTier &&
         other.allowCloud == allowCloud &&
         other.allowResearch == allowResearch &&
-        other.allowVendorSync == allowVendorSync;
+        other.allowVendorSync == allowVendorSync &&
+        other.syni == syni;
   }
 
   @override
@@ -118,6 +158,7 @@ class ConsentForm {
     allowCloud,
     allowResearch,
     allowVendorSync,
+    syni,
   );
 }
 

@@ -1965,6 +1965,20 @@ class Synheart {
       formJson: formJson,
     );
 
+    // The runtime's ConsentForm parser covers biosignals / phone_context
+    // / behavior / cloud / research / vendor_sync. Propagate `syni`
+    // through the per-type grant/revoke FFI when the host included it
+    // on the form so the runtime state stays in sync — and the
+    // post-submit `_syncConsentModuleFromRuntime` below picks the new
+    // value up. Skipped when the submit itself errored or the key
+    // wasn't sent.
+    if ((result == null || result['error'] == null) &&
+        formJson.containsKey('syni')) {
+      formJson['syni'] == true
+          ? rt.grantConsent('syni')
+          : rt.revokeConsent('syni');
+    }
+
     // Bridge the runtime's effective state into the Dart ConsentModule.
     //
     // Without this, `ConsentModule._currentConsent` stays at its
@@ -2017,7 +2031,8 @@ class Synheart {
         'phoneContext=${effective.phoneContext}, '
         'cloudUpload=${effective.cloudUpload}, '
         'vendorSync=${effective.vendorSync}, '
-        'research=${effective.research}',
+        'research=${effective.research}, '
+        'syni=${effective.syni}',
       );
     } catch (e, st) {
       SynheartLogger.log(
@@ -2065,6 +2080,18 @@ class Synheart {
     final raw = _coreRuntime?.consentEffectiveState();
     if (raw == null) return null;
     return ConsentEffectiveState.fromJson(raw);
+  }
+
+  /// Broadcast stream of consent snapshots. Emits whenever any channel
+  /// is granted or revoked. Useful for hosts that render consent state
+  /// in multiple places and want them to stay in sync without polling
+  /// [consentEffectiveStateTyped] or re-dispatching reads manually
+  /// after every change.
+  ///
+  /// Empty stream when the SDK isn't initialised yet.
+  static Stream<ConsentSnapshot> get consentChanges {
+    return shared._consentModule?.observe() ??
+        const Stream<ConsentSnapshot>.empty();
   }
 
   /// Whether consent token should be refreshed soon.
@@ -3901,6 +3928,7 @@ class Synheart {
     ConsentTier? tier,
     ConsentChannels? grantedChannels,
     bool research = false,
+    bool syni = false,
   }) async {
     if (_coreRuntime != null) {
       // Mirror every channel's new value into the native core — grant when
@@ -3925,6 +3953,9 @@ class Synheart {
       research
           ? _coreRuntime!.grantConsent('research')
           : _coreRuntime!.revokeConsent('research');
+      syni
+          ? _coreRuntime!.grantConsent('syni')
+          : _coreRuntime!.revokeConsent('syni');
       // Fall through to Dart consent module so UI and module wiring stays in sync
     }
     return shared._grantConsent(
@@ -3937,6 +3968,7 @@ class Synheart {
       tier: tier,
       grantedChannels: grantedChannels,
       research: research,
+      syni: syni,
     );
   }
 
@@ -3950,6 +3982,7 @@ class Synheart {
     ConsentTier? tier,
     ConsentChannels? grantedChannels,
     bool research = false,
+    bool syni = false,
   }) async {
     if (!_isConfigured) {
       // If init is in progress, wait for it then proceed.
@@ -4037,7 +4070,7 @@ class Synheart {
       behavior: behavior,
       phoneContext: phoneContext,
       cloudUpload: cloudUpload,
-      syni: false,
+      syni: syni,
       vendorSync: vendorSync,
       research: research,
       timestamp: DateTime.now(),

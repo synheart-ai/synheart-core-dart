@@ -55,7 +55,8 @@ class ConsentEffectiveState {
       behavior ||
       cloudUpload ||
       vendorSync ||
-      research;
+      research ||
+      syni;
 
   factory ConsentEffectiveState.fromJson(Map<String, dynamic> json) {
     return ConsentEffectiveState(

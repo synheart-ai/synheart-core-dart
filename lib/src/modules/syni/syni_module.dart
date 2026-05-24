@@ -63,6 +63,13 @@ class SyniModule {
   /// Free the engine + worker isolate (keeps the downloaded model on disk).
   Future<void> uninstall() => _agent.uninstall();
 
+  /// Bind a persona without installing a local model. Cloud chat only
+  /// needs a persona plus a configured cloud client; hosts that pick
+  /// `SyniExecutionMode.cloudOnly` can call this once instead of
+  /// downloading a model just to attach a persona. See
+  /// [agent.SyniAgent.bindPersona].
+  void bindPersona(agent.SyniPersona persona) => _agent.bindPersona(persona);
+
   // --- Chat (host SDK's job: build HSI context, then delegate) -------------
 
   /// Run a single chat turn. The [SyniContextBuilder] gathers this SDK's
