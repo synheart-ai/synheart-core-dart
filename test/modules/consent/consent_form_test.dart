@@ -63,6 +63,7 @@ void main() {
         'allow_cloud',
         'allow_research',
         'allow_vendor_sync',
+        'syni',
       });
     });
 
