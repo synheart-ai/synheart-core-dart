@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory;
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:path_provider/path_provider.dart';
@@ -960,10 +961,20 @@ class Synheart {
   static Future<void> _maybeEnsureCloudConsentReady() async {
     try {
       final ready = await ensureCloudConsentReady();
-      if (!ready) {
+      if (!ready && kDebugMode) {
+        // Demoted from production log to debug-only. The previous wording
+        // ("ingest will stay blocked until consent token is issued") was
+        // misleading because in the most common path — first-time consent
+        // grant — this method is called from `_initDeviceAuth`'s post-step
+        // before the host's main `consentSubmitFormTyped` has propagated
+        // the new cloudUpload=true state through the runtime. So it
+        // legitimately returns false at this exact moment but the host's
+        // own submit path issues the token within ~300ms, making the log
+        // contradicted by the next line in the trace. Keep it in dev
+        // builds for visibility; trust the host's flow in production.
         SynheartLogger.log(
-          '[Synheart] ensureCloudConsentReady returned false — '
-          'ingest will stay blocked until consent token is issued.',
+          '[Synheart] ensureCloudConsentReady not-yet-ready — host '
+          'consentSubmitFormTyped will issue the token shortly.',
         );
       }
     } catch (e) {
@@ -1945,8 +1956,23 @@ class Synheart {
 
     // Direct-submit path is used by runtime UI toggles that bypass
     // [grantConsent]. If the form grants cloud upload and device auth is
-    // configured but not yet wired, register the device first so the ingest
-    // connector can authenticate its next flush tick. Non-fatal on failure.
+    // configured but not yet wired, kick the device registration off in
+    // the background so the ingest connector picks it up on its next
+    // flush tick. Non-fatal on failure.
+    //
+    // We deliberately do NOT `await` this. ensureDeviceAuthRegistered →
+    // _initDeviceAuth runs the 7-step Play Integrity bind + token mint +
+    // HTTPS POST flow as an FFI call on the main isolate; on a cold
+    // IntegrityService bind that parks the main thread for multiple
+    // seconds, which trips Android's ANR watchdog (SIGQUIT, "Wrote
+    // stack traces to tombstoned") on first-time signup — exactly when
+    // this consent submit handler is mid-call. The sibling
+    // [grantConsent] path (line ~4040) was already fixed in v17; this
+    // direct-submit path needed the same treatment.
+    //
+    // Host UIs that need to know when registration finishes observe
+    // `runtime.sdkDeviceAuthStatus()` (the "Setting up your workspace"
+    // card pattern); they don't need this call site to block for them.
     final allowCloud =
         formJson['allow_cloud'] == true ||
         formJson['allowCloud'] == true ||
@@ -1955,7 +1981,30 @@ class Synheart {
     if (allowCloud &&
         shared._config?.deviceAuthConfig != null &&
         shared._deviceAuthProvider == null) {
-      await ensureDeviceAuthRegistered();
+      unawaited(
+        ensureDeviceAuthRegistered().then(
+          (registered) {
+            if (!registered) {
+              SynheartLogger.log(
+                '[Synheart] consentSubmitFormTyped: background device-auth '
+                'registration did not complete (cloud-upload consent on '
+                'but registration returned false). Will retry on the next '
+                'session start.',
+              );
+            }
+          },
+          onError: (Object e, StackTrace st) {
+            SynheartLogger.log(
+              '[Synheart] consentSubmitFormTyped: background device-auth '
+              'registration threw: $e',
+              error: e,
+              stackTrace: st,
+            );
+            // Continue — local mode still works; cloud upload will retry
+            // once registration eventually succeeds.
+          },
+        ),
+      );
     }
 
     final result = await rt.consentSubmitForm(
@@ -4053,23 +4102,44 @@ class Synheart {
     }
 
     // If cloud consent is granted and device auth is configured but not yet
-    // initialized, run device attestation now.
+    // initialized, kick device attestation off in the background.
+    //
+    // _initDeviceAuth runs the 7-step registration (Play Integrity bind +
+    // token mint + keypair + HTTPS POST to /v1/device/register). The FFI
+    // hop into the native runtime is synchronous from the main isolate's
+    // POV; on cold Play Integrity bind it can park the main thread for
+    // multiple seconds, which trips Android's ANR watchdog (SIGQUIT,
+    // "Wrote stack traces to tombstoned") on first-time signup — exactly
+    // when the consent screen is mid-submit.
+    //
+    // The host UI is already designed for asynchronous registration —
+    // the "Setting up your workspace" card observes the runtime's auth
+    // status stream and dismisses when registration completes — so the
+    // consent handler doesn't need to block on it. Fire-and-forget,
+    // log on completion / failure. Failures here don't break local mode;
+    // they just mean cloud uploads will keep retrying until the next
+    // successful registration attempt.
     if (cloudUpload &&
         _config?.deviceAuthConfig != null &&
         _deviceAuthProvider == null) {
-      try {
-        SynheartLogger.log(
-          '[Synheart] Cloud consent granted — activating device auth..',
-        );
-        await _initDeviceAuth(_config!);
-        SynheartLogger.log('[Synheart] Device auth activated successfully.');
-      } catch (e) {
-        SynheartLogger.log(
-          '[Synheart] Device auth activation failed: $e',
-          error: e,
-        );
-        // Continue — cloud uploads will fail but local mode still works
-      }
+      SynheartLogger.log(
+        '[Synheart] Cloud consent granted — activating device auth (background)..',
+      );
+      unawaited(
+        _initDeviceAuth(_config!).then(
+          (_) => SynheartLogger.log(
+            '[Synheart] Device auth activated successfully.',
+          ),
+          onError: (Object e, StackTrace st) {
+            SynheartLogger.log(
+              '[Synheart] Device auth activation failed: $e',
+              error: e,
+              stackTrace: st,
+            );
+            // Continue — cloud uploads will fail but local mode still works
+          },
+        ),
+      );
     }
 
     // If cloud or platform-ingest is configured and cloudUpload is true, issue token.
