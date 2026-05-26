@@ -2257,9 +2257,7 @@ class Baselines {
           final source = raw['last_sleep_source'];
           final variantKey = (variant is String && variant.isNotEmpty)
               ? variant
-              : (source is String && source.isNotEmpty
-                    ? source
-                    : 'restored');
+              : (source is String && source.isNotEmpty ? source : 'restored');
           // Use the night's prior count as a coarse, stable day key —
           // the exact wake day isn't persisted here, but the alternates
           // lookup only needs a single most-recent bucket to surface
