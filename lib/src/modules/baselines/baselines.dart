@@ -2270,7 +2270,16 @@ class Baselines {
             ..[restored.priorNightCount] = <String, SleepScoreResult>{
               variantKey: restored,
             };
-        } catch (_) {
+        } catch (e, st) {
+          // Don't silently drop — if SleepScoreResult.fromJson schema
+          // changes between SDK versions, an old persisted blob will
+          // fail here and the user loses their score with no signal.
+          SynheartLogger.stream(
+            'Baselines: latest_sleep decode failed — dropping persisted '
+            'score (likely a schema change between SDK versions)',
+            error: e,
+            stackTrace: st,
+          );
           _latestScore = null;
         }
       }
@@ -2303,6 +2312,10 @@ class Baselines {
   /// `toJson`, so the encoding lives here next to the Recovery /
   /// Readiness encoders — the wire keys match what `fromJson` reads.
   static Map<String, Object?> _sleepScoreToJson(SleepScoreResult s) => {
+    // Bump when the wire format changes (e.g. Path.wire renames, new
+    // required component fields). loadRecoveryStateJson can branch on
+    // this to migrate or reject old blobs.
+    'schema_version': 1,
     'score': s.score,
     'score_normalized': s.scoreNormalized,
     'confidence': s.confidence,

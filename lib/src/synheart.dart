@@ -3633,6 +3633,11 @@ class Synheart {
   /// [attachSleepScore], whereas [wearableReference] only refreshes
   /// when the live HSI tick produces a window.
   static String? get longitudinalSnapshotJson {
+    // Symmetric with [loadLongitudinalSnapshot]: callers shouldn't
+    // need to know about Pipeline lifecycle to read an empty-but-valid
+    // snapshot at cold boot. Returns null only when the native runtime
+    // itself is missing.
+    _coreRuntime?.ensurePipeline();
     return _coreRuntime?.exportLongitudinalSnapshot();
   }
 
@@ -3650,6 +3655,12 @@ class Synheart {
   /// Returns `0` on success, a non-zero error code from the runtime,
   /// or `-1` when the native runtime is not linked.
   static int loadLongitudinalSnapshot(String json) {
+    // Cold-boot restore happens before any session/sleep-score has
+    // materialized the runtime's Pipeline; without this, the load
+    // would fail with "runtime not available" through no fault of
+    // the caller. ensurePipeline() is documented as no-op when one
+    // already exists, so the warm-path cost is zero.
+    _coreRuntime?.ensurePipeline();
     return _coreRuntime?.loadLongitudinalSnapshot(json) ?? -1;
   }
 
