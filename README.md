@@ -867,13 +867,17 @@ For offline SDK development and testing, use the **Synheart CLI** local platform
 
 ### Setup
 
-1. Install the [Synheart CLI](https://github.com/synheart-ai/synheart-cli):
+1. Install the Synheart CLI:
 
 ```bash
-git clone https://github.com/synheart-ai/synheart-cli
-cd synheart-cli
-make build && make install
+# macOS / Linux
+curl -fsSL https://synheart.sh/install | sh
+
+# Windows (PowerShell)
+iwr -useb https://synheart.sh/install.ps1 | iex
 ```
+
+See [docs.synheart.ai/setup/install-cli](https://docs.synheart.ai/setup/install-cli) for details.
 
 2. Start the local platform:
 
