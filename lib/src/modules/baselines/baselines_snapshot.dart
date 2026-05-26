@@ -17,8 +17,11 @@ class BaselinesSnapshot {
   final WearableReferenceView? reference;
 
   /// The most recently computed batch `SleepScoreResult`, or null if
-  /// no sleep event has been ingested this session (or via persisted
-  /// history — the score itself is not persisted, the Path-B ring is).
+  /// no sleep event has ever been ingested. Survives an app restart:
+  /// the runtime persists the Path-B ring and the SDK persists this
+  /// rich per-night result through `Baselines.exportRecoveryStateJson`
+  /// / `loadRecoveryStateJson` — the same host-owned blob that carries
+  /// the latest Recovery / Readiness results.
   final SleepScoreResult? latestSleepScore;
 
   /// The most recent daily Recovery Score,

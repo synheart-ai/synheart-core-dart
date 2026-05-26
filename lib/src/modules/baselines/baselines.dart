@@ -2142,6 +2142,20 @@ class Baselines {
   /// - `latest_recovery`: full result JSON, or null
   /// - `latest_readiness`: full result JSON, or null
   /// - `strain_by_day`: `{epochDay: strain01}` for the last 28 days
+  /// - `latest_sleep`: full [SleepScoreResult] JSON for the most recent
+  ///   ingested night, or null. The runtime's longitudinal snapshot
+  ///   persists the Path-B *ring* (the bare score values driving the
+  ///   median), but not the rich per-night [SleepScoreResult] (path,
+  ///   mode, components, confidence). Recovery / Readiness already
+  ///   round-trip their full results here; Sleep was the one derived
+  ///   surface missing it — so on a cold start the ring repopulated
+  ///   `nightsLoggedCount`/`recentMedian` while `latestSleepScore`
+  ///   stayed null and the Sleep ring read empty. Persisting it here
+  ///   closes that asymmetry.
+  /// - `last_sleep_source` / `last_sleep_variant`: the provider +
+  ///   variant id that produced `latest_sleep`, so the Sleep card's
+  ///   source badge and the `tonightAlternates` winner survive too.
+  /// - `last_ingest_at_ms`: epoch-ms of the last successful ingest.
   static String exportRecoveryStateJson() {
     final map = <String, Object?>{
       'recent_recovery_scores': _recentRecoveryScores.toList(growable: false),
@@ -2152,6 +2166,12 @@ class Baselines {
           ? null
           : _readinessToJson(_latestReadinessScore!),
       'strain_by_day': _strainByDay.map((k, v) => MapEntry(k.toString(), v)),
+      'latest_sleep': _latestScore == null
+          ? null
+          : _sleepScoreToJson(_latestScore!),
+      'last_sleep_source': _lastSource,
+      'last_sleep_variant': _lastVariantId,
+      'last_ingest_at_ms': _lastIngestAt?.millisecondsSinceEpoch,
     };
     return jsonEncode(map);
   }
@@ -2211,6 +2231,70 @@ class Baselines {
         _trimStrainHistory();
       }
 
+      // Latest sleep score — restored on every launch so the Sleep ring
+      // / `_SleepCard` show the last logged night immediately, the same
+      // way `latest_recovery` / `latest_readiness` above repopulate
+      // Recovery / Readiness. Without this, `_latestScore` (a static
+      // field only ever set by a live `ingestVendorSleep`) stays null on
+      // a cold start even though the runtime restored the Path-B ring.
+      //
+      // The honest cold-start path is preserved: a brand-new user has no
+      // persisted `latest_sleep`, so this is a no-op and the Sleep ring
+      // stays empty — we never fabricate a score.
+      final sleep = raw['latest_sleep'];
+      if (sleep is Map) {
+        try {
+          final restored = SleepScoreResult.fromJson(
+            sleep.cast<String, Object?>(),
+          );
+          _latestScore = restored;
+          // Re-seed the alternates map so the `_SleepCard` winner-pick
+          // (which prefers `tonightAlternates`) finds the restored
+          // score under its provider key instead of falling through to
+          // an empty map. Keyed by the persisted variant id, falling
+          // back to the bare source, then to a stable sentinel.
+          final variant = raw['last_sleep_variant'];
+          final source = raw['last_sleep_source'];
+          final variantKey = (variant is String && variant.isNotEmpty)
+              ? variant
+              : (source is String && source.isNotEmpty ? source : 'restored');
+          // Use the night's prior count as a coarse, stable day key —
+          // the exact wake day isn't persisted here, but the alternates
+          // lookup only needs a single most-recent bucket to surface
+          // the restored score. A live ingest later re-keys by the real
+          // wake day, so this placeholder never lingers.
+          _scoresByNight
+            ..clear()
+            ..[restored.priorNightCount] = <String, SleepScoreResult>{
+              variantKey: restored,
+            };
+        } catch (e, st) {
+          // Don't silently drop — if SleepScoreResult.fromJson schema
+          // changes between SDK versions, an old persisted blob will
+          // fail here and the user loses their score with no signal.
+          SynheartLogger.stream(
+            'Baselines: latest_sleep decode failed — dropping persisted '
+            'score (likely a schema change between SDK versions)',
+            error: e,
+            stackTrace: st,
+          );
+          _latestScore = null;
+        }
+      }
+
+      final lastSource = raw['last_sleep_source'];
+      if (lastSource is String && lastSource.isNotEmpty) {
+        _lastSource = lastSource;
+      }
+      final lastVariant = raw['last_sleep_variant'];
+      if (lastVariant is String && lastVariant.isNotEmpty) {
+        _lastVariantId = lastVariant;
+      }
+      final ingestMs = raw['last_ingest_at_ms'];
+      if (ingestMs is num) {
+        _lastIngestAt = DateTime.fromMillisecondsSinceEpoch(ingestMs.toInt());
+      }
+
       if (!_ctrl.isClosed) _ctrl.add(snapshot);
     } catch (e, st) {
       SynheartLogger.stream(
@@ -2220,6 +2304,47 @@ class Baselines {
       );
     }
   }
+
+  /// Serialize a [SleepScoreResult] into a map that [SleepScoreResult]
+  /// `.fromJson` round-trips exactly. The model ships `fromJson` but no
+  /// `toJson`, so the encoding lives here next to the Recovery /
+  /// Readiness encoders — the wire keys match what `fromJson` reads.
+  static Map<String, Object?> _sleepScoreToJson(SleepScoreResult s) => {
+    // Bump when the wire format changes (e.g. Path.wire renames, new
+    // required component fields). loadRecoveryStateJson can branch on
+    // this to migrate or reject old blobs.
+    'schema_version': 1,
+    'score': s.score,
+    'score_normalized': s.scoreNormalized,
+    'confidence': s.confidence,
+    'path': s.path.wire,
+    'mode': s.mode.wire,
+    'components': {
+      'duration': s.components.duration,
+      'quality': s.components.quality,
+      'continuity': s.components.continuity,
+      'consistency': s.components.consistency,
+      'personalization': s.components.personalization,
+      'vendor_score': s.components.vendorScore,
+      'proxy_hr': s.components.proxyHr,
+    },
+    'adjustments': {
+      'debt_penalty': s.adjustments.debtPenalty,
+      'hr_adjustment': s.adjustments.hrAdjustment,
+    },
+    'effective_weights': {
+      'duration': s.effectiveWeights.duration,
+      'quality': s.effectiveWeights.quality,
+      'continuity': s.effectiveWeights.continuity,
+      'consistency': s.effectiveWeights.consistency,
+      'personalization': s.effectiveWeights.personalization,
+    },
+    'reason': s.reason?.wire,
+    'prior_night_count': s.priorNightCount,
+    'pipeline_version': s.pipelineVersion,
+    'model_id': s.modelId,
+    'constants_hash': s.constantsHash,
+  };
 
   static Map<String, Object?> _recoveryToJson(RecoveryScoreResult r) => {
     'score': r.score,

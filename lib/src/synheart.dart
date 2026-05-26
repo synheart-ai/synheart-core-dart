@@ -2575,6 +2575,19 @@ class Synheart {
     return _coreRuntime?.loadSrmSnapshot(json) ?? false;
   }
 
+  /// Ensure the native engine pipeline exists, creating a default one if
+  /// none is live yet.
+  ///
+  /// The runtime lazily creates its `Pipeline` — before the first session
+  /// (or sleep-score attach) there is no pipeline, so
+  /// [exportRuntimeSRMSnapshot] returns `null` and [loadRuntimeSRMSnapshot]
+  /// fails with "runtime not available". Persistence round-trips on app
+  /// boot run before any of those triggers, so they must materialise the
+  /// pipeline first. No-op when a pipeline already exists.
+  static void ensureRuntimePipeline() {
+    _coreRuntime?.ensurePipeline();
+  }
+
   /// The native synheart-engine version, or `null` if unavailable.
   static String? get runtimeVersion => CoreRuntimeBridge.version();
 
@@ -3620,7 +3633,35 @@ class Synheart {
   /// [attachSleepScore], whereas [wearableReference] only refreshes
   /// when the live HSI tick produces a window.
   static String? get longitudinalSnapshotJson {
+    // Symmetric with [loadLongitudinalSnapshot]: callers shouldn't
+    // need to know about Pipeline lifecycle to read an empty-but-valid
+    // snapshot at cold boot. Returns null only when the native runtime
+    // itself is missing.
+    _coreRuntime?.ensurePipeline();
     return _coreRuntime?.exportLongitudinalSnapshot();
+  }
+
+  /// Restore the longitudinal SRM snapshot exported by
+  /// [longitudinalSnapshotJson] back into the native runtime.
+  ///
+  /// The native runtime does NOT auto-persist this snapshot — its FFI
+  /// contract is "host persists; restores via
+  /// `synheart_core_load_longitudinal_snapshot` on startup". Without
+  /// this call after [initialize], a fresh app launch starts with an
+  /// empty SRM pipeline: the Path-B sleep-score ring, dimension
+  /// buffers and last reference are all gone, so baselines blank back
+  /// to the cold-start "Empty" state on every restart.
+  ///
+  /// Returns `0` on success, a non-zero error code from the runtime,
+  /// or `-1` when the native runtime is not linked.
+  static int loadLongitudinalSnapshot(String json) {
+    // Cold-boot restore happens before any session/sleep-score has
+    // materialized the runtime's Pipeline; without this, the load
+    // would fail with "runtime not available" through no fault of
+    // the caller. ensurePipeline() is documented as no-op when one
+    // already exists, so the warm-path cost is zero.
+    _coreRuntime?.ensurePipeline();
+    return _coreRuntime?.loadLongitudinalSnapshot(json) ?? -1;
   }
 
   // ── Realtime event stream (RAMEN via native stream-runtime) ──────
