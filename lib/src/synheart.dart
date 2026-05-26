@@ -1998,6 +1998,7 @@ class Synheart {
               '[Synheart] consentSubmitFormTyped: background device-auth '
               'registration threw: $e',
               error: e,
+              stackTrace: st,
             );
             // Continue — local mode still works; cloud upload will retry
             // once registration eventually succeeds.
@@ -4092,6 +4093,7 @@ class Synheart {
             SynheartLogger.log(
               '[Synheart] Device auth activation failed: $e',
               error: e,
+              stackTrace: st,
             );
             // Continue — cloud uploads will fail but local mode still works
           },
