@@ -21,6 +21,13 @@ jobs:
             const login = pr.user.login;
             const association = pr.author_association;
 
+            // Never close automation PRs (Dependabot, Renovate, etc.). They are
+            // first-party maintenance, not external contributions.
+            if (login.endsWith("[bot]")) {
+              core.info(`Skipping bot author @${login}`);
+              return;
+            }
+
             // Trust the webhook payload when it already reports a member-like
             // association. Note: for users with PRIVATE org membership, this
             // field can arrive as NONE/CONTRIBUTOR even though the org API
