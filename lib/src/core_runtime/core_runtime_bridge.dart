@@ -867,6 +867,38 @@ class CoreRuntimeBridge {
     });
   }
 
+  /// Redeem a research-study access + study code, or (when [validateOnly])
+  /// preview the pair without redeeming. Returns the runtime's JSON response.
+  Future<Map<String, dynamic>?> enrolResearchStudy({
+    required String accessCode,
+    required String studyCode,
+    bool validateOnly = false,
+  }) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final pAccess = accessCode.toNativeUtf8();
+      final pStudy = studyCode.toNativeUtf8();
+      try {
+        final ptr = validateOnly
+            ? ffi.validateStudyCodes(handle, pAccess.cast(), pStudy.cast())
+            : ffi.enrolStudy(handle, pAccess.cast(), pStudy.cast());
+        if (ptr == nullptr) return null;
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        return jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      } finally {
+        malloc.free(pAccess);
+        malloc.free(pStudy);
+      }
+    });
+  }
+
   bool consentClearStored() => _ffi.consentClearStored(_handle) == 0;
 
   Map<String, dynamic>? consentStatus() {

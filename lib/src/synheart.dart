@@ -1933,6 +1933,49 @@ class Synheart {
   /// Submit consent form JSON to runtime using offline-first semantics.
   ///
   /// Prefer [consentSubmitFormTyped] for typed submission.
+  /// Enrol this device in a research study by redeeming an access code and its
+  /// study (cohort) code. Uses the device's existing cloud credentials; no
+  /// tokens are exposed to the caller. Returns the runtime's JSON response — the
+  /// enrolment on success, or a map with an `error` key — or null when the
+  /// native runtime is unavailable.
+  ///
+  /// Cloud consent must be granted first (the enrolment rides the device's
+  /// consent credential).
+  static Future<Map<String, dynamic>?> enrolResearchStudy({
+    required String accessCode,
+    required String studyCode,
+  }) {
+    return _researchStudyCall(accessCode, studyCode, validateOnly: false);
+  }
+
+  /// Preview a research-study access + study code pair without redeeming the
+  /// code. Same return contract as [enrolResearchStudy].
+  static Future<Map<String, dynamic>?> validateResearchStudyCodes({
+    required String accessCode,
+    required String studyCode,
+  }) {
+    return _researchStudyCall(accessCode, studyCode, validateOnly: true);
+  }
+
+  static Future<Map<String, dynamic>?> _researchStudyCall(
+    String accessCode,
+    String studyCode, {
+    required bool validateOnly,
+  }) async {
+    final rt = _coreRuntime;
+    if (rt == null) return null;
+    final access = accessCode.trim();
+    final study = studyCode.trim();
+    if (access.isEmpty || study.isEmpty) {
+      return {'error': 'access_code and study_code are required'};
+    }
+    return rt.enrolResearchStudy(
+      accessCode: access,
+      studyCode: study,
+      validateOnly: validateOnly,
+    );
+  }
+
   static Future<Map<String, dynamic>?> consentSubmitForm({
     required Map<String, dynamic> formJson,
     String? deviceId,
