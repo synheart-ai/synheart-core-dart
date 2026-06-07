@@ -841,10 +841,9 @@ class SynheartCoreFFI {
       .lookupFunction<_ConsentSubmitFormC, _ConsentSubmitFormDart>(
         'synheart_core_consent_submit_form',
       );
-  late final enrolStudy = _lib
-      .lookupFunction<_EnrolStudyC, _EnrolStudyDart>(
-        'synheart_core_enrol_study',
-      );
+  late final enrolStudy = _lib.lookupFunction<_EnrolStudyC, _EnrolStudyDart>(
+    'synheart_core_enrol_study',
+  );
   late final validateStudyCodes = _lib
       .lookupFunction<_EnrolStudyC, _EnrolStudyDart>(
         'synheart_core_validate_study_codes',
