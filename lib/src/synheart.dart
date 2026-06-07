@@ -815,6 +815,7 @@ class Synheart {
         'device_auth': {
           'enabled': true,
           'auth_base_url': shared._config?.deviceAuthConfig?.authBaseUrl ?? '',
+          'package_name': shared._config?.deviceAuthConfig?.packageName ?? '',
         },
         'sync': {
           'enabled': shared._config?.sync.enabled ?? false,
@@ -1045,6 +1046,7 @@ class Synheart {
         'device_auth': {
           'enabled': true,
           'auth_base_url': resolvedCfg.deviceAuthConfig?.authBaseUrl ?? '',
+          'package_name': resolvedCfg.deviceAuthConfig?.packageName ?? '',
         },
         'sync': {
           'enabled': resolvedCfg.sync.enabled,
@@ -1933,6 +1935,60 @@ class Synheart {
   /// Submit consent form JSON to runtime using offline-first semantics.
   ///
   /// Prefer [consentSubmitFormTyped] for typed submission.
+  /// Enrol this device in a research study by redeeming an access code and its
+  /// study (cohort) code. Uses the device's existing cloud credentials; no
+  /// tokens are exposed to the caller. Returns the runtime's JSON response — the
+  /// enrolment on success, or a map with an `error` key — or null when the
+  /// native runtime is unavailable.
+  ///
+  /// Cloud consent must be granted first (the enrolment rides the device's
+  /// consent credential).
+  static Future<Map<String, dynamic>?> enrolResearchStudy({
+    required String accessCode,
+    required String studyCode,
+  }) {
+    return _researchStudyCall(accessCode, studyCode, validateOnly: false);
+  }
+
+  /// Preview a research-study access + study code pair without redeeming the
+  /// code. Same return contract as [enrolResearchStudy].
+  static Future<Map<String, dynamic>?> validateResearchStudyCodes({
+    required String accessCode,
+    required String studyCode,
+  }) {
+    return _researchStudyCall(accessCode, studyCode, validateOnly: true);
+  }
+
+  /// Withdraw from the participant's active research study for this app. No
+  /// codes are needed — the participant and app are taken from the device's
+  /// signed cloud credential. Idempotent: withdrawing with no active enrolment
+  /// succeeds. After withdrawal the device's next token mint drops the study_id
+  /// claim, so uploads stop being attributed to the study.
+  static Future<Map<String, dynamic>?> withdrawResearchStudy() {
+    final rt = _coreRuntime;
+    if (rt == null) return Future.value(null);
+    return rt.withdrawResearchStudy();
+  }
+
+  static Future<Map<String, dynamic>?> _researchStudyCall(
+    String accessCode,
+    String studyCode, {
+    required bool validateOnly,
+  }) async {
+    final rt = _coreRuntime;
+    if (rt == null) return null;
+    final access = accessCode.trim();
+    final study = studyCode.trim();
+    if (access.isEmpty || study.isEmpty) {
+      return {'error': 'access_code and study_code are required'};
+    }
+    return rt.enrolResearchStudy(
+      accessCode: access,
+      studyCode: study,
+      validateOnly: validateOnly,
+    );
+  }
+
   static Future<Map<String, dynamic>?> consentSubmitForm({
     required Map<String, dynamic> formJson,
     String? deviceId,

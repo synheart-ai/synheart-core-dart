@@ -176,6 +176,20 @@ typedef _ConsentSubmitFormDart =
       Pointer<Utf8> formJson,
     );
 
+// Research study
+typedef _EnrolStudyC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> accessCode,
+      Pointer<Utf8> studyCode,
+    );
+typedef _EnrolStudyDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> accessCode,
+      Pointer<Utf8> studyCode,
+    );
+
 // Capability
 typedef _LoadCapC =
     Int32 Function(Pointer<Void> h, Pointer<Utf8> tj, Pointer<Utf8> s);
@@ -826,6 +840,17 @@ class SynheartCoreFFI {
   late final consentSubmitForm = _lib
       .lookupFunction<_ConsentSubmitFormC, _ConsentSubmitFormDart>(
         'synheart_core_consent_submit_form',
+      );
+  late final enrolStudy = _lib.lookupFunction<_EnrolStudyC, _EnrolStudyDart>(
+    'synheart_core_enrol_study',
+  );
+  late final validateStudyCodes = _lib
+      .lookupFunction<_EnrolStudyC, _EnrolStudyDart>(
+        'synheart_core_validate_study_codes',
+      );
+  late final withdrawStudy = _lib
+      .lookupFunction<_CurrentConsentC, _CurrentConsentDart>(
+        'synheart_core_withdraw_study',
       );
   late final consentClearStored = _lib
       .lookupFunction<_IntReturnC, _IntReturnDart>(
