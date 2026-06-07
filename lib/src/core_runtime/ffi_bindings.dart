@@ -849,6 +849,10 @@ class SynheartCoreFFI {
       .lookupFunction<_EnrolStudyC, _EnrolStudyDart>(
         'synheart_core_validate_study_codes',
       );
+  late final withdrawStudy = _lib
+      .lookupFunction<_CurrentConsentC, _CurrentConsentDart>(
+        'synheart_core_withdraw_study',
+      );
   late final consentClearStored = _lib
       .lookupFunction<_IntReturnC, _IntReturnDart>(
         'synheart_core_consent_clear_stored',

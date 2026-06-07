@@ -815,6 +815,7 @@ class Synheart {
         'device_auth': {
           'enabled': true,
           'auth_base_url': shared._config?.deviceAuthConfig?.authBaseUrl ?? '',
+          'package_name': shared._config?.deviceAuthConfig?.packageName ?? '',
         },
         'sync': {
           'enabled': shared._config?.sync.enabled ?? false,
@@ -1045,6 +1046,7 @@ class Synheart {
         'device_auth': {
           'enabled': true,
           'auth_base_url': resolvedCfg.deviceAuthConfig?.authBaseUrl ?? '',
+          'package_name': resolvedCfg.deviceAuthConfig?.packageName ?? '',
         },
         'sync': {
           'enabled': resolvedCfg.sync.enabled,
@@ -1955,6 +1957,17 @@ class Synheart {
     required String studyCode,
   }) {
     return _researchStudyCall(accessCode, studyCode, validateOnly: true);
+  }
+
+  /// Withdraw from the participant's active research study for this app. No
+  /// codes are needed — the participant and app are taken from the device's
+  /// signed cloud credential. Idempotent: withdrawing with no active enrolment
+  /// succeeds. After withdrawal the device's next token mint drops the study_id
+  /// claim, so uploads stop being attributed to the study.
+  static Future<Map<String, dynamic>?> withdrawResearchStudy() {
+    final rt = _coreRuntime;
+    if (rt == null) return Future.value(null);
+    return rt.withdrawResearchStudy();
   }
 
   static Future<Map<String, dynamic>?> _researchStudyCall(

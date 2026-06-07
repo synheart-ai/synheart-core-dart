@@ -35,7 +35,15 @@ class DeviceAuthConfig {
   /// Defaults to [authBaseUrl] if not set.
   final String? capabilityBaseUrl;
 
-  const DeviceAuthConfig({required this.authBaseUrl, this.capabilityBaseUrl});
+  /// The app's package / bundle id, used to bind device registration to the app.
+  /// Optional; leave empty if not applicable.
+  final String packageName;
+
+  const DeviceAuthConfig({
+    required this.authBaseUrl,
+    this.capabilityBaseUrl,
+    this.packageName = '',
+  });
 
   String get resolvedCapabilityBaseUrl => capabilityBaseUrl ?? authBaseUrl;
 }

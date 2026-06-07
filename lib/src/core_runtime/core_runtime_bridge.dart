@@ -899,6 +899,28 @@ class CoreRuntimeBridge {
     });
   }
 
+  /// Withdraw from the device's active research study for this app. No codes
+  /// needed — participant + app come from the device's signed cloud credential.
+  /// Returns the service response (`{"withdrawn": bool, ...}`) or null.
+  Future<Map<String, dynamic>?> withdrawResearchStudy() async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final ptr = ffi.withdrawStudy(handle);
+      if (ptr == nullptr) return null;
+      try {
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        return jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
   bool consentClearStored() => _ffi.consentClearStored(_handle) == 0;
 
   Map<String, dynamic>? consentStatus() {
