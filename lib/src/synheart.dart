@@ -1874,10 +1874,10 @@ class Synheart {
   ///
   /// Unlike [listHsiHistory] (the on-device 30-day mirror), this pulls the
   /// user's archived windows from the cloud — the source of truth for
-  /// historical (>30-day) and cross-device HSI. Each returned map is a
-  /// version-independent `HSIState` record produced by the runtime's canonical
-  /// parser, so the host renders history / computes insights from these exactly
-  /// as it does for local windows, without ever branching on `hsi_version`.
+  /// historical (>30-day) and cross-device HSI. Each returned map is a full HSI
+  /// window payload exactly as archived (any HSI version); the host parses it
+  /// with the same path it uses for local windows, so cloud and local history
+  /// render identically with full axis fidelity.
   ///
   /// Consent- and device-auth-gated runtime-side; returns empty when cloud is
   /// not configured/consented, the range is empty, or the vendored runtime

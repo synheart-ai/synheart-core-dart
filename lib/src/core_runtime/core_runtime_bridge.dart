@@ -1272,11 +1272,12 @@ class CoreRuntimeBridge {
     return const [];
   }
 
-  /// Fetch normalized HSI windows from the cloud archive for `[fromMs, toMs]`
-  /// (epoch ms). Each map is a version-independent `HSIState` record produced by
-  /// the runtime — callers never branch on HSI version. Returns empty on error,
-  /// when no cloud connector is configured, or when the native symbol is absent
-  /// (older vendored lib). Network I/O happens runtime-side off the shared lock.
+  /// Fetch archived HSI windows from the cloud archive for `[fromMs, toMs]`
+  /// (epoch ms). Each map is a full HSI window payload exactly as archived (any
+  /// HSI version) — the host parses it with the same path it uses for local
+  /// windows. Returns empty on error, when no cloud connector is configured, or
+  /// when the native symbol is absent (older vendored lib). Network I/O happens
+  /// runtime-side off the shared lock.
   List<Map<String, dynamic>> fetchCloudHsiWindows({
     required int fromMs,
     required int toMs,
