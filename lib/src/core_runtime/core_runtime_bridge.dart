@@ -1282,10 +1282,13 @@ class CoreRuntimeBridge {
     required int toMs,
   }) {
     if (_disposed) return const [];
-    final ptr = _ffi.fetchCloudHsi(_handle, fromMs, toMs);
-    final raw = _readAndFree(ptr);
-    if (raw == null) return const [];
+    // Guard the symbol lookup + call: a vendored lib that predates this FFI
+    // export throws ArgumentError on first `fetchCloudHsi` access. Treat a
+    // missing symbol (or any FFI/parse failure) as "no cloud data".
     try {
+      final ptr = _ffi.fetchCloudHsi(_handle, fromMs, toMs);
+      final raw = _readAndFree(ptr);
+      if (raw == null) return const [];
       final decoded = jsonDecode(raw);
       if (decoded is List) {
         return decoded.whereType<Map<String, dynamic>>().toList(
