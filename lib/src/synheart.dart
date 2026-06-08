@@ -1870,6 +1870,35 @@ class Synheart {
     return _coreRuntime?.hsiHistoryList(since: since, limit: limit) ?? const [];
   }
 
+  /// Fetch normalized HSI windows from the **cloud archive** for `[from, to]`.
+  ///
+  /// Unlike [listHsiHistory] (the on-device 30-day mirror), this pulls the
+  /// user's archived windows from the cloud — the source of truth for
+  /// historical (>30-day) and cross-device HSI. Each returned map is a
+  /// version-independent `HSIState` record produced by the runtime's canonical
+  /// parser, so the host renders history / computes insights from these exactly
+  /// as it does for local windows, without ever branching on `hsi_version`.
+  ///
+  /// Consent- and device-auth-gated runtime-side; returns empty when cloud is
+  /// not configured/consented, the range is empty, or the vendored runtime
+  /// predates this capability (missing native symbol).
+  ///
+  /// NOTE: like the upload flush, the underlying FFI call performs the network
+  /// round-trip synchronously (native `block_on`). It is exposed as a [Future]
+  /// so hosts can `await` it, but callers should drive it from a loading state
+  /// (and ideally off the UI isolate) until a fully async FFI lands.
+  static Future<List<Map<String, dynamic>>> fetchCloudHsiWindows({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final rt = _coreRuntime;
+    if (rt == null) return const [];
+    return rt.fetchCloudHsiWindows(
+      fromMs: from.toUtc().millisecondsSinceEpoch,
+      toMs: to.toUtc().millisecondsSinceEpoch,
+    );
+  }
+
   /// Number of archived HSI payloads currently on-device.
   static int hsiHistoryCount() => _coreRuntime?.hsiHistoryCount() ?? 0;
 
