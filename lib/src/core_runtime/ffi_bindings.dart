@@ -862,6 +862,10 @@ class SynheartCoreFFI {
       .lookupFunction<_RequestStudyDeletionC, _RequestStudyDeletionDart>(
         'synheart_core_request_study_data_deletion',
       );
+  late final researchStudyStatus = _lib
+      .lookupFunction<_CurrentConsentC, _CurrentConsentDart>(
+        'synheart_core_research_study_status',
+      );
   late final consentClearStored = _lib
       .lookupFunction<_IntReturnC, _IntReturnDart>(
         'synheart_core_consent_clear_stored',

@@ -1970,6 +1970,20 @@ class Synheart {
     return rt.withdrawResearchStudy();
   }
 
+  /// Read the device's CURRENT active research-study enrolment for this app —
+  /// the AUTHORITATIVE attribution state. This is the same (participant_id,
+  /// app_id) lookup the consent-service mint uses to stamp the study_id claim on
+  /// upload tokens, so `enrolled: true` means this app's uploads are attributed
+  /// to the study. Use it to correct a stale local "enrolled" flag. No codes
+  /// needed — identity comes from the device's signed cloud credential. Returns
+  /// `{enrolled: bool, study: {...}, enrolment: {...}}`, or null when the native
+  /// runtime is unavailable.
+  static Future<Map<String, dynamic>?> researchStudyStatus() {
+    final rt = _coreRuntime;
+    if (rt == null) return Future.value(null);
+    return rt.researchStudyStatus();
+  }
+
   /// Request erasure of the data the participant contributed to their study for
   /// this app — the deletion the consent copy promises alongside withdrawal. No
   /// identifiers are needed; the participant and app are taken from the device's
