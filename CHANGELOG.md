@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-06-07
+
+### Added
+- `Synheart.requestStudyDataDeletion({bool dryRun})`: request erasure of the data
+  the participant contributed to their study for this app — the deletion the
+  consent copy promises alongside withdrawal. No identifiers are passed; the
+  participant and app come from the device's signed cloud credential. `dryRun`
+  returns an inventory preview without deleting; a real request is accepted
+  asynchronously and carries a `request_id`. Idempotent.
+
 ## [0.6.2] - 2026-06-07
 
 ### Added

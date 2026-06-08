@@ -190,6 +190,12 @@ typedef _EnrolStudyDart =
       Pointer<Utf8> studyCode,
     );
 
+// Study data deletion (request erasure of study-contributed data).
+typedef _RequestStudyDeletionC =
+    Pointer<Utf8> Function(Pointer<Void> h, Bool dryRun);
+typedef _RequestStudyDeletionDart =
+    Pointer<Utf8> Function(Pointer<Void> h, bool dryRun);
+
 // Capability
 typedef _LoadCapC =
     Int32 Function(Pointer<Void> h, Pointer<Utf8> tj, Pointer<Utf8> s);
@@ -851,6 +857,10 @@ class SynheartCoreFFI {
   late final withdrawStudy = _lib
       .lookupFunction<_CurrentConsentC, _CurrentConsentDart>(
         'synheart_core_withdraw_study',
+      );
+  late final requestStudyDataDeletion = _lib
+      .lookupFunction<_RequestStudyDeletionC, _RequestStudyDeletionDart>(
+        'synheart_core_request_study_data_deletion',
       );
   late final consentClearStored = _lib
       .lookupFunction<_IntReturnC, _IntReturnDart>(

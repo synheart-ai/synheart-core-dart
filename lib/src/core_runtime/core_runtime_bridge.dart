@@ -921,6 +921,30 @@ class CoreRuntimeBridge {
     });
   }
 
+  /// Request erasure of the data the participant contributed to their study.
+  /// [dryRun] returns an inventory preview without deleting; a real request is
+  /// accepted asynchronously and carries a `request_id`.
+  Future<Map<String, dynamic>?> requestStudyDataDeletion({
+    bool dryRun = false,
+  }) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final ptr = ffi.requestStudyDataDeletion(handle, dryRun);
+      if (ptr == nullptr) return null;
+      try {
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        return jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
   bool consentClearStored() => _ffi.consentClearStored(_handle) == 0;
 
   Map<String, dynamic>? consentStatus() {

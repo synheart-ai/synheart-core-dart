@@ -1970,6 +1970,25 @@ class Synheart {
     return rt.withdrawResearchStudy();
   }
 
+  /// Request erasure of the data the participant contributed to their study for
+  /// this app — the deletion the consent copy promises alongside withdrawal. No
+  /// identifiers are needed; the participant and app are taken from the device's
+  /// signed cloud credential. Returns the runtime's JSON response or null when
+  /// the native runtime is unavailable.
+  ///
+  /// When [dryRun] is true the response is an inventory preview
+  /// (`{dry_run: true, bronze_objects: N, ...}`) and nothing is deleted — show
+  /// it for confirmation. A real request is accepted asynchronously and carries
+  /// a `request_id` (`{request_id, status: 'pending', ...}`). Idempotent: with
+  /// no enrolment the response is a no-op (`{deleted: false}`).
+  static Future<Map<String, dynamic>?> requestStudyDataDeletion({
+    bool dryRun = false,
+  }) {
+    final rt = _coreRuntime;
+    if (rt == null) return Future.value(null);
+    return rt.requestStudyDataDeletion(dryRun: dryRun);
+  }
+
   static Future<Map<String, dynamic>?> _researchStudyCall(
     String accessCode,
     String studyCode, {
