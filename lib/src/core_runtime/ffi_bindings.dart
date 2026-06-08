@@ -1146,6 +1146,14 @@ class SynheartCoreFFI {
       .lookupFunction<_HsiHistoryListC, _HsiHistoryListDart>(
         'synheart_core_hsi_history_list',
       );
+
+  // Cloud HSI fetch: (handle, from_unix_ms, to_unix_ms) -> char* (JSON array of
+  // normalized HSIState records). Same C signature as hsi_history list, so it
+  // reuses the _HsiHistoryList* typedefs.
+  late final fetchCloudHsi = _lib
+      .lookupFunction<_HsiHistoryListC, _HsiHistoryListDart>(
+        'synheart_core_fetch_cloud_hsi',
+      );
   late final hsiHistoryCount = _lib
       .lookupFunction<_Int64ReturnC, _Int64ReturnDart>(
         'synheart_core_hsi_history_count',
