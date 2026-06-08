@@ -921,6 +921,29 @@ class CoreRuntimeBridge {
     });
   }
 
+  /// Read the device's CURRENT active research-study enrolment for this app —
+  /// the authoritative attribution state (same lookup the consent mint uses).
+  /// Returns `{enrolled: bool, study: {...}, enrolment: {...}}`. Hosts should
+  /// use this to correct a stale local "enrolled" flag.
+  Future<Map<String, dynamic>?> researchStudyStatus() async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final ptr = ffi.researchStudyStatus(handle);
+      if (ptr == nullptr) return null;
+      try {
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        return jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
   /// Request erasure of the data the participant contributed to their study.
   /// [dryRun] returns an inventory preview without deleting; a real request is
   /// accepted asynchronously and carries a `request_id`.
