@@ -795,12 +795,36 @@ class CoreRuntimeBridge {
 
   // ── Consent ──────────────────────────────────────────────────────────
 
-  bool grantConsent(String type) {
-    return _withCString(type, (p) => _ffi.grantConsent(_handle, p) == 0);
-  }
+  Future<bool> grantConsent(String type) => _consentMutate(type, grant: true);
 
-  bool revokeConsent(String type) {
-    return _withCString(type, (p) => _ffi.revokeConsent(_handle, p) == 0);
+  Future<bool> revokeConsent(String type) => _consentMutate(type, grant: false);
+
+  /// Grant or revoke a single consent type. The FFI persists the change and
+  /// re-issues/syncs the consent token, which blocks on network I/O — calling
+  /// it on the UI isolate froze the main thread and ANR'd (observed stack:
+  /// main tid=1 Native … synheart_core_revoke_consent). Run it on a background
+  /// isolate, mirroring [sdkRegisterDevice] / [consentSubmitForm]. Callers that
+  /// mutate several channels must await these SEQUENTIALLY (not concurrently)
+  /// so two mutations never race on the shared native handle.
+  Future<bool> _consentMutate(String type, {required bool grant}) async {
+    if (_disposed) return false;
+    final handleAddr = _handle.address;
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return false;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final p = type.toNativeUtf8();
+      try {
+        final rc = grant
+            ? ffi.grantConsent(handle, p.cast())
+            : ffi.revokeConsent(handle, p.cast());
+        return rc == 0;
+      } catch (_) {
+        return false;
+      } finally {
+        malloc.free(p);
+      }
+    });
   }
 
   bool hasConsent(String type) {

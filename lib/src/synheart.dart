@@ -2141,9 +2141,9 @@ class Synheart {
     // wasn't sent.
     if ((result == null || result['error'] == null) &&
         formJson.containsKey('syni')) {
-      formJson['syni'] == true
+      await (formJson['syni'] == true
           ? rt.grantConsent('syni')
-          : rt.revokeConsent('syni');
+          : rt.revokeConsent('syni'));
     }
 
     // Bridge the runtime's effective state into the Dart ConsentModule.
@@ -2305,7 +2305,7 @@ class Synheart {
   /// ```
   static Future<void> revokeConsentType(String consentType) async {
     if (_coreRuntime != null) {
-      _coreRuntime!.revokeConsent(consentType);
+      await _coreRuntime!.revokeConsent(consentType);
       // Fall through to Dart consent module so UI stays in sync
     }
     return shared._revokeConsentType(consentType);
@@ -4143,27 +4143,30 @@ class Synheart {
       // true, revoke when false. Without the revoke path the core's state
       // drifts out of sync with the UI the moment the user flips a toggle
       // OFF (the subsequent hasConsent read returns the stale TRUE).
-      biosignals
-          ? _coreRuntime!.grantConsent('biosignals')
-          : _coreRuntime!.revokeConsent('biosignals');
-      behavior
-          ? _coreRuntime!.grantConsent('behavior')
-          : _coreRuntime!.revokeConsent('behavior');
-      phoneContext
-          ? _coreRuntime!.grantConsent('phone_context')
-          : _coreRuntime!.revokeConsent('phone_context');
-      cloudUpload
-          ? _coreRuntime!.grantConsent('cloud_upload')
-          : _coreRuntime!.revokeConsent('cloud_upload');
-      vendorSync
-          ? _coreRuntime!.grantConsent('vendor_sync')
-          : _coreRuntime!.revokeConsent('vendor_sync');
-      research
-          ? _coreRuntime!.grantConsent('research')
-          : _coreRuntime!.revokeConsent('research');
-      syni
-          ? _coreRuntime!.grantConsent('syni')
-          : _coreRuntime!.revokeConsent('syni');
+      //
+      // grant/revoke now run off the UI isolate (they do blocking network I/O
+      // — see CoreRuntime._consentMutate). Await them SEQUENTIALLY so two
+      // consent mutations never race on the shared native handle.
+      final rt = _coreRuntime!;
+      await (biosignals
+          ? rt.grantConsent('biosignals')
+          : rt.revokeConsent('biosignals'));
+      await (behavior
+          ? rt.grantConsent('behavior')
+          : rt.revokeConsent('behavior'));
+      await (phoneContext
+          ? rt.grantConsent('phone_context')
+          : rt.revokeConsent('phone_context'));
+      await (cloudUpload
+          ? rt.grantConsent('cloud_upload')
+          : rt.revokeConsent('cloud_upload'));
+      await (vendorSync
+          ? rt.grantConsent('vendor_sync')
+          : rt.revokeConsent('vendor_sync'));
+      await (research
+          ? rt.grantConsent('research')
+          : rt.revokeConsent('research'));
+      await (syni ? rt.grantConsent('syni') : rt.revokeConsent('syni'));
       // Fall through to Dart consent module so UI and module wiring stays in sync
     }
     return shared._grantConsent(
