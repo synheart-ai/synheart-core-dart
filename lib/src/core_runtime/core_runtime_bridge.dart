@@ -1276,28 +1276,39 @@ class CoreRuntimeBridge {
   /// (epoch ms). Each map is a full HSI window payload exactly as archived (any
   /// HSI version) — the host parses it with the same path it uses for local
   /// windows. Returns empty on error, when no cloud connector is configured, or
-  /// when the native symbol is absent (older vendored lib). Network I/O happens
-  /// runtime-side off the shared lock.
-  List<Map<String, dynamic>> fetchCloudHsiWindows({
+  /// when the native symbol is absent (older vendored lib).
+  ///
+  /// The FFI call performs blocking network I/O, so it runs on a background
+  /// isolate (mirroring [sdkRegisterDevice]) — calling it on the UI isolate
+  /// froze the main thread and ANR'd while a request was in flight (e.g. a
+  /// pull-to-refresh keyed on a subject the backend never satisfies).
+  Future<List<Map<String, dynamic>>> fetchCloudHsiWindows({
     required int fromMs,
     required int toMs,
-  }) {
+  }) async {
     if (_disposed) return const [];
+    final handleAddr = _handle.address;
     // Guard the symbol lookup + call: a vendored lib that predates this FFI
     // export throws ArgumentError on first `fetchCloudHsi` access. Treat a
     // missing symbol (or any FFI/parse failure) as "no cloud data".
-    try {
-      final ptr = _ffi.fetchCloudHsi(_handle, fromMs, toMs);
-      final raw = _readAndFree(ptr);
-      if (raw == null) return const [];
-      final decoded = jsonDecode(raw);
-      if (decoded is List) {
-        return decoded.whereType<Map<String, dynamic>>().toList(
-          growable: false,
-        );
-      }
-    } catch (_) {}
-    return const [];
+    return Isolate.run(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return const <Map<String, dynamic>>[];
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      try {
+        final ptr = ffi.fetchCloudHsi(handle, fromMs, toMs);
+        if (ptr == nullptr) return const <Map<String, dynamic>>[];
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          return decoded.whereType<Map<String, dynamic>>().toList(
+            growable: false,
+          );
+        }
+      } catch (_) {}
+      return const <Map<String, dynamic>>[];
+    });
   }
 
   /// Number of archived HSI payloads on-device. Returns `0` on error.
