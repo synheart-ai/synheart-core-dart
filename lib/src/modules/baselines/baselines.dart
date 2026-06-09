@@ -228,6 +228,14 @@ class Baselines {
   /// from a stale post-wipe snapshot.
   static bool _ringHydrated = false;
 
+  /// Nights ring persisted in the host recovery blob (see
+  /// export/loadRecoveryStateJson). Cold-start fallback for [_readRecentRing]
+  /// when the native (subject-scoped) longitudinal snapshot is empty — e.g.
+  /// signed-out / per-device subject — so `nightsLoggedCount` survives a launch
+  /// and Home / Sleep & Recovery don't drop to the "needs more nights" empty
+  /// state even though the latest scores were restored.
+  static List<int>? _persistedRecentRing;
+
   /// True between a [reset] call and the next manual (force) pull.
   /// Auto-pull paths consult this and skip — otherwise on iOS the
   /// orchestrator would silently re-ingest the same Apple Health
@@ -497,6 +505,20 @@ class Baselines {
               ..addAll(List<int>.filled(_localRing.length, -1));
           }
         } catch (_) {}
+      }
+      // Native snapshot empty (subject-scoped store unavailable for this
+      // subject — signed-out / per-device, or a fresh process before the
+      // engine restores) — fall back to the nights ring persisted in the host
+      // recovery blob so already-logged nights still surface on a cold launch.
+      if (_localRing.isEmpty &&
+          _persistedRecentRing != null &&
+          _persistedRecentRing!.isNotEmpty) {
+        _localRing
+          ..clear()
+          ..addAll(_persistedRecentRing!);
+        _localRingDays
+          ..clear()
+          ..addAll(List<int>.filled(_localRing.length, -1));
       }
       _ringHydrated = true;
     }
@@ -2159,6 +2181,9 @@ class Baselines {
   static String exportRecoveryStateJson() {
     final map = <String, Object?>{
       'recent_recovery_scores': _recentRecoveryScores.toList(growable: false),
+      // Persist the nights ring too so `nightsLoggedCount` survives a cold
+      // launch independent of the native (subject-scoped) longitudinal store.
+      'recent_sleep_score_ring': _readRecentRing(),
       'latest_recovery': _latestRecoveryScore == null
           ? null
           : _recoveryToJson(_latestRecoveryScore!),
@@ -2195,6 +2220,24 @@ class Baselines {
           ..addAll(scores.whereType<num>().map((n) => n.toInt()));
         while (_recentRecoveryScores.length > 7) {
           _recentRecoveryScores.removeAt(0);
+        }
+      }
+
+      // Restore the persisted nights ring as the cold-start fallback for
+      // [_readRecentRing] (used when the native longitudinal snapshot is
+      // empty). If the ring was already read empty this process, seed it now
+      // so the restored nights surface without waiting for a [reset].
+      final ring = raw['recent_sleep_score_ring'];
+      if (ring is List) {
+        _persistedRecentRing =
+            ring.whereType<num>().map((n) => n.toInt()).toList();
+        if (_localRing.isEmpty && _persistedRecentRing!.isNotEmpty) {
+          _localRing
+            ..clear()
+            ..addAll(_persistedRecentRing!);
+          _localRingDays
+            ..clear()
+            ..addAll(List<int>.filled(_localRing.length, -1));
         }
       }
 
