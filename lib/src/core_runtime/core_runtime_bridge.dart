@@ -359,23 +359,25 @@ class CoreRuntimeBridge {
   Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) async {
     if (_disposed || _ffi.sdkFfi.registerDevice == null) return null;
     final handleAddr = _handle.address;
-    return _trackFfi(Isolate.run(() {
-      final ffi = SynheartCoreFFI.load();
-      if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
-      final handle = Pointer<Void>.fromAddress(handleAddr);
-      final p = clientId.toNativeUtf8();
-      try {
-        final resPtr = ffi.sdkFfi.registerDevice!(handle, p.cast());
-        if (resPtr == nullptr) return null;
-        final str = resPtr.toDartString();
-        ffi.coreFreeString(resPtr);
-        return jsonDecode(str) as Map<String, dynamic>;
-      } catch (_) {
-        return null;
-      } finally {
-        malloc.free(p);
-      }
-    }));
+    return _trackFfi(
+      Isolate.run(() {
+        final ffi = SynheartCoreFFI.load();
+        if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
+        final handle = Pointer<Void>.fromAddress(handleAddr);
+        final p = clientId.toNativeUtf8();
+        try {
+          final resPtr = ffi.sdkFfi.registerDevice!(handle, p.cast());
+          if (resPtr == nullptr) return null;
+          final str = resPtr.toDartString();
+          ffi.coreFreeString(resPtr);
+          return jsonDecode(str) as Map<String, dynamic>;
+        } catch (_) {
+          return null;
+        } finally {
+          malloc.free(p);
+        }
+      }),
+    );
   }
 
   /// §3 / §5 — JSON snapshot from `synheart_core_sdk_device_auth_status`.
@@ -843,22 +845,24 @@ class CoreRuntimeBridge {
   Future<bool> _consentMutate(String type, {required bool grant}) async {
     if (_disposed) return false;
     final handleAddr = _handle.address;
-    return _trackFfi(Isolate.run(() {
-      final ffi = SynheartCoreFFI.load();
-      if (ffi == null) return false;
-      final handle = Pointer<Void>.fromAddress(handleAddr);
-      final p = type.toNativeUtf8();
-      try {
-        final rc = grant
-            ? ffi.grantConsent(handle, p.cast())
-            : ffi.revokeConsent(handle, p.cast());
-        return rc == 0;
-      } catch (_) {
-        return false;
-      } finally {
-        malloc.free(p);
-      }
-    }));
+    return _trackFfi(
+      Isolate.run(() {
+        final ffi = SynheartCoreFFI.load();
+        if (ffi == null) return false;
+        final handle = Pointer<Void>.fromAddress(handleAddr);
+        final p = type.toNativeUtf8();
+        try {
+          final rc = grant
+              ? ffi.grantConsent(handle, p.cast())
+              : ffi.revokeConsent(handle, p.cast());
+          return rc == 0;
+        } catch (_) {
+          return false;
+        } finally {
+          malloc.free(p);
+        }
+      }),
+    );
   }
 
   bool hasConsent(String type) {
@@ -1349,24 +1353,26 @@ class CoreRuntimeBridge {
     // Guard the symbol lookup + call: a vendored lib that predates this FFI
     // export throws ArgumentError on first `fetchCloudHsi` access. Treat a
     // missing symbol (or any FFI/parse failure) as "no cloud data".
-    return _trackFfi(Isolate.run(() {
-      final ffi = SynheartCoreFFI.load();
-      if (ffi == null) return const <Map<String, dynamic>>[];
-      final handle = Pointer<Void>.fromAddress(handleAddr);
-      try {
-        final ptr = ffi.fetchCloudHsi(handle, fromMs, toMs);
-        if (ptr == nullptr) return const <Map<String, dynamic>>[];
-        final raw = ptr.toDartString();
-        ffi.coreFreeString(ptr);
-        final decoded = jsonDecode(raw);
-        if (decoded is List) {
-          return decoded.whereType<Map<String, dynamic>>().toList(
-            growable: false,
-          );
-        }
-      } catch (_) {}
-      return const <Map<String, dynamic>>[];
-    }));
+    return _trackFfi(
+      Isolate.run(() {
+        final ffi = SynheartCoreFFI.load();
+        if (ffi == null) return const <Map<String, dynamic>>[];
+        final handle = Pointer<Void>.fromAddress(handleAddr);
+        try {
+          final ptr = ffi.fetchCloudHsi(handle, fromMs, toMs);
+          if (ptr == nullptr) return const <Map<String, dynamic>>[];
+          final raw = ptr.toDartString();
+          ffi.coreFreeString(ptr);
+          final decoded = jsonDecode(raw);
+          if (decoded is List) {
+            return decoded.whereType<Map<String, dynamic>>().toList(
+              growable: false,
+            );
+          }
+        } catch (_) {}
+        return const <Map<String, dynamic>>[];
+      }),
+    );
   }
 
   /// Number of archived HSI payloads on-device. Returns `0` on error.
