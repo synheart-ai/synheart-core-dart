@@ -5,6 +5,7 @@
 /// Platform-specific code (Keychain, HealthKit, sensors) stays in Flutter plugins.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:isolate';
@@ -90,6 +91,20 @@ class CoreRuntimeBridge {
   final bool deviceAuthTemporarilyDisabledForSubjectCompat;
   bool _disposed = false;
   Pointer<SynheartSdkCryptoCallbacks>? _sdkCryptoTable;
+
+  /// In-flight `Isolate.run` FFI calls. Each captures a raw native handle
+  /// ADDRESS and runs on a background isolate, so [dispose] must wait for them
+  /// before `coreFree` frees the handle — otherwise the background isolate
+  /// dereferences a freed pointer (use-after-free). Reachable now that the
+  /// subject re-key tears Core down on auth changes.
+  final Set<Future<Object?>> _inflightFfi = <Future<Object?>>{};
+
+  /// Register an isolate FFI future so [dispose] can await it before freeing.
+  Future<T> _trackFfi<T>(Future<T> f) {
+    _inflightFfi.add(f);
+    f.whenComplete(() => _inflightFfi.remove(f));
+    return f;
+  }
 
   /// Default `env_filter` when [initRuntimeLogging] is called with a null/empty filter.
   // static String defaultRuntimeLogEnvFilter = 'info,synheart_core_runtime=debug';
@@ -344,7 +359,7 @@ class CoreRuntimeBridge {
   Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) async {
     if (_disposed || _ffi.sdkFfi.registerDevice == null) return null;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _trackFfi(Isolate.run(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -360,7 +375,7 @@ class CoreRuntimeBridge {
       } finally {
         malloc.free(p);
       }
-    });
+    }));
   }
 
   /// §3 / §5 — JSON snapshot from `synheart_core_sdk_device_auth_status`.
@@ -391,17 +406,36 @@ class CoreRuntimeBridge {
   }
 
   /// Release the native handle. Must be called when done.
+  ///
+  /// Marks disposed FIRST (every Isolate.run FFI method early-returns on
+  /// `_disposed`, and the check + `_trackFfi` happen with no `await` between
+  /// them, so no new background call can start once this runs), then defers the
+  /// actual `coreFree` until any IN-FLIGHT background-isolate calls finish —
+  /// otherwise `coreFree` would free the handle while a background isolate is
+  /// still dereferencing it (use-after-free).
   void dispose() {
-    if (!_disposed) {
-      clearStreamCallback();
-      clearHsiCallback();
+    if (_disposed) return;
+    _disposed = true;
+    clearStreamCallback();
+    clearHsiCallback();
+    final pending = _inflightFfi.toList();
+    Future<void> freeWhenIdle() async {
+      if (pending.isNotEmpty) {
+        try {
+          await Future.wait<Object?>(pending);
+        } catch (_) {
+          // A failed in-flight call still completed (no longer touching the
+          // handle) — proceed to free.
+        }
+      }
       _ffi.coreFree(_handle);
       if (_sdkCryptoTable != null) {
         calloc.free(_sdkCryptoTable!);
         _sdkCryptoTable = null;
       }
-      _disposed = true;
     }
+
+    unawaited(freeWhenIdle());
   }
 
   // ── Session lifecycle ────────────────────────────────────────────────
@@ -809,7 +843,7 @@ class CoreRuntimeBridge {
   Future<bool> _consentMutate(String type, {required bool grant}) async {
     if (_disposed) return false;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _trackFfi(Isolate.run(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return false;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -824,7 +858,7 @@ class CoreRuntimeBridge {
       } finally {
         malloc.free(p);
       }
-    });
+    }));
   }
 
   bool hasConsent(String type) {
@@ -1315,7 +1349,7 @@ class CoreRuntimeBridge {
     // Guard the symbol lookup + call: a vendored lib that predates this FFI
     // export throws ArgumentError on first `fetchCloudHsi` access. Treat a
     // missing symbol (or any FFI/parse failure) as "no cloud data".
-    return Isolate.run(() {
+    return _trackFfi(Isolate.run(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return const <Map<String, dynamic>>[];
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -1332,7 +1366,7 @@ class CoreRuntimeBridge {
         }
       } catch (_) {}
       return const <Map<String, dynamic>>[];
-    });
+    }));
   }
 
   /// Number of archived HSI payloads on-device. Returns `0` on error.
