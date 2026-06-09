@@ -2229,8 +2229,10 @@ class Baselines {
       // so the restored nights surface without waiting for a [reset].
       final ring = raw['recent_sleep_score_ring'];
       if (ring is List) {
-        _persistedRecentRing =
-            ring.whereType<num>().map((n) => n.toInt()).toList();
+        _persistedRecentRing = ring
+            .whereType<num>()
+            .map((n) => n.toInt())
+            .toList();
         if (_localRing.isEmpty && _persistedRecentRing!.isNotEmpty) {
           _localRing
             ..clear()
