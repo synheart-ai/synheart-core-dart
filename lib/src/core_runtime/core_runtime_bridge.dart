@@ -99,8 +99,14 @@ class CoreRuntimeBridge {
   /// subject re-key tears Core down on auth changes.
   final Set<Future<Object?>> _inflightFfi = <Future<Object?>>{};
 
-  /// Register an isolate FFI future so [dispose] can await it before freeing.
-  Future<T> _trackFfi<T>(Future<T> f) {
+  /// Runs [body] on a background isolate — a native FFI call that
+  /// dereferences the handle by address — and registers the in-flight future
+  /// so [dispose] can await it before `coreFree` frees the handle. EVERY
+  /// handle-dereferencing `Isolate.run` in this bridge MUST go through here,
+  /// or a teardown that races an in-flight call frees the handle out from
+  /// under the isolate (use-after-free across the FFI boundary).
+  Future<T> _runFfi<T>(FutureOr<T> Function() body) {
+    final f = Isolate.run(body);
     _inflightFfi.add(f);
     f.whenComplete(() => _inflightFfi.remove(f));
     return f;
@@ -359,25 +365,23 @@ class CoreRuntimeBridge {
   Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) async {
     if (_disposed || _ffi.sdkFfi.registerDevice == null) return null;
     final handleAddr = _handle.address;
-    return _trackFfi(
-      Isolate.run(() {
-        final ffi = SynheartCoreFFI.load();
-        if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
-        final handle = Pointer<Void>.fromAddress(handleAddr);
-        final p = clientId.toNativeUtf8();
-        try {
-          final resPtr = ffi.sdkFfi.registerDevice!(handle, p.cast());
-          if (resPtr == nullptr) return null;
-          final str = resPtr.toDartString();
-          ffi.coreFreeString(resPtr);
-          return jsonDecode(str) as Map<String, dynamic>;
-        } catch (_) {
-          return null;
-        } finally {
-          malloc.free(p);
-        }
-      }),
-    );
+    return _runFfi(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final p = clientId.toNativeUtf8();
+      try {
+        final resPtr = ffi.sdkFfi.registerDevice!(handle, p.cast());
+        if (resPtr == nullptr) return null;
+        final str = resPtr.toDartString();
+        ffi.coreFreeString(resPtr);
+        return jsonDecode(str) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      } finally {
+        malloc.free(p);
+      }
+    });
   }
 
   /// §3 / §5 — JSON snapshot from `synheart_core_sdk_device_auth_status`.
@@ -410,8 +414,9 @@ class CoreRuntimeBridge {
   /// Release the native handle. Must be called when done.
   ///
   /// Marks disposed FIRST (every Isolate.run FFI method early-returns on
-  /// `_disposed`, and the check + `_trackFfi` happen with no `await` between
-  /// them, so no new background call can start once this runs), then defers the
+  /// `_disposed`, and the check + `_runFfi` spawn happen with no `await`
+  /// between them, so no new background call can start once this runs), then
+  /// defers the
   /// actual `coreFree` until any IN-FLIGHT background-isolate calls finish —
   /// otherwise `coreFree` would free the handle while a background isolate is
   /// still dereferencing it (use-after-free).
@@ -845,24 +850,22 @@ class CoreRuntimeBridge {
   Future<bool> _consentMutate(String type, {required bool grant}) async {
     if (_disposed) return false;
     final handleAddr = _handle.address;
-    return _trackFfi(
-      Isolate.run(() {
-        final ffi = SynheartCoreFFI.load();
-        if (ffi == null) return false;
-        final handle = Pointer<Void>.fromAddress(handleAddr);
-        final p = type.toNativeUtf8();
-        try {
-          final rc = grant
-              ? ffi.grantConsent(handle, p.cast())
-              : ffi.revokeConsent(handle, p.cast());
-          return rc == 0;
-        } catch (_) {
-          return false;
-        } finally {
-          malloc.free(p);
-        }
-      }),
-    );
+    return _runFfi(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return false;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final p = type.toNativeUtf8();
+      try {
+        final rc = grant
+            ? ffi.grantConsent(handle, p.cast())
+            : ffi.revokeConsent(handle, p.cast());
+        return rc == 0;
+      } catch (_) {
+        return false;
+      } finally {
+        malloc.free(p);
+      }
+    });
   }
 
   bool hasConsent(String type) {
@@ -898,7 +901,7 @@ class CoreRuntimeBridge {
     if (_disposed) return null;
     final handleAddr = _handle.address;
     final payload = jsonEncode(formJson);
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -938,7 +941,7 @@ class CoreRuntimeBridge {
   }) async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -967,7 +970,7 @@ class CoreRuntimeBridge {
   Future<Map<String, dynamic>?> withdrawResearchStudy() async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -990,7 +993,7 @@ class CoreRuntimeBridge {
   Future<Map<String, dynamic>?> researchStudyStatus() async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -1014,7 +1017,7 @@ class CoreRuntimeBridge {
   }) async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -1353,26 +1356,24 @@ class CoreRuntimeBridge {
     // Guard the symbol lookup + call: a vendored lib that predates this FFI
     // export throws ArgumentError on first `fetchCloudHsi` access. Treat a
     // missing symbol (or any FFI/parse failure) as "no cloud data".
-    return _trackFfi(
-      Isolate.run(() {
-        final ffi = SynheartCoreFFI.load();
-        if (ffi == null) return const <Map<String, dynamic>>[];
-        final handle = Pointer<Void>.fromAddress(handleAddr);
-        try {
-          final ptr = ffi.fetchCloudHsi(handle, fromMs, toMs);
-          if (ptr == nullptr) return const <Map<String, dynamic>>[];
-          final raw = ptr.toDartString();
-          ffi.coreFreeString(ptr);
-          final decoded = jsonDecode(raw);
-          if (decoded is List) {
-            return decoded.whereType<Map<String, dynamic>>().toList(
-              growable: false,
-            );
-          }
-        } catch (_) {}
-        return const <Map<String, dynamic>>[];
-      }),
-    );
+    return _runFfi(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return const <Map<String, dynamic>>[];
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      try {
+        final ptr = ffi.fetchCloudHsi(handle, fromMs, toMs);
+        if (ptr == nullptr) return const <Map<String, dynamic>>[];
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          return decoded.whereType<Map<String, dynamic>>().toList(
+            growable: false,
+          );
+        }
+      } catch (_) {}
+      return const <Map<String, dynamic>>[];
+    });
   }
 
   /// Number of archived HSI payloads on-device. Returns `0` on error.
@@ -1427,7 +1428,7 @@ class CoreRuntimeBridge {
   }) async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -1463,7 +1464,7 @@ class CoreRuntimeBridge {
   Future<Map<String, dynamic>?> getDataDeletion(String requestId) async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -1495,7 +1496,7 @@ class CoreRuntimeBridge {
   Future<Map<String, dynamic>?> baselineHydrateLocal() async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final fn = ffi.baselineHydrateLocal;
@@ -1521,7 +1522,7 @@ class CoreRuntimeBridge {
   Future<Uint8List?> baselineExportOffline({required String passphrase}) async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final fn = ffi.baselineExportOffline;
@@ -1557,7 +1558,7 @@ class CoreRuntimeBridge {
     if (_disposed) return null;
     final handleAddr = _handle.address;
     final blobB64 = base64Encode(blob);
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final fn = ffi.baselineImportOffline;
@@ -1589,7 +1590,7 @@ class CoreRuntimeBridge {
   }) async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
-    return Isolate.run(() {
+    return _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
