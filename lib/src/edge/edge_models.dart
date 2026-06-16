@@ -25,11 +25,7 @@ class HrSample {
   /// Producer source (e.g. `healthkit`); null when omitted.
   final String? source;
 
-  const HrSample({
-    required this.bpm,
-    required this.timestampMs,
-    this.source,
-  });
+  const HrSample({required this.bpm, required this.timestampMs, this.source});
 
   @override
   bool operator ==(Object other) =>
@@ -91,7 +87,8 @@ class BioSample {
   });
 
   @override
-  String toString() => 'BioSample(bpm: $bpm, timestampMs: $timestampMs, '
+  String toString() =>
+      'BioSample(bpm: $bpm, timestampMs: $timestampMs, '
       'rrIntervalsMs: $rrIntervalsMs, accel: $accel, source: $source)';
 }
 
@@ -132,7 +129,8 @@ class HsiArtifact {
   });
 
   @override
-  String toString() => 'HsiArtifact(artifactId: $artifactId, '
+  String toString() =>
+      'HsiArtifact(artifactId: $artifactId, '
       'hsiVersion: $hsiVersion, hsiVersionSupported: $hsiVersionSupported, '
       'payloadHashSha256: $payloadHashSha256)';
 }

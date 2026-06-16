@@ -109,8 +109,8 @@ class EdgeIngest {
     this.listener,
     Set<String> supportedHsiVersions = EdgeIngest.supportedHsiVersions,
     void Function(String message)? logSink,
-  })  : _supported = supportedHsiVersions,
-        _log = logSink ?? _defaultLog;
+  }) : _supported = supportedHsiVersions,
+       _log = logSink ?? _defaultLog;
 
   static void _defaultLog(String message) =>
       developer.log(message, name: 'synheart.edge');
@@ -219,7 +219,8 @@ class EdgeIngest {
     final declaredHash = _nonEmptyString(body[_keyPayloadHash]);
     if (declaredHash == null) {
       return _drop(
-          'hsi_artifact missing `payload_hash_sha256` (id=$artifactId)');
+        'hsi_artifact missing `payload_hash_sha256` (id=$artifactId)',
+      );
     }
 
     // §5 — verify payload_hash_sha256 == sha256(payload_json).
@@ -233,17 +234,21 @@ class EdgeIngest {
       final attempts = (_mismatchCounts[artifactId] ?? 0) + 1;
       _mismatchCounts[artifactId] = attempts;
       if (attempts >= poisonPillThreshold) {
-        _log('[EdgeIngest] artifact $artifactId hash mismatch x$attempts '
-            '(declared=$declaredHash computed=$computed) — dead-lettering: '
-            'ack-to-discard so it stops blocking the outbox');
+        _log(
+          '[EdgeIngest] artifact $artifactId hash mismatch x$attempts '
+          '(declared=$declaredHash computed=$computed) — dead-lettering: '
+          'ack-to-discard so it stops blocking the outbox',
+        );
         _mismatchCounts.remove(artifactId);
         _recordSeen(artifactId);
         _pendingAckIds.add(artifactId);
         listener?.onPoisonPill(artifactId, declaredHash, computed, attempts);
         return ArtifactDeadLettered(artifactId);
       }
-      _log('[EdgeIngest] artifact $artifactId rejected (attempt $attempts): '
-          'payload_hash_sha256 mismatch (declared=$declaredHash computed=$computed)');
+      _log(
+        '[EdgeIngest] artifact $artifactId rejected (attempt $attempts): '
+        'payload_hash_sha256 mismatch (declared=$declaredHash computed=$computed)',
+      );
       return ArtifactHashMismatch(artifactId);
     }
 
@@ -252,7 +257,9 @@ class EdgeIngest {
     // is delete-on-ACK, so a lost ACK makes it resend forever; re-acking
     // duplicates is the whole point.
     if (_seenArtifactIds.contains(artifactId)) {
-      _log('[EdgeIngest] artifact $artifactId duplicate — re-acking, not re-surfacing');
+      _log(
+        '[EdgeIngest] artifact $artifactId duplicate — re-acking, not re-surfacing',
+      );
       _pendingAckIds.add(artifactId);
       _recordSeen(artifactId); // refresh LRU recency
       return ArtifactDuplicate(artifactId);
@@ -264,13 +271,16 @@ class EdgeIngest {
     // own `hsi_version` (parity with Kotlin's `extractHsiVersionFromPayload`).
     // Flag both an out-of-set value AND an absent one (parity with Kotlin/Swift,
     // which both flag absent), but still surface.
-    final hsiVersion = _nonEmptyString(body[_keyHsiVersion]) ??
+    final hsiVersion =
+        _nonEmptyString(body[_keyHsiVersion]) ??
         _extractHsiVersionFromPayload(payloadJson);
     final supported = hsiVersion != null && _supported.contains(hsiVersion);
     if (!supported) {
       final shown = hsiVersion ?? '(absent)';
-      _log('[EdgeIngest] artifact $artifactId hsi_version "$shown" outside '
-          'supported set $_supported — producer drift, surfacing anyway');
+      _log(
+        '[EdgeIngest] artifact $artifactId hsi_version "$shown" outside '
+        'supported set $_supported — producer drift, surfacing anyway',
+      );
     }
 
     final artifact = HsiArtifact(
@@ -443,7 +453,11 @@ abstract mixin class EdgeIngestListener {
   /// dead-lettered — surfaced here as a hard error AND ack-to-discarded so it
   /// stops blocking the watch's delete-on-ACK outbox. Optional.
   void onPoisonPill(
-      String artifactId, String expected, String actual, int attempts) {}
+    String artifactId,
+    String expected,
+    String actual,
+    int attempts,
+  ) {}
 }
 
 /// The outcome of consuming one body (parity with Swift's `Outcome`). Returned

@@ -47,8 +47,11 @@ class _Recorder with EdgeIngestListener {
   void onSessionEvent(EdgeSessionEvent event) => events.add(event);
   @override
   void onPoisonPill(
-          String artifactId, String expected, String actual, int attempts) =>
-      poisonPills.add(MapEntry(artifactId, attempts));
+    String artifactId,
+    String expected,
+    String actual,
+    int attempts,
+  ) => poisonPills.add(MapEntry(artifactId, attempts));
 }
 
 void main() {
@@ -88,11 +91,13 @@ void main() {
 
       // payload carries an out-of-set version; keep envelope hsi_version too.
       const payload = '{"hsi_version":"9.9"}';
-      final outcome = ingest.ingest(artifactBody(
-        artifactId: 'hsi_v_0',
-        payloadJson: payload,
-        hsiVersion: '9.9',
-      ));
+      final outcome = ingest.ingest(
+        artifactBody(
+          artifactId: 'hsi_v_0',
+          payloadJson: payload,
+          hsiVersion: '9.9',
+        ),
+      );
 
       expect(outcome, isA<ArtifactAccepted>());
       expect(rec.artifacts.single.hsiVersionSupported, isFalse);
@@ -104,11 +109,13 @@ void main() {
       final ingest = EdgeIngest(listener: rec);
 
       // No envelope hsi_version AND payload has none either.
-      final outcome = ingest.ingest(artifactBody(
-        artifactId: 'hsi_noV_0',
-        payloadJson: '{"score":0.1}',
-        hsiVersion: null,
-      ));
+      final outcome = ingest.ingest(
+        artifactBody(
+          artifactId: 'hsi_noV_0',
+          payloadJson: '{"score":0.1}',
+          hsiVersion: null,
+        ),
+      );
 
       expect(outcome, isA<ArtifactAccepted>());
       expect(rec.artifacts.single.hsiVersionSupported, isFalse);
@@ -151,21 +158,20 @@ void main() {
         'source': 'healthkit',
       });
       expect(outcome, isA<HrSampleOutcome>());
-      expect(rec.hr.single, const HrSample(
-        bpm: 72.0,
-        timestampMs: 1718900000000,
-        source: 'healthkit',
-      ));
+      expect(
+        rec.hr.single,
+        const HrSample(
+          bpm: 72.0,
+          timestampMs: 1718900000000,
+          source: 'healthkit',
+        ),
+      );
     });
 
     test('hr_sample omitted source -> null', () {
       final rec = _Recorder();
       final ingest = EdgeIngest(listener: rec);
-      ingest.ingest({
-        'type': 'hr_sample',
-        'bpm': 60,
-        'timestamp_ms': 1,
-      });
+      ingest.ingest({'type': 'hr_sample', 'bpm': 60, 'timestamp_ms': 1});
       expect(rec.hr.single.source, isNull);
       expect(rec.hr.single.bpm, 60.0); // int coerced to double
     });
@@ -250,11 +256,9 @@ void main() {
     test('ingestRaw parses a valid hr_sample JSON string', () {
       final rec = _Recorder();
       final ingest = EdgeIngest(listener: rec);
-      final outcome = ingest.ingestRaw(jsonEncode({
-        'type': 'hr_sample',
-        'bpm': 80.0,
-        'timestamp_ms': 5,
-      }));
+      final outcome = ingest.ingestRaw(
+        jsonEncode({'type': 'hr_sample', 'bpm': 80.0, 'timestamp_ms': 5}),
+      );
       expect(outcome, isA<HrSampleOutcome>());
       expect(rec.hr.single.bpm, 80.0);
     });
@@ -309,11 +313,13 @@ void main() {
       // and marks it supported.
       final rec = _Recorder();
       final ingest = EdgeIngest(listener: rec);
-      ingest.ingest(artifactBody(
-        artifactId: 'hsi_fb_0',
-        payloadJson: '{"hsi_version":"1.3"}',
-        hsiVersion: null, // present in payload, absent in envelope
-      ));
+      ingest.ingest(
+        artifactBody(
+          artifactId: 'hsi_fb_0',
+          payloadJson: '{"hsi_version":"1.3"}',
+          hsiVersion: null, // present in payload, absent in envelope
+        ),
+      );
       expect(rec.artifacts.single.hsiVersion, '1.3');
       expect(rec.artifacts.single.hsiVersionSupported, isTrue);
     });
@@ -321,11 +327,13 @@ void main() {
     test('payload-fallback to an out-of-set version is flagged', () {
       final rec = _Recorder();
       final ingest = EdgeIngest(listener: rec);
-      ingest.ingest(artifactBody(
-        artifactId: 'hsi_fb_1',
-        payloadJson: '{"hsi_version":"9.9"}',
-        hsiVersion: null,
-      ));
+      ingest.ingest(
+        artifactBody(
+          artifactId: 'hsi_fb_1',
+          payloadJson: '{"hsi_version":"9.9"}',
+          hsiVersion: null,
+        ),
+      );
       expect(rec.artifacts.single.hsiVersion, '9.9');
       expect(rec.artifacts.single.hsiVersionSupported, isFalse);
     });
@@ -344,8 +352,9 @@ void main() {
       final second = ingest.ingest(artifactBody(artifactId: 'hsi_dup_0'));
       expect(second, isA<ArtifactDuplicate>());
       expect(rec.artifacts.length, 1, reason: 'duplicate must not re-surface');
-      expect(ingest.drainPendingAcks(), ['hsi_dup_0'],
-          reason: 'duplicate must be re-queued for ACK');
+      expect(ingest.drainPendingAcks(), [
+        'hsi_dup_0',
+      ], reason: 'duplicate must be re-queued for ACK');
     });
 
     test('duplicate ack is idempotent (not double-queued)', () {
@@ -361,23 +370,35 @@ void main() {
     test('dead-lettered after three hash mismatches', () {
       final rec = _Recorder();
       final ingest = EdgeIngest(listener: rec);
-      final bad = artifactBody(artifactId: 'hsi_poison_0', overrideHash: 'deadbeef');
+      final bad = artifactBody(
+        artifactId: 'hsi_poison_0',
+        overrideHash: 'deadbeef',
+      );
 
       // Attempts 1 + 2: normal rejection — not surfaced, not acked, no dead-letter.
       expect(ingest.ingest(bad), isA<ArtifactHashMismatch>());
       expect(ingest.ingest(bad), isA<ArtifactHashMismatch>());
       expect(rec.poisonPills, isEmpty);
-      expect(ingest.drainPendingAcks(), isEmpty,
-          reason: 'sub-threshold mismatches must not be acked');
+      expect(
+        ingest.drainPendingAcks(),
+        isEmpty,
+        reason: 'sub-threshold mismatches must not be acked',
+      );
 
       // Attempt 3: dead-letter — hard error + ack-to-discard.
       expect(ingest.ingest(bad), isA<ArtifactDeadLettered>());
       expect(rec.poisonPills.length, 1);
       expect(rec.poisonPills.single.value, 3);
-      expect(rec.artifacts, isEmpty,
-          reason: 'poison pill must never surface as a valid artifact');
-      expect(ingest.drainPendingAcks(), ['hsi_poison_0'],
-          reason: 'dead-lettered id must be ack-to-discarded');
+      expect(
+        rec.artifacts,
+        isEmpty,
+        reason: 'poison pill must never surface as a valid artifact',
+      );
+      expect(
+        ingest.drainPendingAcks(),
+        ['hsi_poison_0'],
+        reason: 'dead-lettered id must be ack-to-discarded',
+      );
     });
 
     test('poison pill threshold is three', () {
@@ -398,12 +419,17 @@ void main() {
       // The eldest id ('hsi_0') was evicted → re-sending it accepts again
       // (harmless per contract §5).
       final outcome = ingest.ingest(artifactBody(artifactId: 'hsi_0'));
-      expect(outcome, isA<ArtifactAccepted>(),
-          reason: 'evicted id should accept again, proving the set is bounded');
+      expect(
+        outcome,
+        isA<ArtifactAccepted>(),
+        reason: 'evicted id should accept again, proving the set is bounded',
+      );
       expect(ingest.seenCount(), cap);
       // A recently-seen id is still deduped.
-      expect(ingest.ingest(artifactBody(artifactId: 'hsi_${cap + 99}')),
-          isA<ArtifactDuplicate>());
+      expect(
+        ingest.ingest(artifactBody(artifactId: 'hsi_${cap + 99}')),
+        isA<ArtifactDuplicate>(),
+      );
     });
   });
 
@@ -413,8 +439,11 @@ void main() {
       final rec = _Recorder();
       final ingest = EdgeIngest(listener: rec);
       expect(ingest.ingest({'type': '', 'session_id': 's1'}), isA<Dropped>());
-      expect(rec.events, isEmpty,
-          reason: 'empty type must not surface as a session event');
+      expect(
+        rec.events,
+        isEmpty,
+        reason: 'empty type must not surface as a session event',
+      );
     });
   });
 }
