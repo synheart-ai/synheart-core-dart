@@ -1247,6 +1247,7 @@ class Baselines {
             awakenings: _num(raw['awakenings'])?.toInt() ?? 0,
             timeInBedMinutes: (_num(raw['time_in_bed_minutes']) ?? totalSleep)
                 .toDouble(),
+            sleepLatencyMinutes: _num(raw['sleep_latency_minutes'])?.toDouble(),
           ),
         );
 

@@ -75,6 +75,35 @@ enum SleepScoreReason {
   }
 }
 
+/// Discrete, structured drivers of the sleep score, as emitted by the runtime.
+///
+/// Each value carries a stable [wire] identifier; [fromWire] maps the runtime's
+/// JSON strings back to the enum. A factor is present only when its underlying
+/// signal was actually measured — never for imputed or missing data — so a
+/// consumer can rely on it as ground truth when explaining a score.
+enum SleepFactor {
+  durationShort('duration_short'),
+  durationAmple('duration_ample'),
+  deepLow('deep_low'),
+  remLow('rem_low'),
+  fragmented('fragmented'),
+  latencyLong('latency_long'),
+  scheduleInconsistent('schedule_inconsistent'),
+  belowPersonalBaseline('below_personal_baseline'),
+  sleepHrElevated('sleep_hr_elevated'),
+  sleepDebt('sleep_debt');
+
+  final String wire;
+  const SleepFactor(this.wire);
+
+  static SleepFactor? fromWire(String s) {
+    for (final v in SleepFactor.values) {
+      if (v.wire == s) return v;
+    }
+    return null;
+  }
+}
+
 /// A contiguous stage interval. Half-open: `[startMs, endMs)`.
 class StageSegment {
   final SleepStage stage;
@@ -109,6 +138,11 @@ class AggregatedTotals {
   final int? awakenings;
   final double? timeInBedMinutes;
 
+  /// Sleep onset latency in minutes — time from lights-out to first sleep.
+  /// Optional: many aggregate sources don't report it. Surfaces the
+  /// `latencyLong` explanation factor; does not (yet) feed the numeric score.
+  final double? sleepLatencyMinutes;
+
   const AggregatedTotals({
     required this.totalSleepMinutes,
     this.deepSleepMinutes,
@@ -116,6 +150,7 @@ class AggregatedTotals {
     required this.awakeMinutes,
     this.awakenings,
     this.timeInBedMinutes,
+    this.sleepLatencyMinutes,
   });
 
   Map<String, Object?> toJson() => {
@@ -125,6 +160,8 @@ class AggregatedTotals {
     'awake_minutes': awakeMinutes,
     'awakenings': awakenings,
     'time_in_bed_minutes': timeInBedMinutes,
+    if (sleepLatencyMinutes != null)
+      'sleep_latency_minutes': sleepLatencyMinutes,
   };
 }
 
@@ -316,6 +353,10 @@ class SleepScoreResult {
   final String modelId;
   final String constantsHash;
 
+  /// Structured drivers of this score (see [SleepFactor]). Empty on
+  /// vendor-passthrough and proxy paths. Does not affect [score].
+  final List<SleepFactor> explanation;
+
   const SleepScoreResult({
     this.score,
     this.scoreNormalized,
@@ -330,30 +371,41 @@ class SleepScoreResult {
     required this.pipelineVersion,
     required this.modelId,
     required this.constantsHash,
+    this.explanation = const [],
   });
 
-  factory SleepScoreResult.fromJson(Map<String, Object?> json) =>
-      SleepScoreResult(
-        score: (json['score'] as num?)?.toInt(),
-        scoreNormalized: (json['score_normalized'] as num?)?.toDouble(),
-        confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
-        path: SleepPath.fromWire(json['path'] as String? ?? 'proxy'),
-        mode: SleepScoreMode.fromWire(json['mode'] as String? ?? 'cold_start'),
-        components: SleepScoreBreakdown.fromJson(
-          (json['components'] as Map?)?.cast<String, Object?>() ?? {},
-        ),
-        adjustments: SleepScoreAdjust.fromJson(
-          (json['adjustments'] as Map?)?.cast<String, Object?>() ?? {},
-        ),
-        effectiveWeights: ComponentWeights.fromJson(
-          (json['effective_weights'] as Map?)?.cast<String, Object?>() ?? {},
-        ),
-        reason: SleepScoreReason.fromWire(json['reason'] as String?),
-        priorNightCount: (json['prior_night_count'] as num?)?.toInt() ?? 0,
-        pipelineVersion: json['pipeline_version'] as String? ?? '',
-        modelId: json['model_id'] as String? ?? '',
-        constantsHash: json['constants_hash'] as String? ?? '',
-      );
+  factory SleepScoreResult.fromJson(Map<String, Object?> json) {
+    final rawExpl = (json['explanation'] as List?) ?? const [];
+    final factors = <SleepFactor>[];
+    for (final e in rawExpl) {
+      if (e is String) {
+        final f = SleepFactor.fromWire(e);
+        if (f != null) factors.add(f);
+      }
+    }
+    return SleepScoreResult(
+      score: (json['score'] as num?)?.toInt(),
+      scoreNormalized: (json['score_normalized'] as num?)?.toDouble(),
+      confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
+      path: SleepPath.fromWire(json['path'] as String? ?? 'proxy'),
+      mode: SleepScoreMode.fromWire(json['mode'] as String? ?? 'cold_start'),
+      components: SleepScoreBreakdown.fromJson(
+        (json['components'] as Map?)?.cast<String, Object?>() ?? {},
+      ),
+      adjustments: SleepScoreAdjust.fromJson(
+        (json['adjustments'] as Map?)?.cast<String, Object?>() ?? {},
+      ),
+      effectiveWeights: ComponentWeights.fromJson(
+        (json['effective_weights'] as Map?)?.cast<String, Object?>() ?? {},
+      ),
+      reason: SleepScoreReason.fromWire(json['reason'] as String?),
+      priorNightCount: (json['prior_night_count'] as num?)?.toInt() ?? 0,
+      pipelineVersion: json['pipeline_version'] as String? ?? '',
+      modelId: json['model_id'] as String? ?? '',
+      constantsHash: json['constants_hash'] as String? ?? '',
+      explanation: factors,
+    );
+  }
 
   factory SleepScoreResult.fromJsonString(String s) =>
       SleepScoreResult.fromJson(jsonDecode(s) as Map<String, Object?>);
