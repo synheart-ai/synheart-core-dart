@@ -7,7 +7,7 @@
 /// exactly, expressed idiomatically in pure Dart so the edge core unit-tests
 /// without any Flutter dependency.
 ///
-/// Wire keys / units (see `docs/EDGE-WIRE-CONTRACT.md` §2–§3):
+/// Wire keys / units (see `EDGE-WIRE-CONTRACT.md` §2–§3, in the synheart-edge repo):
 ///  - timestamps are epoch **milliseconds**, `_ms` suffix;
 ///  - HR `bpm` is a double;
 ///  - `rr_intervals_ms` is an array of doubles, empty when omitted;
