@@ -17,6 +17,17 @@ Human state inference is computed on-device by the runtime.
 
 **This SDK handles platform-specific concerns only:** sensor collection (HealthKit, Health Connect), UI consent flows, secure storage (Keychain, EncryptedSharedPreferences), and Flutter-native reactive streams.
 
+> **⚠️ The native runtime binary is proprietary and authentication-gated.**
+> This package on pub.dev is a thin FFI shell — it does **not** bundle the
+> Synheart Runtime native binary. The binary (iOS `.xcframework`, Android `.so`)
+> is distributed from a private artifact registry and requires Synheart
+> authentication (`synheart login`); the binaries are gitignored and
+> CLI-managed. An unauthenticated `flutter pub add synheart_core` therefore
+> gets a **non-functional FFI shell** — the Dart API compiles, but every
+> runtime-backed call fails until the binary is installed via the
+> [Synheart CLI](https://docs.synheart.ai/synheart-cli) (`synheart login`
+> then `synheart install runtime`). See [Native Runtime Setup](#native-runtime-setup).
+
 ## Architecture diagram
 
 ```text
@@ -127,7 +138,7 @@ Add `synheart_core` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  synheart_core: ^0.2.0
+  synheart_core: ^0.6.3
 ```
 
 Or:
@@ -453,6 +464,72 @@ host language SDKs (Dart, Kotlin, Swift) consume **HSI** uniformly;
 HSV details live in the engine and are not surfaced individually.
 
 See the [example app](example/) for a complete integration walkthrough.
+
+## Edge ingest (watch → phone)
+
+`EdgeIngest` is the canonical phone-side consumer of the Synheart **edge wire
+contract** (watch → phone). It is the counterpart to the watch producer and
+exists so apps stop re-implementing watch→phone ingest: parse, hash-verify
+(`payload_hash_sha256`), HSI-version validate (§0), dedupe by `artifact_id`, and
+ACK all live here once. The core is **pure Dart** (no Flutter import), so it
+unit-tests under `dart test` / `flutter test`. See
+[EDGE-WIRE-CONTRACT.md](https://github.com/synheart-ai/synheart-edge/blob/main/docs/EDGE-WIRE-CONTRACT.md)
+for the canonical message shapes.
+
+```dart
+import 'package:synheart_core/synheart_core.dart';
+
+// 1. Construct (optionally with an EdgeIngestListener).
+final ingest = EdgeIngest();
+
+// 2. Observe the broadcast Stream<EdgeEvent> (parity with the Kotlin
+//    `SharedFlow` and Swift `events` publisher).
+final sub = ingest.events.listen((event) {
+  switch (event) {
+    case HrEvent(:final sample):        // …
+    case BioEvent(:final sample):       // …
+    case ArtifactEvent(:final artifact): render(artifact.payloadJson);
+    case SessionEventWrap(:final event): break;
+  }
+});
+
+// 3. Feed decoded bodies in; then drain + send the artifact_ack.
+final outcome = ingest.ingest(body);     // Map<String, dynamic> from the adapter
+final ack = ingest.drainAckBody();       // { "command":"artifact_ack", … }
+if (ack != null) sendOnCommandChannel(ack);  // → Wire Contract §4/§5
+
+// 4. Lifecycle — Flutter only: dispose() closes the broadcast
+//    StreamController. Always call it when you're done (e.g. in
+//    `State.dispose()`); otherwise the controller leaks. It is idempotent.
+//    (Kotlin/Swift have no equivalent — their hot streams are GC'd with the
+//    instance.)
+await sub.cancel();
+await ingest.dispose();
+```
+
+For parity awareness: the Kotlin SDK additionally exposes `Listener` hooks
+`onUnsupportedHsiVersion(...)` / `onHashMismatch(...)`; Dart folds those signals
+into the `EdgeOutcome` return value (`ArtifactHashMismatch`) and logging.
+
+**Delivery hardening.** Because the watch outbox is delete-on-ACK, ingest is
+hardened against two failure modes:
+
+- **Duplicate re-ack.** A duplicate `artifact_id` (already accepted) is **not**
+  re-surfaced — `ingest(...)` returns `ArtifactDuplicate` — but it **is**
+  re-queued for ACK. A lost ACK would otherwise make the watch resend forever;
+  re-acking duplicates clears the outbox. The dedupe set is a bounded LRU
+  (capacity `EdgeIngest.seenLruCapacity`), so memory stays flat.
+- **Poison-pill dead-letter.** A deterministically-corrupt artifact whose
+  `payload_hash_sha256` keeps mismatching is detected per `artifact_id`: after
+  `EdgeIngest.poisonPillThreshold` (3) mismatches it is **dead-lettered** —
+  `ingest(...)` returns `ArtifactDeadLettered`, the optional
+  `EdgeIngestListener.onPoisonPill(artifactId, expected, actual, attempts)` hook
+  fires, and the id is ack-to-discarded so it stops blocking the outbox. The
+  first/normal mismatch still returns `ArtifactHashMismatch` without acking.
+
+The pure `EdgeIngest` core is transport-agnostic; wire it to your own
+`WatchConnectivity` / Wear Data Layer plugin and feed decoded bodies into
+`ingest(...)` / `ingestRaw(...)`.
 
 ## Batch Ingest Mode
 

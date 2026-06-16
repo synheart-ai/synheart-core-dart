@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`EdgeIngest`** — canonical phone-side consumer of the Synheart edge wire
+  contract (watch → phone; see
+  [EDGE-WIRE-CONTRACT.md](https://github.com/synheart-ai/synheart-edge/blob/main/docs/EDGE-WIRE-CONTRACT.md)).
+  Pure Dart (no Flutter import), unit-tests under `dart test` / `flutter test`.
+  Parses `hr_sample` / `bio_sample` / `hsi_artifact` / session events and, for
+  artifacts, dedupes by `artifact_id`, verifies `payload_hash_sha256` ==
+  sha256(`payload_json`), validates the inner `hsi_version` against the supported
+  set, and produces the `artifact_ack` body. Public surface:
+  - Sealed `EdgeEvent` family (`HrEvent | BioEvent | ArtifactEvent |
+    SessionEventWrap`) plus the typed models (`HrSample`, `BioSample`,
+    `HsiArtifact`, `Accel`) and the `EdgeOutcome` result family.
+  - Reactive `events` broadcast `Stream<EdgeEvent>`, emitting in lock-step with
+    the optional `EdgeIngestListener` callbacks (parity with the Kotlin
+    `SharedFlow` and Swift `events` publisher).
+  - ACK helpers `drainPendingAcks()` / `buildAckBody(...)` / `drainAckBody()`.
+  - `dispose()` — Flutter-only lifecycle that closes the broadcast
+    `StreamController` (idempotent). The Kotlin/Swift hot streams have no
+    equivalent. Hosts using `EdgeIngest.events` must call `dispose()` when done.
+  - The Kotlin-only `onUnsupportedHsiVersion` / `onHashMismatch` hooks are folded
+    into the `EdgeOutcome` return value (`ArtifactHashMismatch`) and logging, plus
+    the optional poison-pill / dead-letter hook
+    `EdgeIngestListener.onPoisonPill(artifactId, expected, actual, attempts)`.
+  - Delivery hardening (the watch outbox is delete-on-ACK):
+    - **Duplicate re-ack** — a duplicate `artifact_id` is not re-surfaced
+      (`ArtifactDuplicate`) but is re-queued for ACK, so a lost ACK no longer
+      makes the watch resend forever.
+    - **Bounded dedupe set** — the seen-artifact set is a bounded LRU
+      (`seenLruCapacity`), keeping memory flat over a long-lived process.
+    - **Poison-pill dead-letter** — an artifact that fails hash verification
+      `poisonPillThreshold` (3) times for the same id is dead-lettered
+      (`ArtifactDeadLettered`, the `onPoisonPill` hook, and ack-to-discard) so a
+      deterministically-corrupt artifact stops blocking the outbox.
+
+### Notes
+- **The native runtime binary is proprietary and authentication-gated.** This
+  pub.dev package is a thin FFI shell; it does **not** bundle the Synheart
+  Runtime native binary. The binary is distributed from a private artifact
+  registry and requires Synheart authentication (`synheart login`) — it is
+  **not** available from public package sources. An unauthenticated
+  `flutter pub add synheart_core` gets a non-functional FFI shell until the
+  binary is installed via the Synheart CLI (`synheart install runtime`). See the
+  README's "Native Runtime Setup".
+
 ## [0.6.3] - 2026-06-07
 
 ### Added
