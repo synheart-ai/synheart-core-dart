@@ -229,9 +229,8 @@ export 'src/resilience/synheart_resilience.dart';
 export 'src/resilience/resilience_data.dart';
 
 // Edge ingest — pure-Dart, transport-independent phone-side consumer of the
-// watch→phone edge wire contract (EDGE-WIRE-CONTRACT.md in the synheart-edge
-// repo). Dart member of
-// the cross-platform EdgeIngest matrix (parity with Kotlin/Swift). The native
-// WCSession/Wearable→EventChannel transport bridge is a separate follow-up.
+// watch→phone edge wire contract. Dart member of the cross-platform EdgeIngest
+// matrix (parity with Kotlin/Swift). The native WCSession/Wearable→EventChannel
+// transport bridge is a separate follow-up.
 export 'src/edge/edge_ingest.dart';
 export 'src/edge/edge_models.dart';

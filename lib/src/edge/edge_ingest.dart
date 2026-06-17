@@ -25,7 +25,7 @@ import 'edge_models.dart';
 /// by default, overridable via [logSink] so a host can route into
 /// `SynheartLogger` without this core taking a Flutter dependency.
 ///
-/// ## Contract mapping (`EDGE-WIRE-CONTRACT.md` in the synheart-edge repo)
+/// ## Contract mapping (Synheart edge wire contract)
 ///  - §3.1 `hr_sample`    → [EdgeIngestListener.onHrSample] / [HrEvent]
 ///  - §3.2 `bio_sample`   → [EdgeIngestListener.onBioSample] / [BioEvent]
 ///  - §3.3 `hsi_artifact` → validate hash (§5) + version (§0), dedupe (§5),
