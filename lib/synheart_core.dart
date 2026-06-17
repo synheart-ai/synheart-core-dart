@@ -227,3 +227,10 @@ export 'src/backfill/health_connect_runtime_sink.dart';
 // Stateless multi-day score derived from sleep-window-filtered HRV.
 export 'src/resilience/synheart_resilience.dart';
 export 'src/resilience/resilience_data.dart';
+
+// Edge ingest — pure-Dart, transport-independent phone-side consumer of the
+// watch→phone edge wire contract. Dart member of the cross-platform EdgeIngest
+// matrix (parity with Kotlin/Swift). The native WCSession/Wearable→EventChannel
+// transport bridge is a separate follow-up.
+export 'src/edge/edge_ingest.dart';
+export 'src/edge/edge_models.dart';
