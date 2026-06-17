@@ -15,14 +15,25 @@ class HSIAxisValue {
   Map<String, dynamic> toJson() => {'value': value, 'confidence': confidence};
 }
 
-/// The four canonical HSI axes.
+/// The canonical HSI axes surfaced to hosts.
 class HSIAxes {
   final HSIAxisValue? focus;
   final HSIAxisValue? arousal;
   final HSIAxisValue? capacity;
   final HSIAxisValue? sleep;
 
-  const HSIAxes({this.focus, this.arousal, this.capacity, this.sleep});
+  /// Multimodal stress reading (motion-gated autonomic primary fused with a
+  /// behavioral corroborator). New in engine v0.10.0; carried on
+  /// `axes.affective[]` in HSI 1.3 only — null on the legacy/1.2 path.
+  final HSIAxisValue? stress;
+
+  const HSIAxes({
+    this.focus,
+    this.arousal,
+    this.capacity,
+    this.sleep,
+    this.stress,
+  });
 
   /// Pre-1.3 (legacy) parse: each axis is a flat object `{value, confidence}`
   /// at the top of the `hsi` map. Used for the in-process runtime contract
@@ -39,6 +50,11 @@ class HSIAxes {
         : null,
     sleep: json['sleep'] is Map
         ? HSIAxisValue.fromJson(json['sleep'] as Map<String, dynamic>)
+        : null,
+    // Stress is 1.3-only; tolerate a flat `hsi.stress` from a forward-compat
+    // producer but expect null on the legacy path.
+    stress: json['stress'] is Map
+        ? HSIAxisValue.fromJson(json['stress'] as Map<String, dynamic>)
         : null,
   );
 }
@@ -67,11 +83,11 @@ HSIAxisValue? _findAxisReading(Object? domain, String name) {
 }
 
 /// HSI 1.3 parse path (canonical 5-domain set).
-/// `focus`/`capacity` → `axes.cognitive[]`, `valence`/`arousal` → `axes.affective[]`,
-/// `sleep_score` → `axes.physiological[]`. We surface `arousal` (not `valence`)
-/// as the affective axis to keep parity with the legacy 4-axis model. The
-/// canonical `sleep_score` member is preferred; `sleep` is tolerated for
-/// forward-compat producers.
+/// `focus`/`capacity` → `axes.cognitive[]`, `valence`/`arousal`/`stress` →
+/// `axes.affective[]`, `sleep_score` → `axes.physiological[]`. We surface
+/// `arousal` (not `valence`) as the affective axis to keep parity with the
+/// legacy 4-axis model. The canonical `sleep_score` member is preferred;
+/// `sleep` is tolerated for forward-compat producers.
 HSIAxes _parseAxesV13(Object? axes) {
   if (axes is! Map) return const HSIAxes();
   return HSIAxes(
@@ -81,6 +97,7 @@ HSIAxes _parseAxesV13(Object? axes) {
     sleep:
         _findAxisReading(axes['physiological'], 'sleep_score') ??
         _findAxisReading(axes['physiological'], 'sleep'),
+    stress: _findAxisReading(axes['affective'], 'stress'),
   );
 }
 
