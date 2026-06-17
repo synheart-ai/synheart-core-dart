@@ -99,6 +99,13 @@ void main() {
               'direction': 'bidirectional',
               'modalities_used': ['physiological'],
             },
+            {
+              'name': 'stress',
+              'score': 0.38,
+              'confidence': 0.55,
+              'direction': 'higher_is_more',
+              'modalities_used': ['physiological', 'digital'],
+            },
           ],
         },
         'meta': {
@@ -113,6 +120,29 @@ void main() {
       expect(state.hsi.capacity!.value, 0.55);
       expect(state.hsi.arousal!.value, 0.45);
       expect(state.hsi.sleep!.value, 0.42);
+      expect(state.hsi.stress!.value, 0.38);
+      expect(state.hsi.stress!.confidence, 0.55);
+    });
+
+    test('1.3 stress is null when the affective domain omits it', () {
+      final json = jsonEncode({
+        'hsi_version': '1.3',
+        'subject_id': 'usr_no_stress',
+        'timestamp_ms': 1700000000000,
+        'axes': {
+          'affective': [
+            {
+              'name': 'arousal',
+              'score': 0.45,
+              'confidence': 0.5,
+              'direction': 'bidirectional',
+            },
+          ],
+        },
+      });
+      final state = HSIState.fromJson(json);
+      expect(state.hsi.arousal!.value, 0.45);
+      expect(state.hsi.stress, isNull);
     });
 
     test('1.3 sleep alias is tolerated for forward-compat producers', () {
