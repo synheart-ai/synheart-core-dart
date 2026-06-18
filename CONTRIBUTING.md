@@ -14,7 +14,7 @@ how this repository accepts contributions.
 
 ## Why we do not accept pull requests
 
-This SDK is developed in an internal monorepo and mirrored to GitHub for
+This SDK is developed in a separate workflow and published to GitHub for
 transparency. The public repository is source-available so anyone can read,
 audit, and learn from the code that runs on their device — but the project is
 not yet ready to absorb external code contributions.

@@ -1,7 +1,7 @@
 <!--
   HEADS UP: this repository does NOT accept pull requests.
 
-  Synheart SDKs are developed in an internal monorepo and mirrored here for
+  Synheart SDKs are developed in a separate workflow and published here for
   transparency. External PRs are closed without review (see CONTRIBUTING.md
   for the rationale).
 

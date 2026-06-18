@@ -11,16 +11,10 @@
 
 Flutter platform SDK for Synheart — a thin wrapper around the Synheart runtime (a native binary that owns the on-device business logic and is loaded at startup); this SDK handles platform-specific concerns only (sensor collection, UI consent flows, secure storage, and Flutter-native reactive streams).
 
-> **⚠️ The native runtime binary is proprietary and authentication-gated.**
-> This package on pub.dev is a thin FFI shell — it does **not** bundle the
-> Synheart Runtime native binary. The binary (iOS `.xcframework`, Android `.so`)
-> is distributed from a private artifact registry and requires Synheart
-> authentication (`synheart login`); the binaries are gitignored and
-> CLI-managed. An unauthenticated `flutter pub add synheart_core` therefore
-> gets a **non-functional FFI shell** — the Dart API compiles, but every
-> runtime-backed call fails until the binary is installed via the
-> [Synheart CLI](https://docs.synheart.ai/synheart-cli) (`synheart login`
-> then `synheart install runtime`). See [Native Runtime Setup](#native-runtime-setup).
+> **Requires the Synheart Runtime.** This package is a thin Flutter wrapper;
+> the on-device logic lives in the Synheart Runtime native binary, which is
+> installed separately via the [Synheart CLI](https://docs.synheart.ai/synheart-cli)
+> — see [Native Runtime Setup](#native-runtime-setup).
 
 ## Architecture diagram
 
@@ -101,7 +95,7 @@ The runtime emits **HSI 1.3 JSON** via `Synheart.onHSIUpdate` (raw string) or `S
 5. **Phone Module** — Device motion and context signals
 6. **Behavior Module** — Consent-gated interaction patterns with runtime push
 7. **Runtime bridge** — Loads the runtime native binary and routes signals to it
-8. **Cloud Connector** — Device-signed HSI uploads (`X-Synheart-Signature` ECDSA P-256), offline-queue, schema validation
+8. **Cloud Connector** — Device-signed, consent-gated HSI uploads, offline-queue, schema validation
 
 ### Data Flow
 
@@ -123,7 +117,7 @@ CoreRuntimeBridge → Synheart runtime native binary
 HSI JSON Output
   ├─ Synheart.onHSIUpdate (raw JSON)
   ├─ Synheart.onStateUpdate (typed projection)
-  └─ Cloud upload (ECDSA P-256 + `X-Synheart-Proof` JWS + `X-Consent-Token` JWT, consent-gated)
+  └─ Cloud upload (device-signed, consent-gated)
 ```
 
 ## Installation
@@ -174,8 +168,7 @@ and per-platform artifact hashes. Commit the lockfile so CI and
 teammates get byte-identical builds via `synheart sync`.
 
 The iOS podspec uses `-force_load` so all FFI symbols are preserved
-for Dart's `dlsym`. Both the xcframework and the `.so` files are
-gitignored — they're CLI-managed, not hand-edited.
+for Dart's `dlsym`.
 
 > **Note:** If your app also uses another native static library that
 > exports `_rust_eh_personality`, you may hit a duplicate-symbol link
@@ -464,10 +457,11 @@ See the [example app](example/) for a complete integration walkthrough.
 `EdgeIngest` is the canonical phone-side consumer of the Synheart **edge wire
 contract** (watch → phone). It is the counterpart to the watch producer and
 exists so apps stop re-implementing watch→phone ingest: parse, hash-verify
-(`payload_hash_sha256`), HSI-version validate (§0), dedupe by `artifact_id`, and
+(`payload_hash_sha256`), HSI-version validate, dedupe by `artifact_id`, and
 ACK all live here once. The core is **pure Dart** (no Flutter import), so it
 unit-tests under `dart test` / `flutter test`. The canonical message shapes are
-defined by the Synheart edge wire contract.
+defined by the Synheart edge wire contract — see
+[docs.synheart.ai/synheart-core/edge](https://docs.synheart.ai/synheart-core/edge).
 
 ```dart
 import 'package:synheart_core/synheart_core.dart';
@@ -489,7 +483,7 @@ final sub = ingest.events.listen((event) {
 // 3. Feed decoded bodies in; then drain + send the artifact_ack.
 final outcome = ingest.ingest(body);     // Map<String, dynamic> from the adapter
 final ack = ingest.drainAckBody();       // { "command":"artifact_ack", … }
-if (ack != null) sendOnCommandChannel(ack);  // → Wire Contract §4/§5
+if (ack != null) sendOnCommandChannel(ack);  // → edge wire contract command channel
 
 // 4. Lifecycle — Flutter only: dispose() closes the broadcast
 //    StreamController. Always call it when you're done (e.g. in
@@ -1013,15 +1007,13 @@ Ingested payloads are persisted as JSON files in the local server's data directo
 
 ## 📚 Documentation
 
-For complete documentation, see the [main Synheart Core repository](https://github.com/synheart-ai/synheart-core):
-
-- **[HSI Specification](https://github.com/synheart-ai/synheart-core/blob/main/docs/HSI_SPECIFICATION.md)** - State axes, indices, and embeddings
-- **[Consent System](https://github.com/synheart-ai/synheart-core/blob/main/docs/CONSENT_SYSTEM.md)** - Permission model and enforcement
-- **[Cloud Protocol](https://github.com/synheart-ai/synheart-core/blob/main/docs/CLOUD_PROTOCOL.md)** - Secure ingestion protocol
+For complete documentation — the HSI specification, consent model, and
+cloud ingestion protocol — see the Synheart docs site at
+[docs.synheart.ai/synheart-core](https://docs.synheart.ai/synheart-core).
 
 ## Contributing
 
-This repository is **source-available** under Apache-2.0. Issues are welcome — bug reports, feature requests, and questions help shape the roadmap. **Pull requests are not accepted at this time**; the SDK is mirrored from an internal monorepo and external PRs are auto-closed.
+This repository is **source-available** under Apache-2.0. Issues are welcome — bug reports, feature requests, and questions help shape the roadmap. **Pull requests are not accepted at this time**; external PRs are closed without review.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the rationale and the issue-filing process. Security reports go through [SECURITY.md](SECURITY.md).
 
@@ -1056,7 +1048,7 @@ The Synheart Core SDK consists of 9 core modules:
 
 | Repository | Platform | Description |
 |------------|----------|-------------|
-| [synheart-core](https://github.com/synheart-ai/synheart-core) | Spec | Source of truth for documentation and API design |
+| [Synheart docs](https://docs.synheart.ai/synheart-core) | Spec | Source of truth for documentation and API design |
 | [synheart-core-flutter](https://github.com/synheart-ai/synheart-core-flutter) | Flutter/Dart | This repository |
 | [synheart-core-kotlin](https://github.com/synheart-ai/synheart-core-kotlin) | Android/Kotlin | Android SDK implementation |
 | [synheart-core-swift](https://github.com/synheart-ai/synheart-core-swift) | iOS/Swift | iOS SDK implementation |

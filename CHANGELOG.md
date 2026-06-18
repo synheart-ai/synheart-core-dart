@@ -47,14 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       deterministically-corrupt artifact stops blocking the outbox.
 
 ### Notes
-- **The native runtime binary is proprietary and authentication-gated.** This
-  pub.dev package is a thin FFI shell; it does **not** bundle the Synheart
-  Runtime native binary. The binary is distributed from a private artifact
-  registry and requires Synheart authentication (`synheart login`) — it is
-  **not** available from public package sources. An unauthenticated
-  `flutter pub add synheart_core` gets a non-functional FFI shell until the
-  binary is installed via the Synheart CLI (`synheart install runtime`). See the
-  README's "Native Runtime Setup".
+- **Requires the Synheart Runtime.** This package is a thin Flutter wrapper; the
+  on-device logic lives in the Synheart Runtime native binary, which is installed
+  separately via the Synheart CLI (`synheart install runtime`). See the README's
+  "Native Runtime Setup".
 
 ## [0.6.3] - 2026-06-07
 
@@ -122,11 +118,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `Synheart.configure()` now wires Syni's hybrid router to the cloud — it
-  builds the `SyniCloudConfig` and authenticates Syni cloud-chat requests
-  with an `X-Synheart-Proof` device-attestation header (produced by
-  core-runtime). `Synheart.syni` cloud chat needs no extra host-app setup.
-- `DeviceAuthProvider.signUrl` — builds an `X-Synheart-Proof` for an
-  absolute URL (no base-URL prefixing); `signRequest` now delegates to it.
+  builds the `SyniCloudConfig` and authenticates Syni cloud-chat requests as
+  device-attested cloud requests. `Synheart.syni` cloud chat needs no extra
+  host-app setup.
+- `DeviceAuthProvider.signUrl` — device-attests an absolute URL (no base-URL
+  prefixing); `signRequest` now delegates to it.
 
 ### Changed
 - Bumped the `syni` dependency to `^0.3.0`, whose `SyniCloudConfig`
@@ -134,9 +130,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Consumers building a `SyniCloudConfig` directly need to update to the
   new shape; consumers using `Synheart.configure()` are unaffected.
 - The SDK-side default `SyniCloudConfig.authHeaders` closure lazily
-  attaches `X-Synheart-Proof` via `Synheart.buildProofHeader` — works
-  whether device auth resolves through the Dart `DeviceAuthProvider`
-  or the core-runtime ABI registration path (`sdkDeviceAuthAbi=true`).
+  device-attests each request — works whether device auth resolves through
+  the Dart `DeviceAuthProvider` or the native runtime.
 
 ## [0.5.3] - 2026-05-21
 
@@ -197,7 +192,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **iOS install model.** Podspec moves to a vendored dynamic framework
   installed via the synheart CLI (`synheart install runtime`), rather
   than a static library bundled with the package. Consumer Podfile gets
-  a `prepare_command` symlink pointing at the CLI-managed vendor dir.
+  a `prepare_command` symlink pointing at the CLI-installed vendor dir.
 
 ### Other
 - Logging hygiene: consent change events emit one structured line
@@ -250,8 +245,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously-finalized lab session payload through the cloud
   connector. Useful when the initial upload was dropped on a 4xx
   (typically a cloud schema mismatch — the runtime removes those
-  rows from the in-memory upload queue per
-  `ingest/hsi/connector.rs::deliver_lab_chunk`). Host reads the
+  rows from the in-memory upload queue). Host reads the
   persisted JSON from app-side storage and passes it back.
 - `Synheart.isLabReenqueueAvailable` — feature-detect whether the
   linked runtime binary exports the symbol (engine v0.8.1+).
@@ -264,7 +258,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runtime binaries (pre-v0.8.1) keep loading without errors.
 - Customer-facing data deletion API (`requestDataDeletion`,
   `getDataDeletion`, `listDataDeletions`) and `DataDeletion*` models
-  for GDPR Article 17 (landed via PR #40).
+  for GDPR Article 17.
 
 ### Runtime compatibility
 - Requires `synheart-core-runtime` v0.8.1+ for `labReenqueueSession`
@@ -299,7 +293,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Bumped `synheart_auth` dep to `^0.1.2`. Picks up the Maven Central
   `ai.synheart:synheart-auth:0.1.1` upgrade (clock-skew auto-apply,
-  register/rotate race fix, HTTP timeouts, §13 audit-log PII redaction).
+  register/rotate race fix, HTTP timeouts, audit-log PII redaction).
 
 ## [0.1.0] - 2026-05-08
 
@@ -308,13 +302,12 @@ FFI shell over the native Synheart Runtime — storage, crypto, sync,
 consent, the artifact pipeline, the cloud connector, and SRM live in
 the runtime, and this package exposes them through a Dart surface.
 
-The native runtime is license-gated and installed via the
+The native runtime is installed via the
 [Synheart CLI](https://docs.synheart.ai/synheart-cli)
 (`synheart install runtime`); see the README.
 
-This release consolidates the OSS-launch refactors that were tagged
-internally as 0.0.3 and 0.0.4 but never reached pub.dev, plus the
-post-tag breaking change to `processVendorEvent`.
+This release consolidates the OSS-launch refactors plus the
+breaking change to `processVendorEvent`.
 
 ### Breaking
 - `Synheart.processVendorEvent(...)` and
