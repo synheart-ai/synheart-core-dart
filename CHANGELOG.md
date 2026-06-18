@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-17
+
 ### Added
 - **`HSIAxes.stress`** — typed accessor for the engine's multimodal stress
   reading (engine v0.10.0; HSI 1.3 `axes.affective[].stress`). Hosts get a named
