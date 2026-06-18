@@ -1,21 +1,15 @@
-🌐 [synheart.ai](https://synheart.ai) — Human State Interface (HSI) infrastructure for developers and AI systems.
-
-# Synheart Core SDK - Dart/Flutter
+# Synheart Core SDK — Dart/Flutter
 
 [![Pub Version](https://img.shields.io/pub/v/synheart_core.svg)](https://pub.dev/packages/synheart_core)
-[![Flutter](https://img.shields.io/badge/flutter-%3E%3D3.32.0-blue.svg)](https://flutter.dev)
-[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
-
+[![Flutter](https://img.shields.io/badge/Flutter-3.32%2B-02569B.svg)](https://flutter.dev)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 > **Source-available.** This repository is open for reading, auditing, and
 > filing issues. We do **not** accept pull requests — see
 > [CONTRIBUTING.md](CONTRIBUTING.md) for the rationale and how to contribute
 > via issues. Security reports go through [SECURITY.md](SECURITY.md).
-Flutter platform SDK for Synheart. This is a thin wrapper around the Synheart runtime — a native binary that owns the on-device business logic and is loaded by this SDK at startup.
 
-Human state inference is computed on-device by the runtime.
-
-**This SDK handles platform-specific concerns only:** sensor collection (HealthKit, Health Connect), UI consent flows, secure storage (Keychain, EncryptedSharedPreferences), and Flutter-native reactive streams.
+Flutter platform SDK for Synheart — a thin wrapper around the Synheart runtime (a native binary that owns the on-device business logic and is loaded at startup); this SDK handles platform-specific concerns only (sensor collection, UI consent flows, secure storage, and Flutter-native reactive streams).
 
 > **⚠️ The native runtime binary is proprietary and authentication-gated.**
 > This package on pub.dev is a thin FFI shell — it does **not** bundle the
