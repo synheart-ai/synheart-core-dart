@@ -8,9 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`HSIAxes.stress`** — typed accessor for the engine's multimodal stress
+  reading (engine v0.10.0; HSI 1.3 `axes.affective[].stress`). Hosts get a named
+  field instead of digging through `rawJson`. Resolves to `null` on the legacy
+  1.2 path that never carried it. Parity with the Kotlin/Swift bindings.
 - **`EdgeIngest`** — canonical phone-side consumer of the Synheart edge wire
-  contract (watch → phone; see
-  [EDGE-WIRE-CONTRACT.md](https://github.com/synheart-ai/synheart-edge/blob/main/docs/EDGE-WIRE-CONTRACT.md)).
+  contract (watch → phone).
   Pure Dart (no Flutter import), unit-tests under `dart test` / `flutter test`.
   Parses `hr_sample` / `bio_sample` / `hsi_artifact` / session events and, for
   artifacts, dedupes by `artifact_id`, verifies `payload_hash_sha256` ==

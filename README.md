@@ -472,9 +472,8 @@ contract** (watch → phone). It is the counterpart to the watch producer and
 exists so apps stop re-implementing watch→phone ingest: parse, hash-verify
 (`payload_hash_sha256`), HSI-version validate (§0), dedupe by `artifact_id`, and
 ACK all live here once. The core is **pure Dart** (no Flutter import), so it
-unit-tests under `dart test` / `flutter test`. See
-[EDGE-WIRE-CONTRACT.md](https://github.com/synheart-ai/synheart-edge/blob/main/docs/EDGE-WIRE-CONTRACT.md)
-for the canonical message shapes.
+unit-tests under `dart test` / `flutter test`. The canonical message shapes are
+defined by the Synheart edge wire contract.
 
 ```dart
 import 'package:synheart_core/synheart_core.dart';
