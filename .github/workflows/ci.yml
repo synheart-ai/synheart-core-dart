@@ -19,9 +19,8 @@ jobs:
           flutter-version: '3.38.7'
           channel: 'stable'
 
-      # Allows `flutter pub get` to resolve git-source deps that point at
-      # private synheart-ai repos. Token scope must include `repo` (or a
-      # fine-grained equivalent) — `read:org` alone is not enough.
+      # Provides credentials so `flutter pub get` can resolve all declared
+      # dependencies. The token is read via the ORG_READ_TOKEN secret.
       - name: Configure git auth for private synheart-ai deps
         env:
           GH_TOKEN: ${{ secrets.ORG_READ_TOKEN }}

@@ -201,7 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer dumps the full engine input JSON.
 
 ### Requires
-- The matching native runtime release (`synheart-core-runtime` v0.10.0).
+- The matching Synheart native runtime release (v0.10.0).
 
 ## [0.4.0] - 2026-05-16
 
@@ -261,7 +261,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for GDPR Article 17.
 
 ### Runtime compatibility
-- Requires `synheart-core-runtime` v0.8.1+ for `labReenqueueSession`
+- Requires the Synheart native runtime v0.8.1+ for `labReenqueueSession`
   to actually invoke the FFI. Older binaries return
   `LabReenqueueResult.unsupported`.
 

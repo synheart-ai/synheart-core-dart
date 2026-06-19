@@ -126,7 +126,7 @@ Add `synheart_core` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  synheart_core: ^0.6.3
+  synheart_core: ^0.7.0
 ```
 
 Or:

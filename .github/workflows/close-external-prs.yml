@@ -76,7 +76,7 @@ jobs:
               "Hi @" + context.payload.pull_request.user.login + ", thanks for your interest in Synheart.",
               "",
               "This repository is **source-available** and we do **not accept external pull requests** at this time.",
-              "Synheart SDKs are developed in an internal monorepo and mirrored here for transparency.",
+              "Synheart SDKs are developed privately and mirrored here for source-available distribution.",
               "",
               "If you found a bug or want to request a feature, please [open an issue](../../issues/new/choose) — that is the supported way to influence the SDK.",
               "For the rationale, see [CONTRIBUTING.md](../blob/HEAD/CONTRIBUTING.md). For security reports, see [SECURITY.md](../blob/HEAD/SECURITY.md).",
