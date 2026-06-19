@@ -21,12 +21,12 @@ jobs:
 
       # Provides credentials so `flutter pub get` can resolve all declared
       # dependencies. The token is read via the ORG_READ_TOKEN secret.
-      - name: Configure git auth for private synheart-ai deps
+      - name: Configure git auth for source dependencies
         env:
           GH_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
         run: |
           if [ -z "${GH_TOKEN}" ]; then
-            echo "::warning::ORG_READ_TOKEN secret is not set. git-source deps from private repos will fail to fetch."
+            echo "::warning::ORG_READ_TOKEN secret is not set; some source dependencies may fail to fetch."
           else
             git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           fi
@@ -55,12 +55,12 @@ jobs:
           channel: 'stable'
           flutter-version: '3.38.7'
 
-      - name: Configure git auth for private synheart-ai deps
+      - name: Configure git auth for source dependencies
         env:
           GH_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
         run: |
           if [ -z "${GH_TOKEN}" ]; then
-            echo "::warning::ORG_READ_TOKEN secret is not set. git-source deps from private repos will fail to fetch."
+            echo "::warning::ORG_READ_TOKEN secret is not set; some source dependencies may fail to fetch."
           else
             git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           fi
