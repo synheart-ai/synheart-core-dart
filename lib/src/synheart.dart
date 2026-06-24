@@ -634,7 +634,7 @@ class Synheart {
   /// Execute a sync cycle (push + pull).
   static Future<SyncResult> syncNow() async {
     if (_coreRuntime != null) {
-      final result = _coreRuntime!.syncNow();
+      final result = await _coreRuntime!.syncNow();
       return SyncResult(
         pushed: result?['pushed'] as int? ?? 0,
         pulled: result?['pulled'] as int? ?? 0,
