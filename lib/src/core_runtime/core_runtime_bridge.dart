@@ -1140,8 +1140,29 @@ class CoreRuntimeBridge {
   /// app-side flag.
   bool getAmbientCapture() => _ffi.getAmbientCapture(_handle) != 0;
 
-  Map<String, dynamic>? syncNow() {
-    return _callJson(() => _ffi.syncNow(_handle));
+  /// Run a sync cycle (push + pull). This performs a blocking network
+  /// round-trip in the native runtime, so it runs on a background isolate
+  /// (`_runFfi`) rather than `_callJson` — calling it inline on the UI isolate
+  /// froze the main thread until the request completed/timed out (a
+  /// user-triggered ANR on the manual-sync path, and a stall on the periodic
+  /// path). Returns null when the bridge is disposed or the engine isn't wired.
+  Future<Map<String, dynamic>?> syncNow() async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return _runFfi(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      try {
+        final ptr = ffi.syncNow(handle);
+        if (ptr == nullptr) return null;
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        return jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      }
+    });
   }
 
   /// Create a new sync-space on the cloud and become its first
