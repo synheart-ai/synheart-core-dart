@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-25
+
+### Fixed
+- **`syncNow` now runs on a background isolate.** It previously executed the
+  blocking native sync (a network round-trip) inline on the calling isolate, so
+  a slow or stalled sync froze that isolate until it completed or timed out.
+  Routed through the same `Isolate.run` offload the other network-bound calls
+  use; the public `Synheart.syncNow()` already returned a `Future`, so this is
+  not an API change.
+
 ## [0.7.0] - 2026-06-17
 
 ### Added
