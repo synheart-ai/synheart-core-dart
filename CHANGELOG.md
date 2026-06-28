@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-06-28
+
+### Fixed
+- **Cloud consent token is kept scoped to the current subject.** A consent token
+  is issued for a specific `subjectId`; reusing one issued for a previous subject
+  (e.g. a different signed-in account, or a token minted before the account was
+  known) would attribute uploads to the wrong subject. `ensureCloudConsentReady`
+  now treats a token whose `user_id` claim differs from the current `subjectId`
+  as not-ready and reissues it for the current subject, and on (re)init the SDK
+  self-heals by reissuing under the current subject so uploads resume immediately
+  rather than waiting for the next consent change. Best-effort and idempotent —
+  no behavior change for a stable, matching subject. Adds
+  `Synheart.consentTokenSubjectStale()`.
+
 ## [0.7.1] - 2026-06-25
 
 ### Fixed
