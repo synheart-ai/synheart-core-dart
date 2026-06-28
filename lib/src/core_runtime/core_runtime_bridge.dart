@@ -228,13 +228,6 @@ class CoreRuntimeBridge {
     if (ffi == null) return null;
 
     final runtimeConfig = Map<String, dynamic>.from(config);
-    final rawSubjectId = runtimeConfig['subject_id'];
-    // Compatibility shim for non-canonical subject IDs.
-    if (rawSubjectId is String &&
-        rawSubjectId.isNotEmpty &&
-        !rawSubjectId.startsWith('sub_')) {
-      runtimeConfig['subject_id'] = 'sub_$rawSubjectId';
-    }
 
     // Optional compatibility guard (off by default) for runtimes where
     // device-auth subject derivation is not yet aligned with engine validation.
@@ -251,6 +244,23 @@ class CoreRuntimeBridge {
       };
       runtimeConfig.remove('client_id');
       deviceAuthForcedOff = true;
+    }
+
+    // Compatibility shim for non-canonical subject IDs — applied ONLY when
+    // device-auth is off. With device-auth ON the Rust runtime derives the
+    // canonical subject from `client_id` at init (RFC-0008); prepending `sub_`
+    // here would fight that derivation and pass a subject the runtime then
+    // overrides, so we leave `subject_id` untouched and let the host read the
+    // canonical value back via [runtimeSubjectId] after create().
+    final effectiveDeviceAuth = runtimeConfig['device_auth'];
+    final deviceAuthEnabled =
+        effectiveDeviceAuth is Map && effectiveDeviceAuth['enabled'] == true;
+    final rawSubjectId = runtimeConfig['subject_id'];
+    if (!deviceAuthEnabled &&
+        rawSubjectId is String &&
+        rawSubjectId.isNotEmpty &&
+        !rawSubjectId.startsWith('sub_')) {
+      runtimeConfig['subject_id'] = 'sub_$rawSubjectId';
     }
 
     final cJson = jsonEncode(runtimeConfig).toNativeUtf8();
@@ -462,6 +472,32 @@ class CoreRuntimeBridge {
 
   /// Whether a session is running.
   bool get isRunning => _ffi.isRunning(_handle) != 0;
+
+  // ── Subject identity ─────────────────────────────────────────────────
+
+  /// The runtime's canonical subject id (RFC-0008), or null when unavailable.
+  /// Read this back after init to pick up a subject the runtime derived itself
+  /// (e.g. from `client_id` when device-auth is on), so Dart-side state can be
+  /// reconciled with the native source of truth.
+  String? runtimeSubjectId() {
+    if (_disposed) return null;
+    return _readAndFree(_ffi.getSubjectId(_handle));
+  }
+
+  /// Atomically rebind the runtime subject id, re-pointing consent
+  /// (`cached_subject_id` + token slot) and the cloud connector (`user_id` +
+  /// subject-scoped queue) without a full dispose/reinit. Returns `1` when a
+  /// consent re-mint is required for the new subject, `0` when a valid token is
+  /// already loaded, and `-1` on error (disposed handle or empty subject).
+  int rebindSubjectId(String subjectId, {bool invalidateToken = true}) {
+    if (_disposed) return -1;
+    final s = subjectId.toNativeUtf8();
+    try {
+      return _ffi.rebindSubjectId(_handle, s.cast(), invalidateToken ? 1 : 0);
+    } finally {
+      malloc.free(s);
+    }
+  }
 
   /// Create the engine pipeline without starting a background tick task.
   /// Used by the ingest buffer which handles ticking via ingestBatch.

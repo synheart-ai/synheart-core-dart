@@ -382,6 +382,13 @@ typedef _EnqueueDart =
 typedef _IntReturnC = Int32 Function(Pointer<Void> h);
 typedef _IntReturnDart = int Function(Pointer<Void> h);
 
+// Subject rebind: (handle, subject_id, invalidate_token) -> int32
+// (1 = re-mint required, 0 = valid token loaded, -1 = error).
+typedef _RebindSubjectC =
+    Int32 Function(Pointer<Void> h, Pointer<Utf8> subjectId, Int32 invalidate);
+typedef _RebindSubjectDart =
+    int Function(Pointer<Void> h, Pointer<Utf8> subjectId, int invalidate);
+
 // Account
 typedef _AccountActionC = Int32 Function(Pointer<Void> h);
 typedef _AccountActionDart = int Function(Pointer<Void> h);
@@ -1138,6 +1145,18 @@ class SynheartCoreFFI {
   late final flushUploads = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
     'synheart_core_flush_uploads',
   );
+
+  // Subject identity. `getSubjectId` returns the canonical RFC-0008 subject
+  // (heap char* — free via coreFreeString). `rebindSubjectId` atomically
+  // re-points consent + the cloud connector to a new subject mid-session.
+  late final getSubjectId = _lib
+      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
+        'synheart_core_get_subject_id',
+      );
+  late final rebindSubjectId = _lib
+      .lookupFunction<_RebindSubjectC, _RebindSubjectDart>(
+        'synheart_core_rebind_subject_id',
+      );
 
   // hsi_history: on-device mirror of successfully uploaded HSI payloads.
   // Populated automatically by the ingest connector on HTTP 200; pruned
