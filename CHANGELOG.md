@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-06-28
+
+### Changed
+- Bump `synheart_auth` to `^0.1.7`. This adds a 30-second timeout to Android
+  Play Integrity device attestation (and pulls in the matching native-SDK
+  timeouts). A stalled attestation — e.g. an `IntegrityService` bind that never
+  resolves on a device without Play Store — now fails fast and falls through to
+  the existing unsigned-capabilities path instead of leaving device
+  registration hung.
+
 ## [0.7.2] - 2026-06-28
 
 ### Fixed
