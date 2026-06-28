@@ -1267,6 +1267,19 @@ class Synheart {
 
       _consentModule!.addListener(_onConsentChanged);
 
+      // Self-heal cloud consent after a (re)init. When cloud upload was granted
+      // previously but the loaded token was issued for a DIFFERENT subject
+      // (e.g. a different signed-in account, or a token minted before the
+      // account was known — see [consentTokenSubjectStale]), reissue it for the
+      // CURRENT subject so uploads resume immediately instead of waiting for the
+      // next consent change. Best-effort + idempotent: [ensureCloudConsentReady]
+      // short-circuits when a valid matching token already exists (no network
+      // call) and [_maybeEnsureCloudConsentReady] swallows errors when cloud
+      // isn't configured/reachable.
+      if (consentEffectiveStateTyped()?.cloudUpload == true) {
+        await _maybeEnsureCloudConsentReady();
+      }
+
       // Wire HSI callback from core runtime → _hsvStream
       if (_coreRuntime != null) {
         _coreRuntime!.setHsiCallback((hsiJson) {
@@ -3430,6 +3443,24 @@ class Synheart {
     return _consentModule?.getCurrentToken();
   }
 
+  /// True when a consent token is loaded but its subject (`user_id` claim)
+  /// differs from the runtime's current [subjectId]. Consent tokens are
+  /// subject-scoped: one issued for a previous subject (e.g. a different
+  /// signed-in account, or a token minted before the account was known) must be
+  /// reissued for the current subject before use, so uploads are attributed to
+  /// the right subject. Conservative: returns false (no reissue) when there's no
+  /// token, no known subject, or the token carries no `user_id` claim — a
+  /// stable, matching subject is a no-op.
+  static bool consentTokenSubjectStale() {
+    final current = subjectId;
+    if (current == null || current.isEmpty) return false;
+    final tok = getCurrentConsentToken();
+    if (tok == null) return false;
+    final tokenSubject = tok.claims['user_id']?.toString();
+    if (tokenSubject == null || tokenSubject.isEmpty) return false;
+    return tokenSubject != current;
+  }
+
   /// Ensure runtime cloud consent is ready for ingest uploads.
   ///
   /// This follows the granular runtime flow:
@@ -3456,7 +3487,12 @@ class Synheart {
 
     final status = consentStatus()?['status']?.toString().toLowerCase();
     final needsRefresh = consentNeedsTokenRefresh();
-    if (status == 'granted' && !needsRefresh) {
+    // A 'granted' token is only usable if it was issued for the SAME subject the
+    // runtime is currently configured with. After a subject change the persisted
+    // token still names the previous subject; reporting it as ready would
+    // attribute uploads to the wrong subject. Treat a stale-subject token as
+    // not-ready so the submit path below reissues it for the current subject.
+    if (status == 'granted' && !needsRefresh && !consentTokenSubjectStale()) {
       return true;
     }
 
