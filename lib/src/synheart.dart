@@ -765,9 +765,20 @@ class Synheart {
   /// Whether the SDK has been initialized via [initialize] or [configure].
   static bool get isInitialized => shared._isConfigured;
 
-  /// The subject_id this SDK instance was configured for, or null when
-  /// not yet configured. Used by per-subject operations across the SDK.
+  /// Canonical subject id reported by the native runtime, captured after init
+  /// (when `derive_subject_id_if_needed` may have changed it) and after a
+  /// [rebindSubjectId]. Takes precedence over the immutable
+  /// `SynheartConfig.subjectId` so the Dart side stays in lockstep with the
+  /// native source of truth. Null until the runtime is loaded.
+  static String? _nativeSubjectIdOverride;
+
+  /// The subject_id this SDK instance is currently bound to, or null when not
+  /// yet configured. Prefers the native runtime subject (see
+  /// [_nativeSubjectIdOverride]) so callers agree with what HSI uploads are
+  /// attributed under; falls back to the configured value before init.
   static String? get subjectId {
+    final native = _nativeSubjectIdOverride;
+    if (native != null && native.isNotEmpty) return native;
     final id = shared._config?.subjectId;
     if (id != null && id.isNotEmpty) return id;
     final userId = shared._userId;
@@ -987,6 +998,48 @@ class Synheart {
     }
   }
 
+  /// Capture the canonical subject id from the native runtime into
+  /// [_nativeSubjectIdOverride] so the Dart [subjectId] getter and
+  /// [consentTokenSubjectStale] agree with what the runtime is bound to.
+  /// Safe to call repeatedly; a null/empty native value leaves the override
+  /// unchanged (keeps the configured fallback).
+  static void _syncSubjectFromNative() {
+    final native = _coreRuntime?.runtimeSubjectId();
+    if (native != null && native.isNotEmpty) {
+      _nativeSubjectIdOverride = native;
+    }
+  }
+
+  /// Rebind the runtime subject id when the signed-in identity changes, then
+  /// re-mint cloud consent for the new subject if needed — without a full
+  /// dispose/reinit. Prefer this over re-initializing the SDK on sign-in.
+  ///
+  /// The native runtime atomically re-points consent (`cached_subject_id` +
+  /// token slot) and the cloud connector (`user_id` + subject-scoped queue);
+  /// this then syncs the Dart subject and runs the existing self-heal
+  /// ([_maybeEnsureCloudConsentReady]) so a stale token is reissued before the
+  /// next upload. Returns true when the rebind was applied.
+  static Future<bool> rebindSubjectId(String subjectId) async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return false;
+    final trimmed = subjectId.trim();
+    if (trimmed.isEmpty) return false;
+    final rc = runtime.rebindSubjectId(trimmed);
+    if (rc < 0) {
+      SynheartLogger.log(
+        '[Synheart] rebindSubjectId failed (rc=$rc) for subject change.',
+      );
+      return false;
+    }
+    // Keep the Dart-side subject in lockstep with the native runtime.
+    _syncSubjectFromNative();
+    // rc == 1 => re-mint required, rc == 0 => valid token already loaded.
+    // Run the self-heal regardless: it is a cheap no-op when already ready and
+    // reissues the token for the new subject otherwise.
+    await _maybeEnsureCloudConsentReady();
+    return true;
+  }
+
   Future<void> _configure({
     required String appKey,
     required String userId,
@@ -1067,6 +1120,9 @@ class Synheart {
       }
       if (_coreRuntime != null) {
         SynheartLogger.log('[Synheart] core runtime bridge loaded');
+        // Capture the canonical subject the runtime resolved (device-auth
+        // derive may have changed it) so Dart-side subject checks match native.
+        _syncSubjectFromNative();
         _wireBaselineCloudHooks(_coreRuntime!);
         // SMK storage callbacks must be registered immediately after handle
         // creation and before any session lifecycle APIs.
@@ -3452,7 +3508,13 @@ class Synheart {
   /// token, no known subject, or the token carries no `user_id` claim — a
   /// stable, matching subject is a no-op.
   static bool consentTokenSubjectStale() {
-    final current = subjectId;
+    // Compare against the NATIVE runtime subject (the value HSI uploads are
+    // actually attributed under, after any `derive_subject_id_if_needed`),
+    // falling back to the Dart-side subject only before the runtime is loaded.
+    // Using the Dart config alone can disagree with a runtime-derived subject
+    // and yield a false stale verdict (or miss a real one).
+    final native = _coreRuntime?.runtimeSubjectId();
+    final current = (native != null && native.isNotEmpty) ? native : subjectId;
     if (current == null || current.isEmpty) return false;
     final tok = getCurrentConsentToken();
     if (tok == null) return false;
