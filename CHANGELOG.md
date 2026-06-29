@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-29
+
+### Added
+- **`Synheart.rebindSubjectId(subject)`** — rebind the subject when the signed-in
+  identity changes: the native runtime atomically re-points consent and the cloud
+  connector, then the SDK syncs its subject and re-mints cloud consent if needed —
+  without a full dispose/reinit.
+
+### Changed
+- The native runtime is now the source of truth for the canonical subject id.
+  `Synheart.subjectId` prefers the runtime's value (captured after init) over the
+  configured one, and `consentTokenSubjectStale` compares against it.
+- Subject FFI degrades softly: on a runtime build that predates the new symbols,
+  subject sync/rebind fall back to the configured value instead of failing init.
+
 ## [0.7.3] - 2026-06-28
 
 ### Changed

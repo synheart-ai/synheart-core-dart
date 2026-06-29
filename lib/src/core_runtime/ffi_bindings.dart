@@ -1149,10 +1149,9 @@ class SynheartCoreFFI {
   // Subject identity. `getSubjectId` returns the canonical RFC-0008 subject
   // (heap char* — free via coreFreeString). `rebindSubjectId` atomically
   // re-points consent + the cloud connector to a new subject mid-session.
-  late final getSubjectId = _lib
-      .lookupFunction<_JsonReturnC, _JsonReturnDart>(
-        'synheart_core_get_subject_id',
-      );
+  late final getSubjectId = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
+    'synheart_core_get_subject_id',
+  );
   late final rebindSubjectId = _lib
       .lookupFunction<_RebindSubjectC, _RebindSubjectDart>(
         'synheart_core_rebind_subject_id',
