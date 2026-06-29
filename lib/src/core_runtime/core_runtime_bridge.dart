@@ -481,7 +481,13 @@ class CoreRuntimeBridge {
   /// reconciled with the native source of truth.
   String? runtimeSubjectId() {
     if (_disposed) return null;
-    return _readAndFree(_ffi.getSubjectId(_handle));
+    try {
+      return _readAndFree(_ffi.getSubjectId(_handle));
+    } catch (_) {
+      // Runtime build predates the symbol — degrade softly so subject sync
+      // never breaks init; callers fall back to the configured subject.
+      return null;
+    }
   }
 
   /// Atomically rebind the runtime subject id, re-pointing consent
@@ -494,6 +500,9 @@ class CoreRuntimeBridge {
     final s = subjectId.toNativeUtf8();
     try {
       return _ffi.rebindSubjectId(_handle, s.cast(), invalidateToken ? 1 : 0);
+    } catch (_) {
+      // Runtime build predates the symbol — degrade softly.
+      return -1;
     } finally {
       malloc.free(s);
     }
