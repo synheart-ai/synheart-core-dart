@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-07
+
+### Changed
+- Widen the `synheart_wear` constraint to `>=0.4.0 <0.6.0` so the 0.5.x line
+  resolves. `synheart_wear` 0.5.0 is additive and backward compatible (adds an
+  optional per-request auth-header signer for the cloud providers), so the
+  re-exported workout and provider surface is unchanged and no code updates are
+  required.
+
 ## [0.8.0] - 2026-06-29
 
 ### Added
