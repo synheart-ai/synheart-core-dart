@@ -1253,6 +1253,61 @@ class CoreRuntimeBridge {
     return _callJson(() => _ffi.syncStatus(_handle));
   }
 
+  /// Recover access to a sync-space on a fresh device using the
+  /// recovery key (SRK fragment) issued at creation plus the target
+  /// space id. Returns `{sync_space_id, owner_user_id, status}` on
+  /// success. Returns null when the engine isn't wired.
+  Map<String, dynamic>? syncRecoverSpace({
+    required String recoveryKey,
+    required String spaceId,
+  }) {
+    return _withCString(recoveryKey, (keyPtr) {
+      return _withCString(spaceId, (idPtr) {
+        return _callJson(
+          () => _ffi.syncRecoverSpace(_handle, keyPtr.cast(), idPtr.cast()),
+        );
+      });
+    });
+  }
+
+  /// Leave the current sync-space for this device only. Returns
+  /// `{ok: true}` on success. Returns null when the engine isn't wired.
+  Map<String, dynamic>? syncLeaveSpace() {
+    return _callJson(() => _ffi.syncLeaveSpace(_handle));
+  }
+
+  /// List the devices paired into the current sync-space. Returns
+  /// `{devices: [{device_id, device_name, is_primary, trusted_at,
+  /// last_seen_at, revoked}, …]}`. Returns null when the engine
+  /// isn't wired.
+  Map<String, dynamic>? syncListDevices() {
+    return _callJson(() => _ffi.syncListDevices(_handle));
+  }
+
+  /// Revoke a specific device from the current sync-space by its
+  /// `device_id`. Returns `{ok: true}` on success. Returns null when
+  /// the engine isn't wired.
+  Map<String, dynamic>? syncRevokeDevice({required String deviceId}) {
+    return _withCString(deviceId, (p) {
+      return _callJson(() => _ffi.syncRevokeDevice(_handle, p.cast()));
+    });
+  }
+
+  /// Delete the current sync-space entirely (all devices, cloud
+  /// state). Returns `{ok: true}` on success. Returns null when the
+  /// engine isn't wired.
+  Map<String, dynamic>? syncDeleteSpace() {
+    return _callJson(() => _ffi.syncDeleteSpace(_handle));
+  }
+
+  /// Clear only LOCAL sync-space state — the "start over on this device"
+  /// path. Does NOT touch the server (this device stays a member remotely);
+  /// use [syncLeaveSpace] to also remove it server-side. Returns `{ok: true}`
+  /// on success, null when the engine isn't wired.
+  Map<String, dynamic>? syncClearLocalSpace() {
+    return _callJson(() => _ffi.syncClearLocalSpace(_handle));
+  }
+
   // ── Vendor Events ────────────────────────────────────────────────────
 
   /// Ingest a canonical vendor event (JSON map from CanonicalWearableEvent.toMap()).

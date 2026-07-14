@@ -671,6 +671,45 @@ class Synheart {
   static Map<String, dynamic>? syncStatusSnapshot() =>
       _coreRuntime?.syncStatus();
 
+  /// Recover access to a sync-space on a fresh device using the
+  /// recovery key issued at creation plus the target space id.
+  /// Returns `{sync_space_id, owner_user_id, status}` on success.
+  /// Null when the runtime bridge isn't ready.
+  static Map<String, dynamic>? syncRecoverSpace({
+    required String recoveryKey,
+    required String spaceId,
+  }) => _coreRuntime?.syncRecoverSpace(
+    recoveryKey: recoveryKey,
+    spaceId: spaceId,
+  );
+
+  /// Leave the current sync-space for this device only. Returns
+  /// `{ok: true}` on success. Null when the runtime bridge isn't ready.
+  static Map<String, dynamic>? syncLeaveSpace() =>
+      _coreRuntime?.syncLeaveSpace();
+
+  /// List the devices paired into the current sync-space. Returns
+  /// `{devices: [...]}`. Null when the runtime bridge isn't ready.
+  static Map<String, dynamic>? syncListDevices() =>
+      _coreRuntime?.syncListDevices();
+
+  /// Revoke a specific device from the current sync-space by its
+  /// `device_id`. Returns `{ok: true}` on success. Null when the
+  /// runtime bridge isn't ready.
+  static Map<String, dynamic>? syncRevokeDevice({required String deviceId}) =>
+      _coreRuntime?.syncRevokeDevice(deviceId: deviceId);
+
+  /// Delete the current sync-space entirely. Returns `{ok: true}` on
+  /// success. Null when the runtime bridge isn't ready.
+  static Map<String, dynamic>? syncDeleteSpace() =>
+      _coreRuntime?.syncDeleteSpace();
+
+  /// Clear only local sync-space state ("start over on this device") without
+  /// touching the server. Returns `{ok: true}` on success. Null when the
+  /// runtime bridge isn't ready.
+  static Map<String, dynamic>? syncClearLocalSpace() =>
+      _coreRuntime?.syncClearLocalSpace();
+
   /// Encode every locally-cached baseline envelope into a
   /// passphrase-encrypted `.srm.synheart` blob the user can share
   /// via any OS channel (AirDrop, Quick Share, email, etc.). Used
