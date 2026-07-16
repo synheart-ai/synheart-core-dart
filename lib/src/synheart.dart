@@ -42,6 +42,7 @@ import 'config/activation_manager.dart';
 import 'modules/cloud/device_auth_provider.dart';
 import 'core_runtime/core_runtime_bridge.dart';
 import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
+import 'sync/sync_readiness.dart';
 
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
@@ -679,6 +680,38 @@ class Synheart {
   /// wired. Cloud-upload consent is a host gate and is not included here.
   static Map<String, dynamic>? syncReadinessSnapshot() =>
       _coreRuntime?.syncReadiness();
+
+  /// Check whether a specific Synsync operation can run.
+  ///
+  /// Unlike [isFeatureOperational], this does not require an active data
+  /// collection session. Create, Join, and Recover also do not require an
+  /// existing sync space or SRK because those operations establish/recover
+  /// that state themselves.
+  static Future<SyncReadiness> checkSyncReadiness({
+    required SyncOperation operation,
+  }) async {
+    final s = shared;
+    Map<String, dynamic>? nativeSnapshot;
+    try {
+      nativeSnapshot = _coreRuntime?.syncReadiness();
+    } catch (error, stackTrace) {
+      // Older native binaries do not export sync-readiness. Treat that as a
+      // compatibility/readiness failure instead of crashing the host UI.
+      SynheartLogger.log(
+        '[Synheart] Native sync-readiness unavailable: $error',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    return SyncReadiness.evaluate(
+      operation: operation,
+      activated:
+          s._activationManager?.isActivated(SynheartFeature.synsync) ?? false,
+      cloudConsentGranted: s._hasConsentForFeature(SynheartFeature.synsync),
+      capabilityAllowed: s._isCapabilityAllowed(SynheartFeature.synsync),
+      nativeSnapshot: nativeSnapshot,
+    );
+  }
 
   /// Recover access to a sync-space on a fresh device using the
   /// recovery key issued at creation plus the target space id.
