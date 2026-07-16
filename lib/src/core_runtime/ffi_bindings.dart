@@ -1079,6 +1079,11 @@ class SynheartCoreFFI {
   late final syncStatus = _lib.lookupFunction<_SyncStatusC, _SyncStatusDart>(
     'synheart_core_sync_status',
   );
+  // Same C ABI as sync_status: `Pointer<Utf8> Function(Pointer<Void> h)`.
+  late final syncReadiness = _lib
+      .lookupFunction<_SyncStatusC, _SyncStatusDart>(
+        'synheart_core_sync_readiness',
+      );
   late final syncRecoverSpace = _lib
       .lookupFunction<_SyncRecoverSpaceC, _SyncRecoverSpaceDart>(
         'synheart_core_sync_recover_space',

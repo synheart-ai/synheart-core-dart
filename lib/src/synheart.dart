@@ -671,6 +671,15 @@ class Synheart {
   static Map<String, dynamic>? syncStatusSnapshot() =>
       _coreRuntime?.syncStatus();
 
+  /// Unified native sync-readiness snapshot: prerequisite booleans plus a
+  /// primary `state` (e.g. `CONFIGURATION_MISSING`,
+  /// `DEVICE_REGISTRATION_REQUIRED`, `NO_ACTIVE_SPACE`, `SRK_UNAVAILABLE`,
+  /// `READY`). Prefer `state` over inferring readiness from the separate SDK
+  /// gates when diagnosing why sync isn't ready. Null when the bridge isn't
+  /// wired. Cloud-upload consent is a host gate and is not included here.
+  static Map<String, dynamic>? syncReadinessSnapshot() =>
+      _coreRuntime?.syncReadiness();
+
   /// Recover access to a sync-space on a fresh device using the
   /// recovery key issued at creation plus the target space id.
   /// Returns `{sync_space_id, owner_user_id, status}` on success.

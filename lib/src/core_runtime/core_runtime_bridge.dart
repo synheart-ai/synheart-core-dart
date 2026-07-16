@@ -1253,6 +1253,19 @@ class CoreRuntimeBridge {
     return _callJson(() => _ffi.syncStatus(_handle));
   }
 
+  /// Unified native sync-readiness snapshot: individual prerequisite booleans
+  /// (`configured`, `storage_present`, `device_registered`, `engine_ready`,
+  /// `active_space`, `srk_ready`, …) plus one primary `state` — the first
+  /// unmet gate in priority order (`CONFIGURATION_MISSING`,
+  /// `STORAGE_UNAVAILABLE`, `DEVICE_REVOKED`, `DEVICE_REGISTRATION_REQUIRED`,
+  /// `ENGINE_NOT_INITIALIZED`, `NO_ACTIVE_SPACE`, `SRK_UNAVAILABLE`, `READY`).
+  /// Use `state` for UI/logs instead of inferring readiness from separate
+  /// checks. Cloud-upload consent is intentionally excluded — the host owns
+  /// that gate. Null when the runtime bridge isn't wired.
+  Map<String, dynamic>? syncReadiness() {
+    return _callJson(() => _ffi.syncReadiness(_handle));
+  }
+
   /// Recover access to a sync-space on a fresh device using the
   /// recovery key (SRK fragment) issued at creation plus the target
   /// space id. Returns `{sync_space_id, owner_user_id, status}` on
