@@ -1045,6 +1045,32 @@ class Synheart {
     }
   }
 
+  /// Explicitly re-register this device with the auth server.
+  ///
+  /// Unlike [ensureDeviceAuthRegistered], this bypasses the locally restored
+  /// `registered` state. It is intended as a user-initiated repair when the
+  /// local secure identity still exists but the server has lost or revoked its
+  /// device record (for example, a `401 device not registered` response).
+  /// Local health, baseline, consent, and sync-space data are not deleted.
+  static Future<bool> reregisterDeviceAuth() async {
+    final cfg = shared._config;
+    if (cfg?.deviceAuthConfig == null) return false;
+    try {
+      shared._deviceAuthProvider = null;
+      _deviceAuthViaCoreRuntime = false;
+      await shared._initDeviceAuth(cfg!, forceRegistration: true);
+      final registered = shared._deviceAuthProvider != null;
+      if (registered) await _maybeEnsureCloudConsentReady();
+      return registered;
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] reregisterDeviceAuth failed: $e',
+        error: e,
+      );
+      return false;
+    }
+  }
+
   /// Best-effort consent-token issuance used to chain off device-auth
   /// registration paths. Swallows errors so device-auth success isn't
   /// reported as failure just because the consent HTTP call flaked —
@@ -4859,7 +4885,10 @@ class Synheart {
   }
 
   /// Configure device authentication, register device, and fetch capabilities.
-  Future<void> _initDeviceAuth(SynheartConfig resolvedConfig) async {
+  Future<void> _initDeviceAuth(
+    SynheartConfig resolvedConfig, {
+    bool forceRegistration = false,
+  }) async {
     final dac = resolvedConfig.deviceAuthConfig!;
     SynheartLogger.log('[Synheart] Configuring device authentication..');
 
@@ -4900,7 +4929,7 @@ class Synheart {
       // registered — the keychain/state is the source of truth.
       final preSnap = runtime.sdkDeviceAuthStatus();
       final preStatus = preSnap?['status']?.toString();
-      if (preStatus == 'registered') {
+      if (preStatus == 'registered' && !forceRegistration) {
         final restoredId = preSnap?['device_id']?.toString();
         _deviceAuthViaCoreRuntime = true;
         final idPreview = (restoredId == null || restoredId.length <= 8)
