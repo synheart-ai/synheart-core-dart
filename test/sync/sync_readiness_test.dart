@@ -172,17 +172,53 @@ void main() {
     });
 
     test('management requires a space but not an SRK', () {
-      final ready = evaluate(
+      for (final operation in const [
         SyncOperation.listDevices,
-        native: snapshot(srkReady: false),
-      );
-      final blocked = evaluate(
-        SyncOperation.listDevices,
+        SyncOperation.revokeDevice,
+        SyncOperation.leaveSpace,
+        SyncOperation.deleteSpace,
+      ]) {
+        final ready = evaluate(operation, native: snapshot(srkReady: false));
+        final blocked = evaluate(
+          operation,
+          native: snapshot(activeSpace: false, srkReady: false),
+        );
+
+        expect(ready.isReady, isTrue, reason: '$operation should be ready');
+        expect(
+          blocked.code,
+          SyncReadinessCode.activeSpaceRequired,
+          reason: '$operation should require an active space',
+        );
+      }
+    });
+
+    test('recovery does not require an active space or SRK', () {
+      final result = evaluate(
+        SyncOperation.recoverSpace,
         native: snapshot(activeSpace: false, srkReady: false),
       );
 
-      expect(ready.isReady, isTrue);
-      expect(blocked.code, SyncReadinessCode.activeSpaceRequired);
+      expect(result.isReady, isTrue);
+    });
+  });
+
+  group('local clear', () {
+    test('does not require SDK authorization or device registration', () {
+      final result = SyncReadiness.evaluate(
+        operation: SyncOperation.clearLocalSpace,
+        activated: false,
+        cloudConsentGranted: false,
+        capabilityAllowed: false,
+        nativeSnapshot: snapshot(
+          deviceRegistered: false,
+          deviceRevoked: true,
+          activeSpace: false,
+        ),
+      );
+
+      expect(result.isReady, isTrue);
+      expect(result.code, SyncReadinessCode.ready);
     });
   });
 }

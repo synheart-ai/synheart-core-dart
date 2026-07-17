@@ -69,6 +69,28 @@ class SyncReadiness {
       nativeSnapshot: nativeSnapshot,
     );
 
+    // Clearing local sync state is a recovery/escape hatch. It performs no
+    // network request and must remain available after consent is withdrawn,
+    // capability changes, registration loss, or device revocation.
+    if (operation == SyncOperation.clearLocalSpace) {
+      if (nativeSnapshot == null) {
+        return blocked(SyncReadinessCode.nativeRuntimeUnavailable);
+      }
+      if (nativeSnapshot['configured'] != true) {
+        return blocked(SyncReadinessCode.configurationMissing);
+      }
+      if (nativeSnapshot['storage_present'] != true) {
+        return blocked(SyncReadinessCode.storageUnavailable);
+      }
+      return SyncReadiness(
+        operation: operation,
+        isReady: true,
+        code: SyncReadinessCode.ready,
+        nativeState: nativeSnapshot['state']?.toString(),
+        nativeSnapshot: nativeSnapshot,
+      );
+    }
+
     if (!activated) {
       return blocked(SyncReadinessCode.featureNotActivated);
     }

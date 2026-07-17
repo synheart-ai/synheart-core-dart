@@ -634,14 +634,12 @@ class Synheart {
 
   /// Execute a sync cycle (push + pull).
   static Future<SyncResult> syncNow() async {
-    if (_coreRuntime != null) {
-      final result = await _coreRuntime!.syncNow();
-      return SyncResult(
-        pushed: result?['pushed'] as int? ?? 0,
-        pulled: result?['pulled'] as int? ?? 0,
-      );
+    final runtime = _coreRuntime;
+    if (runtime == null) {
+      throw StateError('The native sync runtime is unavailable.');
     }
-    return const SyncResult();
+    final result = await runtime.syncNow();
+    return SyncResult.fromRuntimeResponse(result);
   }
 
   /// Create a sync-space on this device and return
@@ -5105,6 +5103,20 @@ class SyncResult {
   final int pulled;
 
   const SyncResult({this.pushed = 0, this.pulled = 0});
+
+  factory SyncResult.fromRuntimeResponse(Map<String, dynamic>? response) {
+    if (response == null) {
+      throw StateError('The native sync operation returned no result.');
+    }
+    final pushed = response['pushed'];
+    final pulled = response['pulled'];
+    if (pushed is! num || pulled is! num) {
+      throw const FormatException(
+        'The native sync operation returned an invalid result.',
+      );
+    }
+    return SyncResult(pushed: pushed.toInt(), pulled: pulled.toInt());
+  }
 }
 
 /// Current sync status.
