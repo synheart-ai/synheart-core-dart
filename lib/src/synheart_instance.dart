@@ -1,6 +1,7 @@
 import 'core_runtime/core_runtime_bridge.dart';
 import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
 import 'config/synheart_config.dart';
+import 'modules/behavior/behavior_code.dart';
 import 'modules/cloud/device_auth_provider.dart';
 import 'core/logger.dart';
 
@@ -194,7 +195,58 @@ class SynheartInstance {
   String? ingestBatch(String batchJson, int nowMs) =>
       _bridge.ingestBatch(batchJson, nowMs);
 
+  // ── Behavior fan-in (typing dynamics during a lab window) ────────────────────
+
+  /// Push a raw behavior event into this instance's engine. Fed into an open
+  /// lab session's behavioral metrics. [eventType] is a [RuntimeBehaviorEvent]
+  /// code; most callers want [pushBehaviorTouch].
+  void pushBehavior(int tsMs, int eventType, double value) =>
+      _bridge.pushBehavior(tsMs, eventType, value);
+
+  /// Push a touch/keystroke behavior event. During an open lab window this
+  /// feeds the research lab session's typing dynamics so the finalized payload
+  /// carries the same behavioral metrics the personal runtime produces.
+  void pushBehaviorTouch(int tsMs) =>
+      _bridge.pushBehavior(tsMs, RuntimeBehaviorEvent.input.code, 1.0);
+
+  // ── Session lifecycle (drives the pipeline the lab window records over) ───────
+
+  /// Start this instance's behavior/HSI session. Called before [labStart] so
+  /// the engine has an active pipeline the lab window can record over (mirrors
+  /// the personal runtime's `startSession` → `labStart` order).
+  Map<String, dynamic>? startSession() => _disposed ? null : _bridge.startSession();
+
+  /// Stop this instance's session. Called after [labFinalize].
+  bool stopSession() => _disposed ? false : _bridge.stopSession();
+
+  bool get isSessionRunning => !_disposed && _bridge.isRunning;
+
+  /// Advance the pipeline clock so windows that should close by [nowMs] are
+  /// flushed (drives the same window-closing the personal runtime's ticker does).
+  String? tick(int nowMs) => _disposed ? null : _bridge.tick(nowMs);
+
   // ── Lab session ──────────────────────────────────────────────────────────────
+
+  /// Whether the lab-metadata C ABI is available in the loaded native build.
+  bool get isLabMetadataAvailable => !_disposed && _bridge.isLabMetadataAvailable;
+
+  /// Ensure the lab-session metadata (device / platform / user info) is cached
+  /// on this instance before the first [labStart]. Mirrors the personal
+  /// runtime's `labEnsureMetadata`.
+  String? labEnsureMetadata({
+    required String deviceId,
+    required String platform,
+    required String osVersion,
+    String? userInfoJson,
+    String? deviceExtraJson,
+  }) =>
+      _bridge.labEnsureMetadata(
+        deviceId: deviceId,
+        platform: platform,
+        osVersion: osVersion,
+        userInfoJson: userInfoJson,
+        deviceExtraJson: deviceExtraJson,
+      );
 
   String? labStart(String protocolJson, int startedAtMs) =>
       _bridge.labStart(protocolJson, startedAtMs);
