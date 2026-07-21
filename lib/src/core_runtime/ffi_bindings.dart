@@ -175,6 +175,10 @@ typedef _ConsentSubmitFormDart =
       Pointer<Utf8> userId,
       Pointer<Utf8> formJson,
     );
+typedef _RecordStudyConsentC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> payloadJson);
+typedef _RecordStudyConsentDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> payloadJson);
 
 // Research study
 typedef _EnrolStudyC =
@@ -854,6 +858,19 @@ class SynheartCoreFFI {
       .lookupFunction<_ConsentSubmitFormC, _ConsentSubmitFormDart>(
         'synheart_core_consent_submit_form',
       );
+  // Nullable: older native runtimes predate this symbol. The lookup throws when
+  // the symbol is absent, so guard it and let the high-level API degrade to a
+  // no-op (returns null) instead of crashing at load.
+  late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)?
+  recordStudyConsent = () {
+    try {
+      return _lib.lookupFunction<_RecordStudyConsentC, _RecordStudyConsentDart>(
+        'synheart_core_record_study_consent',
+      );
+    } catch (_) {
+      return null;
+    }
+  }();
   late final enrolStudy = _lib.lookupFunction<_EnrolStudyC, _EnrolStudyDart>(
     'synheart_core_enrol_study',
   );

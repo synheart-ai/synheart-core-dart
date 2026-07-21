@@ -2082,6 +2082,43 @@ class Synheart {
     return rt.researchStudyStatus();
   }
 
+  /// Persist a durable study-consent record to the consent service.
+  ///
+  /// Records the user's consent to a specific study-consent document version so
+  /// there is a durable, server-side record of what was agreed to and when.
+  /// [consentDocumentVersion] and [signedAt] identify the document and the
+  /// moment of consent; [affirmations] is an arbitrary map of per-item consent
+  /// states, and [signature] / [consentDocumentHash] are optional integrity
+  /// fields. [userId] defaults to the configured subject when omitted. Returns
+  /// the created record's `{id, created_at}` on success, or null when the native
+  /// runtime is unavailable.
+  static Future<Map<String, dynamic>?> recordStudyConsent({
+    required String appId,
+    String? deviceId,
+    required String userId,
+    String? studyId,
+    required String consentDocumentVersion,
+    String? consentDocumentHash,
+    Map<String, dynamic>? affirmations,
+    String? signature,
+    required String signedAt,
+  }) {
+    final rt = _coreRuntime;
+    if (rt == null) return Future.value(null);
+    return rt.recordStudyConsent({
+      'app_id': appId,
+      if (deviceId != null) 'device_id': deviceId,
+      'user_id': userId,
+      if (studyId != null) 'study_id': studyId,
+      'consent_document_version': consentDocumentVersion,
+      if (consentDocumentHash != null)
+        'consent_document_hash': consentDocumentHash,
+      if (affirmations != null) 'affirmations': affirmations,
+      if (signature != null) 'signature': signature,
+      'signed_at': signedAt,
+    });
+  }
+
   /// Request erasure of the data the participant contributed to their study for
   /// this app — the deletion the consent copy promises alongside withdrawal. No
   /// identifiers are needed; the participant and app are taken from the device's

@@ -977,6 +977,39 @@ class CoreRuntimeBridge {
     });
   }
 
+  /// Persist a durable study-consent record via the consent service. [payload]
+  /// carries the record body (`consent_document_version`, optional `study_id` /
+  /// `consent_document_hash` / `affirmations` / `signature`, `signed_at`, …).
+  /// Returns the created record's `{id, created_at}` on success, or null when
+  /// the native runtime (or this symbol) is unavailable.
+  Future<Map<String, dynamic>?> recordStudyConsent(
+    Map<String, dynamic> payload,
+  ) async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    final encoded = jsonEncode(payload);
+    return _runFfi(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final recordFn = ffi.recordStudyConsent;
+      // Older native libs lack this symbol; degrade gracefully.
+      if (recordFn == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      final pPayload = encoded.toNativeUtf8();
+      try {
+        final ptr = recordFn(handle, pPayload.cast());
+        if (ptr == nullptr) return null;
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        return jsonDecode(raw) as Map<String, dynamic>;
+      } catch (_) {
+        return null;
+      } finally {
+        malloc.free(pPayload);
+      }
+    });
+  }
+
   /// Redeem a research-study access + study code, or (when [validateOnly])
   /// preview the pair without redeeming. Returns the runtime's JSON response.
   Future<Map<String, dynamic>?> enrolResearchStudy({

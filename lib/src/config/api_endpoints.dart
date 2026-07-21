@@ -66,6 +66,7 @@ abstract final class ApiEndpoints {
       '/v1/apps/$appId/consent-profiles';
   static const String consentTokenPath = '/v1/sdk/consent-token';
   static const String consentRevokePath = '/v1/sdk/consent-revoke';
+  static const String studyConsentPath = '/v1/sdk/study-consent';
 
   /// Throws [ArgumentError] if [url] is still the placeholder value.
   static void assertConfigured(String url, String name) {
