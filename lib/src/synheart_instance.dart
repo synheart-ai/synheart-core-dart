@@ -158,6 +158,18 @@ class SynheartInstance {
 
   Map<String, dynamic>? deviceAuthStatus() => _bridge.sdkDeviceAuthStatus();
 
+  /// Native device/Synsync readiness snapshot for THIS instance — the
+  /// **pollable** signal used to detect a revoked or unregistered attested
+  /// identity (`device_revoked` / `device_registered`).
+  ///
+  /// Ingest HTTP (and therefore any `401` / `KEY_INVALIDATED` response) lives
+  /// entirely inside the native runtime and never surfaces to Dart, so an app
+  /// that wants to recover an invalidated research identity polls this snapshot
+  /// instead of observing the 401 directly. Null when disposed or the native
+  /// symbol is unavailable.
+  Map<String, dynamic>? syncReadiness() =>
+      _disposed ? null : _bridge.syncReadiness();
+
   /// Build an `X-Synheart-Proof` header for an outbound request on this
   /// instance's identity.
   String? buildProofHeader(String method, String absoluteUrl) =>
