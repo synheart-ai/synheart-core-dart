@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-21
+
+### Added
+- `Synheart.recordStudyConsent(...)` — record a durable study-consent record via the core runtime (new `synheart_core_record_study_consent` FFI). Includes a matching `studyConsentPath` endpoint constant.
+
 ## [0.8.2] - 2026-07-07
 
 ### Fixed
