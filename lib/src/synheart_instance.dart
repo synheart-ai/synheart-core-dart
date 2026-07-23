@@ -195,6 +195,49 @@ class SynheartInstance {
 
   Map<String, dynamic>? consentStatus() => _bridge.consentStatus();
 
+  // ── Research study (per-instance, attested credential) ───────────────────────
+  //
+  // These run on THIS instance's own handle: enrol/withdraw/status resolve the
+  // participant + app from the instance's device-attested cloud credential (no
+  // user JWT). Use these — not the static `Synheart.*ResearchStudy*` helpers,
+  // which are bound to the personal singleton runtime — to drive a research
+  // instance's enrolment lifecycle.
+
+  /// Preview an (access, study) code pair for THIS instance without redeeming it.
+  Future<Map<String, dynamic>?> validateResearchStudyCodes({
+    required String accessCode,
+    required String studyCode,
+  }) =>
+      _disposed
+          ? Future.value(null)
+          : _bridge.enrolResearchStudy(
+              accessCode: accessCode,
+              studyCode: studyCode,
+              validateOnly: true,
+            );
+
+  /// Redeem an (access, study) code pair and create the enrolment on THIS
+  /// instance's attested credential.
+  Future<Map<String, dynamic>?> enrolResearchStudy({
+    required String accessCode,
+    required String studyCode,
+  }) =>
+      _disposed
+          ? Future.value(null)
+          : _bridge.enrolResearchStudy(
+              accessCode: accessCode,
+              studyCode: studyCode,
+              validateOnly: false,
+            );
+
+  /// Read THIS instance's current active research-study enrolment.
+  Future<Map<String, dynamic>?> researchStudyStatus() =>
+      _disposed ? Future.value(null) : _bridge.researchStudyStatus();
+
+  /// Withdraw THIS instance from its active research study.
+  Future<Map<String, dynamic>?> withdrawResearchStudy() =>
+      _disposed ? Future.value(null) : _bridge.withdrawResearchStudy();
+
   // ── Signal push (RR fan-in during a lab window) ──────────────────────────────
 
   /// Push an RR (inter-beat) interval into this instance. During an open lab
