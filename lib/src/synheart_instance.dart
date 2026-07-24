@@ -118,6 +118,12 @@ class SynheartInstance {
       // (which passes subjectId here); without it `synheart_core_new` fails with
       // `ERR_NOT_CONFIGURED: client_id is required when device_auth.enabled`.
       'client_id': config.subjectId,
+      // The API gateway origin the runtime uses for consent / ingest / platform
+      // calls. Mirrors Synheart.ensureRuntimeBridge. WITHOUT this, the runtime
+      // falls back to its hardcoded `DEFAULT_API_URL` (`https://api.synheart.ai`,
+      // prod) — so a dev build would silently talk to production and fail with
+      // "device not registered". Use the same origin the personal instance does.
+      'api_base_url': config.sync.baseUrl,
       'mode': config.mode.name,
       'device_id': config.deviceId,
       'app_version': config.appVersion,
