@@ -113,6 +113,11 @@ class SynheartInstance {
       'app_id': config.appId,
       'org_id': config.cloudConfig?.orgId ?? '',
       'subject_id': config.subjectId,
+      // Required when device_auth is enabled — the runtime derives the device
+      // identity's subject from client_id. Mirrors Synheart.ensureRuntimeBridge
+      // (which passes subjectId here); without it `synheart_core_new` fails with
+      // `ERR_NOT_CONFIGURED: client_id is required when device_auth.enabled`.
+      'client_id': config.subjectId,
       'mode': config.mode.name,
       'device_id': config.deviceId,
       'app_version': config.appVersion,
