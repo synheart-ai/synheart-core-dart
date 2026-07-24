@@ -195,32 +195,48 @@ class SynheartInstance {
 
   Map<String, dynamic>? consentStatus() => _bridge.consentStatus();
 
-  // ── Research study lifecycle (on this instance's attested credential) ─────────
+  // ── Research study (per-instance, attested credential) ───────────────────────
+  //
+  // These run on THIS instance's own handle: enrol/withdraw/status resolve the
+  // participant + app from the instance's device-attested cloud credential (no
+  // user JWT). Use these — not the static `Synheart.*ResearchStudy*` helpers,
+  // which are bound to the personal singleton runtime — to drive a research
+  // instance's enrolment lifecycle.
 
-  /// Redeem a research-study access + study code and create the enrolment on
-  /// this instance's credential (or, when [validateOnly], preview the pair
-  /// without redeeming). Returns the runtime's JSON response.
+  /// Preview an (access, study) code pair for THIS instance without redeeming it.
+  Future<Map<String, dynamic>?> validateResearchStudyCodes({
+    required String accessCode,
+    required String studyCode,
+  }) =>
+      _disposed
+          ? Future.value(null)
+          : _bridge.enrolResearchStudy(
+              accessCode: accessCode,
+              studyCode: studyCode,
+              validateOnly: true,
+            );
+
+  /// Redeem an (access, study) code pair and create the enrolment on THIS
+  /// instance's attested credential.
   Future<Map<String, dynamic>?> enrolResearchStudy({
     required String accessCode,
     required String studyCode,
-    bool validateOnly = false,
   }) =>
-      _bridge.enrolResearchStudy(
-        accessCode: accessCode,
-        studyCode: studyCode,
-        validateOnly: validateOnly,
-      );
+      _disposed
+          ? Future.value(null)
+          : _bridge.enrolResearchStudy(
+              accessCode: accessCode,
+              studyCode: studyCode,
+              validateOnly: false,
+            );
 
-  /// Read this instance's CURRENT active research-study enrolment for its app —
-  /// the authoritative attribution state. Returns
-  /// `{enrolled: bool, study: {...}, enrolment: {...}}`.
+  /// Read THIS instance's current active research-study enrolment.
   Future<Map<String, dynamic>?> researchStudyStatus() =>
-      _bridge.researchStudyStatus();
+      _disposed ? Future.value(null) : _bridge.researchStudyStatus();
 
-  /// Withdraw from this instance's active research study. No codes needed —
-  /// participant + app come from the instance's signed cloud credential.
+  /// Withdraw THIS instance from its active research study.
   Future<Map<String, dynamic>?> withdrawResearchStudy() =>
-      _bridge.withdrawResearchStudy();
+      _disposed ? Future.value(null) : _bridge.withdrawResearchStudy();
 
   // ── Signal push (RR fan-in during a lab window) ──────────────────────────────
 
