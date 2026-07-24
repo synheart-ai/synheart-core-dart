@@ -195,6 +195,33 @@ class SynheartInstance {
 
   Map<String, dynamic>? consentStatus() => _bridge.consentStatus();
 
+  // ── Research study lifecycle (on this instance's attested credential) ─────────
+
+  /// Redeem a research-study access + study code and create the enrolment on
+  /// this instance's credential (or, when [validateOnly], preview the pair
+  /// without redeeming). Returns the runtime's JSON response.
+  Future<Map<String, dynamic>?> enrolResearchStudy({
+    required String accessCode,
+    required String studyCode,
+    bool validateOnly = false,
+  }) =>
+      _bridge.enrolResearchStudy(
+        accessCode: accessCode,
+        studyCode: studyCode,
+        validateOnly: validateOnly,
+      );
+
+  /// Read this instance's CURRENT active research-study enrolment for its app —
+  /// the authoritative attribution state. Returns
+  /// `{enrolled: bool, study: {...}, enrolment: {...}}`.
+  Future<Map<String, dynamic>?> researchStudyStatus() =>
+      _bridge.researchStudyStatus();
+
+  /// Withdraw from this instance's active research study. No codes needed —
+  /// participant + app come from the instance's signed cloud credential.
+  Future<Map<String, dynamic>?> withdrawResearchStudy() =>
+      _bridge.withdrawResearchStudy();
+
   // ── Signal push (RR fan-in during a lab window) ──────────────────────────────
 
   /// Push an RR (inter-beat) interval into this instance. During an open lab
