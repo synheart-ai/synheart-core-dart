@@ -367,6 +367,31 @@ typedef _SyncGeneratePairingC = Pointer<Utf8> Function(Pointer<Void> h);
 typedef _SyncGeneratePairingDart = Pointer<Utf8> Function(Pointer<Void> h);
 typedef _SyncStatusC = Pointer<Utf8> Function(Pointer<Void> h);
 typedef _SyncStatusDart = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncRecoverSpaceC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> recoveryKey,
+      Pointer<Utf8> spaceId,
+    );
+typedef _SyncRecoverSpaceDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> recoveryKey,
+      Pointer<Utf8> spaceId,
+    );
+typedef _SyncLeaveSpaceC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncLeaveSpaceDart = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncListDevicesC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncListDevicesDart = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncRevokeDeviceC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> deviceId);
+typedef _SyncRevokeDeviceDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> deviceId);
+typedef _SyncDeleteSpaceC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncDeleteSpaceDart = Pointer<Utf8> Function(Pointer<Void> h);
+
+typedef _SyncClearLocalSpaceC = Pointer<Utf8> Function(Pointer<Void> h);
+typedef _SyncClearLocalSpaceDart = Pointer<Utf8> Function(Pointer<Void> h);
 
 // Generic `(handle) -> int32` shape — used by ambient-capture get,
 // and any future read-only flag accessor. Kept here rather than
@@ -1071,6 +1096,35 @@ class SynheartCoreFFI {
   late final syncStatus = _lib.lookupFunction<_SyncStatusC, _SyncStatusDart>(
     'synheart_core_sync_status',
   );
+  // Same C ABI as sync_status: `Pointer<Utf8> Function(Pointer<Void> h)`.
+  late final syncReadiness = _lib.lookupFunction<_SyncStatusC, _SyncStatusDart>(
+    'synheart_core_sync_readiness',
+  );
+  late final syncRecoverSpace = _lib
+      .lookupFunction<_SyncRecoverSpaceC, _SyncRecoverSpaceDart>(
+        'synheart_core_sync_recover_space',
+      );
+  late final syncLeaveSpace = _lib
+      .lookupFunction<_SyncLeaveSpaceC, _SyncLeaveSpaceDart>(
+        'synheart_core_sync_leave_space',
+      );
+  late final syncListDevices = _lib
+      .lookupFunction<_SyncListDevicesC, _SyncListDevicesDart>(
+        'synheart_core_sync_list_devices',
+      );
+  late final syncRevokeDevice = _lib
+      .lookupFunction<_SyncRevokeDeviceC, _SyncRevokeDeviceDart>(
+        'synheart_core_sync_revoke_device',
+      );
+  late final syncDeleteSpace = _lib
+      .lookupFunction<_SyncDeleteSpaceC, _SyncDeleteSpaceDart>(
+        'synheart_core_sync_delete_space',
+      );
+
+  late final syncClearLocalSpace = _lib
+      .lookupFunction<_SyncClearLocalSpaceC, _SyncClearLocalSpaceDart>(
+        'synheart_core_sync_clear_local_space',
+      );
 
   late final baselinesJson = _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
     'synheart_core_baselines_json',

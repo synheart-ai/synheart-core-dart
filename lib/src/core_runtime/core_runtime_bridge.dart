@@ -14,6 +14,7 @@ import 'package:ffi/ffi.dart';
 
 import 'package:flutter/foundation.dart';
 
+import '../config/synheart_errors.dart';
 import '../core/logger.dart';
 
 import '../models/sleep_score.dart';
@@ -48,6 +49,37 @@ String? _readFfiStringAndFree(
   } finally {
     freeFn(ptr);
   }
+}
+
+/// Unwrap the native sync response envelope.
+///
+/// The native sync FFI returns a consistent shape so a failure reason is never
+/// lost to a bare null:
+///   * success  → `{"ok": true, "data": {...}}`  → returns the `data` map
+///   * failure  → `{"ok": false, "error": {...}}` → throws [SyncNativeException]
+///
+/// Tolerant of two legacy inputs so a lagging vendored native lib still works:
+///   * `null` (old failure sentinel) → returns `null`
+///   * a map with no `ok` key (old bare payload) → returned unchanged
+///
+/// Kept top-level (not a method) so it can be unit-tested without a live handle.
+Map<String, dynamic>? unwrapSyncEnvelope(Map<String, dynamic>? raw) {
+  if (raw == null) return null;
+  if (!raw.containsKey('ok')) {
+    // Legacy bare payload from an older native build — pass through.
+    return raw;
+  }
+  if (raw['ok'] == true) {
+    final data = raw['data'];
+    // Success payloads are always objects; tolerate a missing/!map `data`.
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+  final error = raw['error'];
+  throw SyncNativeException(
+    error is Map<String, dynamic>
+        ? SyncNativeError.fromMap(error)
+        : SyncNativeError.unknown(),
+  );
 }
 
 void _synheartRuntimeLogTrampoline(Pointer<Utf8> line, Pointer<Void> userData) {
@@ -375,7 +407,9 @@ class CoreRuntimeBridge {
   Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) async {
     if (_disposed || _ffi.sdkFfi.registerDevice == null) return null;
     final handleAddr = _handle.address;
-    return _runFfi(() {
+    // Decode on the background isolate; unwrap the envelope in this isolate so
+    // a [SyncNativeException] keeps its type (see [syncNow]).
+    final raw = await _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -392,6 +426,7 @@ class CoreRuntimeBridge {
         malloc.free(p);
       }
     });
+    return unwrapSyncEnvelope(raw);
   }
 
   /// §3 / §5 — JSON snapshot from `synheart_core_sdk_device_auth_status`.
@@ -1227,7 +1262,10 @@ class CoreRuntimeBridge {
   Future<Map<String, dynamic>?> syncNow() async {
     if (_disposed) return null;
     final handleAddr = _handle.address;
-    return _runFfi(() {
+    // Decode on the background isolate but DON'T unwrap there — a
+    // [SyncNativeException] thrown across the `Isolate.run` boundary would be
+    // rethrown as a generic error and lose its type. Unwrap in this isolate.
+    final raw = await _runFfi(() {
       final ffi = SynheartCoreFFI.load();
       if (ffi == null) return null;
       final handle = Pointer<Void>.fromAddress(handleAddr);
@@ -1241,6 +1279,7 @@ class CoreRuntimeBridge {
         return null;
       }
     });
+    return unwrapSyncEnvelope(raw);
   }
 
   /// Create a new sync-space on the cloud and become its first
@@ -1250,7 +1289,7 @@ class CoreRuntimeBridge {
   Map<String, dynamic>? syncCreateSpace({String? deviceName}) {
     final name = deviceName ?? '';
     return _withCString(name, (p) {
-      return _callJson(() => _ffi.syncCreateSpace(_handle, p.cast()));
+      return _callSyncEnvelope(() => _ffi.syncCreateSpace(_handle, p.cast()));
     });
   }
 
@@ -1258,7 +1297,7 @@ class CoreRuntimeBridge {
   /// Returns `{token, expires_in}` — show the token to the user so a
   /// second device can call [syncJoinSpace] with it.
   Map<String, dynamic>? syncGeneratePairing() {
-    return _callJson(() => _ffi.syncGeneratePairing(_handle));
+    return _callSyncEnvelope(() => _ffi.syncGeneratePairing(_handle));
   }
 
   /// Join an existing sync-space using a pairing token from
@@ -1273,7 +1312,7 @@ class CoreRuntimeBridge {
     final name = deviceName ?? '';
     return _withCString(pairingToken, (tokenPtr) {
       return _withCString(name, (namePtr) {
-        return _callJson(
+        return _callSyncEnvelope(
           () => _ffi.syncJoinSpace(_handle, tokenPtr.cast(), namePtr.cast()),
         );
       });
@@ -1283,7 +1322,75 @@ class CoreRuntimeBridge {
   /// Snapshot of the sync-engine state: `{enabled, sync_space_id,
   /// device_count}`. Use for the "paired with N devices" UI line.
   Map<String, dynamic>? syncStatus() {
-    return _callJson(() => _ffi.syncStatus(_handle));
+    return _callSyncEnvelope(() => _ffi.syncStatus(_handle));
+  }
+
+  /// Unified native sync-readiness snapshot: individual prerequisite booleans
+  /// (`configured`, `storage_present`, `device_registered`, `engine_ready`,
+  /// `active_space`, `srk_ready`, …) plus one primary `state` — the first
+  /// unmet gate in priority order (`CONFIGURATION_MISSING`,
+  /// `STORAGE_UNAVAILABLE`, `DEVICE_REVOKED`, `DEVICE_REGISTRATION_REQUIRED`,
+  /// `ENGINE_NOT_INITIALIZED`, `NO_ACTIVE_SPACE`, `SRK_UNAVAILABLE`, `READY`).
+  /// Use `state` for UI/logs instead of inferring readiness from separate
+  /// checks. Cloud-upload consent is intentionally excluded — the host owns
+  /// that gate. Null when the runtime bridge isn't wired.
+  Map<String, dynamic>? syncReadiness() {
+    return _callSyncEnvelope(() => _ffi.syncReadiness(_handle));
+  }
+
+  /// Recover access to a sync-space on a fresh device using the
+  /// recovery key (SRK fragment) issued at creation plus the target
+  /// space id. Returns `{sync_space_id, owner_user_id, status}` on
+  /// success. Returns null when the engine isn't wired.
+  Map<String, dynamic>? syncRecoverSpace({
+    required String recoveryKey,
+    required String spaceId,
+  }) {
+    return _withCString(recoveryKey, (keyPtr) {
+      return _withCString(spaceId, (idPtr) {
+        return _callSyncEnvelope(
+          () => _ffi.syncRecoverSpace(_handle, keyPtr.cast(), idPtr.cast()),
+        );
+      });
+    });
+  }
+
+  /// Leave the current sync-space for this device only. Returns
+  /// `{ok: true}` on success. Returns null when the engine isn't wired.
+  Map<String, dynamic>? syncLeaveSpace() {
+    return _callSyncEnvelope(() => _ffi.syncLeaveSpace(_handle));
+  }
+
+  /// List the devices paired into the current sync-space. Returns
+  /// `{devices: [{device_id, device_name, is_primary, trusted_at,
+  /// last_seen_at, revoked}, …]}`. Returns null when the engine
+  /// isn't wired.
+  Map<String, dynamic>? syncListDevices() {
+    return _callSyncEnvelope(() => _ffi.syncListDevices(_handle));
+  }
+
+  /// Revoke a specific device from the current sync-space by its
+  /// `device_id`. Returns `{ok: true}` on success. Returns null when
+  /// the engine isn't wired.
+  Map<String, dynamic>? syncRevokeDevice({required String deviceId}) {
+    return _withCString(deviceId, (p) {
+      return _callSyncEnvelope(() => _ffi.syncRevokeDevice(_handle, p.cast()));
+    });
+  }
+
+  /// Delete the current sync-space entirely (all devices, cloud
+  /// state). Returns `{ok: true}` on success. Returns null when the
+  /// engine isn't wired.
+  Map<String, dynamic>? syncDeleteSpace() {
+    return _callSyncEnvelope(() => _ffi.syncDeleteSpace(_handle));
+  }
+
+  /// Clear only LOCAL sync-space state — the "start over on this device"
+  /// path. Does NOT touch the server (this device stays a member remotely);
+  /// use [syncLeaveSpace] to also remove it server-side. Returns `{ok: true}`
+  /// on success, null when the engine isn't wired.
+  Map<String, dynamic>? syncClearLocalSpace() {
+    return _callSyncEnvelope(() => _ffi.syncClearLocalSpace(_handle));
   }
 
   // ── Vendor Events ────────────────────────────────────────────────────
@@ -2034,6 +2141,15 @@ class CoreRuntimeBridge {
     final json = _readAndFree(fn());
     if (json == null) return null;
     return jsonDecode(json) as Map<String, dynamic>;
+  }
+
+  /// Call a sync FFI function and unwrap the response envelope.
+  ///
+  /// See [unwrapSyncEnvelope] — success returns the `data` map, a failure
+  /// envelope throws [SyncNativeException], and a legacy bare payload (from an
+  /// older vendored native lib) is passed through unchanged.
+  Map<String, dynamic>? _callSyncEnvelope(Pointer<Utf8> Function() fn) {
+    return unwrapSyncEnvelope(_callJson(fn));
   }
 
   /// Allocate a native UTF-8 string, call the function, then free it.

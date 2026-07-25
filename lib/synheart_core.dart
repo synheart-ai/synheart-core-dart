@@ -19,6 +19,10 @@ library synheart_core;
 // Core SDK Entry Point (PRD-compliant Architecture)
 export 'src/synheart.dart';
 
+// Secondary runtime instances (e.g. a research instance alongside the personal
+// `Synheart.shared`) — see `SynheartInstance`.
+export 'src/synheart_instance.dart';
+
 // SDK version constant (string literal kept in sync with pubspec.yaml)
 export 'src/version.dart';
 
@@ -31,6 +35,9 @@ export 'src/config/synheart_config.dart';
 export 'src/config/synheart_feature.dart';
 export 'src/config/synheart_mode.dart';
 export 'src/config/synheart_errors.dart';
+
+// Cross-device synchronization readiness.
+export 'src/sync/sync_readiness.dart';
 
 // Artifacts (Tier A)
 export 'src/artifacts/artifact_header.dart';

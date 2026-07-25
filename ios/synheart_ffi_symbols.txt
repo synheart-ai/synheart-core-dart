@@ -88,6 +88,7 @@ _synheart_core_sync_create_space
 _synheart_core_sync_generate_pairing
 _synheart_core_sync_join_space
 _synheart_core_sync_now
+_synheart_core_sync_readiness
 _synheart_core_sync_status
 _synheart_core_tick
 _synheart_core_upload_metadata

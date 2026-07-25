@@ -42,6 +42,7 @@ import 'config/activation_manager.dart';
 import 'modules/cloud/device_auth_provider.dart';
 import 'core_runtime/core_runtime_bridge.dart';
 import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
+import 'sync/sync_readiness.dart';
 
 import 'modules/consent/consent_profile.dart';
 import 'modules/consent/consent_token.dart';
@@ -633,14 +634,12 @@ class Synheart {
 
   /// Execute a sync cycle (push + pull).
   static Future<SyncResult> syncNow() async {
-    if (_coreRuntime != null) {
-      final result = await _coreRuntime!.syncNow();
-      return SyncResult(
-        pushed: result?['pushed'] as int? ?? 0,
-        pulled: result?['pulled'] as int? ?? 0,
-      );
+    final runtime = _coreRuntime;
+    if (runtime == null) {
+      throw StateError('The native sync runtime is unavailable.');
     }
-    return const SyncResult();
+    final result = await runtime.syncNow();
+    return SyncResult.fromRuntimeResponse(result);
   }
 
   /// Create a sync-space on this device and return
@@ -670,6 +669,86 @@ class Synheart {
   /// Snapshot of the sync-engine state.
   static Map<String, dynamic>? syncStatusSnapshot() =>
       _coreRuntime?.syncStatus();
+
+  /// Unified native sync-readiness snapshot: prerequisite booleans plus a
+  /// primary `state` (e.g. `CONFIGURATION_MISSING`,
+  /// `DEVICE_REGISTRATION_REQUIRED`, `NO_ACTIVE_SPACE`, `SRK_UNAVAILABLE`,
+  /// `READY`). Prefer `state` over inferring readiness from the separate SDK
+  /// gates when diagnosing why sync isn't ready. Null when the bridge isn't
+  /// wired. Cloud-upload consent is a host gate and is not included here.
+  static Map<String, dynamic>? syncReadinessSnapshot() =>
+      _coreRuntime?.syncReadiness();
+
+  /// Check whether a specific Synsync operation can run.
+  ///
+  /// Unlike [isFeatureOperational], this does not require an active data
+  /// collection session. Create, Join, and Recover also do not require an
+  /// existing sync space or SRK because those operations establish/recover
+  /// that state themselves.
+  static Future<SyncReadiness> checkSyncReadiness({
+    required SyncOperation operation,
+  }) async {
+    final s = shared;
+    Map<String, dynamic>? nativeSnapshot;
+    try {
+      nativeSnapshot = _coreRuntime?.syncReadiness();
+    } catch (error, stackTrace) {
+      // Older native binaries do not export sync-readiness. Treat that as a
+      // compatibility/readiness failure instead of crashing the host UI.
+      SynheartLogger.log(
+        '[Synheart] Native sync-readiness unavailable: $error',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    return SyncReadiness.evaluate(
+      operation: operation,
+      activated:
+          s._activationManager?.isActivated(SynheartFeature.synsync) ?? false,
+      cloudConsentGranted: s._hasConsentForFeature(SynheartFeature.synsync),
+      capabilityAllowed: s._isCapabilityAllowed(SynheartFeature.synsync),
+      nativeSnapshot: nativeSnapshot,
+    );
+  }
+
+  /// Recover access to a sync-space on a fresh device using the
+  /// recovery key issued at creation plus the target space id.
+  /// Returns `{sync_space_id, owner_user_id, status}` on success.
+  /// Null when the runtime bridge isn't ready.
+  static Map<String, dynamic>? syncRecoverSpace({
+    required String recoveryKey,
+    required String spaceId,
+  }) => _coreRuntime?.syncRecoverSpace(
+    recoveryKey: recoveryKey,
+    spaceId: spaceId,
+  );
+
+  /// Leave the current sync-space for this device only. Returns
+  /// `{ok: true}` on success. Null when the runtime bridge isn't ready.
+  static Map<String, dynamic>? syncLeaveSpace() =>
+      _coreRuntime?.syncLeaveSpace();
+
+  /// List the devices paired into the current sync-space. Returns
+  /// `{devices: [...]}`. Null when the runtime bridge isn't ready.
+  static Map<String, dynamic>? syncListDevices() =>
+      _coreRuntime?.syncListDevices();
+
+  /// Revoke a specific device from the current sync-space by its
+  /// `device_id`. Returns `{ok: true}` on success. Null when the
+  /// runtime bridge isn't ready.
+  static Map<String, dynamic>? syncRevokeDevice({required String deviceId}) =>
+      _coreRuntime?.syncRevokeDevice(deviceId: deviceId);
+
+  /// Delete the current sync-space entirely. Returns `{ok: true}` on
+  /// success. Null when the runtime bridge isn't ready.
+  static Map<String, dynamic>? syncDeleteSpace() =>
+      _coreRuntime?.syncDeleteSpace();
+
+  /// Clear only local sync-space state ("start over on this device") without
+  /// touching the server. Returns `{ok: true}` on success. Null when the
+  /// runtime bridge isn't ready.
+  static Map<String, dynamic>? syncClearLocalSpace() =>
+      _coreRuntime?.syncClearLocalSpace();
 
   /// Encode every locally-cached baseline envelope into a
   /// passphrase-encrypted `.srm.synheart` blob the user can share
@@ -960,6 +1039,32 @@ class Synheart {
     } catch (e) {
       SynheartLogger.log(
         '[Synheart] ensureDeviceAuthRegistered failed: $e',
+        error: e,
+      );
+      return false;
+    }
+  }
+
+  /// Explicitly re-register this device with the auth server.
+  ///
+  /// Unlike [ensureDeviceAuthRegistered], this bypasses the locally restored
+  /// `registered` state. It is intended as a user-initiated repair when the
+  /// local secure identity still exists but the server has lost or revoked its
+  /// device record (for example, a `401 device not registered` response).
+  /// Local health, baseline, consent, and sync-space data are not deleted.
+  static Future<bool> reregisterDeviceAuth() async {
+    final cfg = shared._config;
+    if (cfg?.deviceAuthConfig == null) return false;
+    try {
+      shared._deviceAuthProvider = null;
+      _deviceAuthViaCoreRuntime = false;
+      await shared._initDeviceAuth(cfg!, forceRegistration: true);
+      final registered = shared._deviceAuthProvider != null;
+      if (registered) await _maybeEnsureCloudConsentReady();
+      return registered;
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] reregisterDeviceAuth failed: $e',
         error: e,
       );
       return false;
@@ -4817,7 +4922,10 @@ class Synheart {
   }
 
   /// Configure device authentication, register device, and fetch capabilities.
-  Future<void> _initDeviceAuth(SynheartConfig resolvedConfig) async {
+  Future<void> _initDeviceAuth(
+    SynheartConfig resolvedConfig, {
+    bool forceRegistration = false,
+  }) async {
     final dac = resolvedConfig.deviceAuthConfig!;
     SynheartLogger.log('[Synheart] Configuring device authentication..');
 
@@ -4858,7 +4966,7 @@ class Synheart {
       // registered — the keychain/state is the source of truth.
       final preSnap = runtime.sdkDeviceAuthStatus();
       final preStatus = preSnap?['status']?.toString();
-      if (preStatus == 'registered') {
+      if (preStatus == 'registered' && !forceRegistration) {
         final restoredId = preSnap?['device_id']?.toString();
         _deviceAuthViaCoreRuntime = true;
         final idPreview = (restoredId == null || restoredId.length <= 8)
@@ -5061,6 +5169,20 @@ class SyncResult {
   final int pulled;
 
   const SyncResult({this.pushed = 0, this.pulled = 0});
+
+  factory SyncResult.fromRuntimeResponse(Map<String, dynamic>? response) {
+    if (response == null) {
+      throw StateError('The native sync operation returned no result.');
+    }
+    final pushed = response['pushed'];
+    final pulled = response['pulled'];
+    if (pushed is! num || pulled is! num) {
+      throw const FormatException(
+        'The native sync operation returned an invalid result.',
+      );
+    }
+    return SyncResult(pushed: pushed.toInt(), pulled: pulled.toInt());
+  }
 }
 
 /// Current sync status.
