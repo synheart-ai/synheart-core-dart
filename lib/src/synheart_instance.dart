@@ -136,10 +136,7 @@ class SynheartInstance {
         'auth_base_url': config.deviceAuthConfig?.authBaseUrl ?? '',
         'package_name': config.deviceAuthConfig?.packageName ?? '',
       },
-      'sync': {
-        'enabled': config.sync.enabled,
-        'base_url': config.sync.baseUrl,
-      },
+      'sync': {'enabled': config.sync.enabled, 'base_url': config.sync.baseUrl},
       'privacy': {'allow_research': config.privacy.allowResearch},
     };
   }
@@ -196,13 +193,12 @@ class SynheartInstance {
     required String platform,
     String? userId,
     required Map<String, dynamic> formJson,
-  }) =>
-      _bridge.consentSubmitForm(
-        deviceId: deviceId,
-        platform: platform,
-        userId: userId,
-        formJson: formJson,
-      );
+  }) => _bridge.consentSubmitForm(
+    deviceId: deviceId,
+    platform: platform,
+    userId: userId,
+    formJson: formJson,
+  );
 
   Map<String, dynamic>? consentStatus() => _bridge.consentStatus();
 
@@ -218,28 +214,26 @@ class SynheartInstance {
   Future<Map<String, dynamic>?> validateResearchStudyCodes({
     required String accessCode,
     required String studyCode,
-  }) =>
-      _disposed
-          ? Future.value(null)
-          : _bridge.enrolResearchStudy(
-              accessCode: accessCode,
-              studyCode: studyCode,
-              validateOnly: true,
-            );
+  }) => _disposed
+      ? Future.value(null)
+      : _bridge.enrolResearchStudy(
+          accessCode: accessCode,
+          studyCode: studyCode,
+          validateOnly: true,
+        );
 
   /// Redeem an (access, study) code pair and create the enrolment on THIS
   /// instance's attested credential.
   Future<Map<String, dynamic>?> enrolResearchStudy({
     required String accessCode,
     required String studyCode,
-  }) =>
-      _disposed
-          ? Future.value(null)
-          : _bridge.enrolResearchStudy(
-              accessCode: accessCode,
-              studyCode: studyCode,
-              validateOnly: false,
-            );
+  }) => _disposed
+      ? Future.value(null)
+      : _bridge.enrolResearchStudy(
+          accessCode: accessCode,
+          studyCode: studyCode,
+          validateOnly: false,
+        );
 
   /// Read THIS instance's current active research-study enrolment.
   Future<Map<String, dynamic>?> researchStudyStatus() =>
@@ -280,7 +274,8 @@ class SynheartInstance {
   /// Start this instance's behavior/HSI session. Called before [labStart] so
   /// the engine has an active pipeline the lab window can record over (mirrors
   /// the personal runtime's `startSession` → `labStart` order).
-  Map<String, dynamic>? startSession() => _disposed ? null : _bridge.startSession();
+  Map<String, dynamic>? startSession() =>
+      _disposed ? null : _bridge.startSession();
 
   /// Stop this instance's session. Called after [labFinalize].
   bool stopSession() => _disposed ? false : _bridge.stopSession();
@@ -294,7 +289,8 @@ class SynheartInstance {
   // ── Lab session ──────────────────────────────────────────────────────────────
 
   /// Whether the lab-metadata C ABI is available in the loaded native build.
-  bool get isLabMetadataAvailable => !_disposed && _bridge.isLabMetadataAvailable;
+  bool get isLabMetadataAvailable =>
+      !_disposed && _bridge.isLabMetadataAvailable;
 
   /// Ensure the lab-session metadata (device / platform / user info) is cached
   /// on this instance before the first [labStart]. Mirrors the personal
@@ -305,14 +301,13 @@ class SynheartInstance {
     required String osVersion,
     String? userInfoJson,
     String? deviceExtraJson,
-  }) =>
-      _bridge.labEnsureMetadata(
-        deviceId: deviceId,
-        platform: platform,
-        osVersion: osVersion,
-        userInfoJson: userInfoJson,
-        deviceExtraJson: deviceExtraJson,
-      );
+  }) => _bridge.labEnsureMetadata(
+    deviceId: deviceId,
+    platform: platform,
+    osVersion: osVersion,
+    userInfoJson: userInfoJson,
+    deviceExtraJson: deviceExtraJson,
+  );
 
   String? labStart(String protocolJson, int startedAtMs) =>
       _bridge.labStart(protocolJson, startedAtMs);
@@ -322,8 +317,7 @@ class SynheartInstance {
     required String windowType,
     String? label,
     required int startedAtMs,
-  }) =>
-      _bridge.labOpenWindow(parentId, windowType, label, startedAtMs);
+  }) => _bridge.labOpenWindow(parentId, windowType, label, startedAtMs);
 
   bool labCloseWindow(String windowId, int endedAtMs) =>
       _bridge.labCloseWindow(windowId, endedAtMs);

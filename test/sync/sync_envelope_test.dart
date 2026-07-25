@@ -41,8 +41,11 @@ void main() {
         throwsA(
           isA<SyncNativeException>()
               .having((e) => e.code, 'code', 'DEVICE_REGISTRATION_REQUIRED')
-              .having((e) => e.message, 'message',
-                  'Device registration is required.')
+              .having(
+                (e) => e.message,
+                'message',
+                'Device registration is required.',
+              )
               .having((e) => e.retryable, 'retryable', false),
         ),
       );
@@ -59,16 +62,22 @@ void main() {
       };
       expect(
         () => unwrapSyncEnvelope(env),
-        throwsA(isA<SyncNativeException>()
-            .having((e) => e.retryable, 'retryable', true)),
+        throwsA(
+          isA<SyncNativeException>().having(
+            (e) => e.retryable,
+            'retryable',
+            true,
+          ),
+        ),
       );
     });
 
     test('malformed failure envelope falls back to UNKNOWN', () {
       expect(
         () => unwrapSyncEnvelope({'ok': false}),
-        throwsA(isA<SyncNativeException>()
-            .having((e) => e.code, 'code', 'UNKNOWN')),
+        throwsA(
+          isA<SyncNativeException>().having((e) => e.code, 'code', 'UNKNOWN'),
+        ),
       );
     });
 
