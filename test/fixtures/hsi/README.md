@@ -14,6 +14,7 @@ throwing.
 | `v1_0/minimal.json` | `hsi/test-vectors/v1.0/` | Smallest-valid 1.0 payload. |
 | `v1_1/minimal.json` | `hsi/test-vectors/v1.1/` | Smallest-valid 1.1 payload. |
 | `v1_2/*.json` | `hsi/examples/valid/` | Full 1.2 examples covering every axis-domain combination + edge cases (null score, runtime snapshot, behavior-only, etc.). |
+| `v1_3/*.json` | `hsi/examples/valid/` and runtime vectors | HSI 1.3 coverage for minimal, runtime, cognitive, digital-only, categorical kinematic, and flux payloads. |
 | `cross_version/*.json` | `hsi/test-vectors/` | Schema-version-agnostic edge cases (degraded sources, low confidence, partial axes). |
 
 ## Updating

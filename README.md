@@ -1,871 +1,185 @@
-# Synheart Core SDK — Dart/Flutter
+# Synheart Core SDK for Flutter
 
 [![Pub Version](https://img.shields.io/pub/v/synheart_core.svg)](https://pub.dev/packages/synheart_core)
 [![Flutter](https://img.shields.io/badge/Flutter-3.32%2B-02569B.svg)](https://flutter.dev)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> **Source-available.** This repository is open for reading, auditing, and
-> filing issues. We do **not** accept pull requests — see
-> [CONTRIBUTING.md](CONTRIBUTING.md) for the rationale and how to contribute
-> via issues. Security reports go through [SECURITY.md](SECURITY.md).
+Synheart Core is the Flutter integration SDK for the Human State Interface
+(HSI). It collects consented wearable, phone, and behavior signals, passes them
+to the on-device Synheart Runtime, and exposes HSI 1.3 output as Dart streams.
 
-Flutter platform SDK for Synheart — a thin wrapper around the Synheart runtime (a native binary that owns the on-device business logic and is loaded at startup); this SDK handles platform-specific concerns only (sensor collection, UI consent flows, secure storage, and Flutter-native reactive streams).
+The package is a platform wrapper. Signal processing, state computation,
+storage, device authentication, and sync are implemented by the separately
+installed native Synheart Runtime.
 
-> **Requires the Synheart Runtime.** This package is a thin Flutter wrapper;
-> the on-device logic lives in the Synheart Runtime native binary, which is
-> installed separately via the [Synheart CLI](https://docs.synheart.ai/synheart-cli)
-> — see [Native Runtime Setup](#native-runtime-setup).
+> Synheart Core is intended for wellness and research use. It is not a medical
+> device and must not be used to diagnose, treat, cure, or prevent disease.
 
-## Architecture diagram
+## Contents
 
-```text
-Flutter App
-    |
-synheart-core-flutter (this SDK)
-    |-- Wear/Phone/Behavior modules (platform sensor collection)
-    |-- CoreRuntimeBridge (loads the runtime native binary)
-    |
-Synheart runtime native binary
-    |-- HSI computation
-    |-- Storage, Crypto, Sync, Auth, Consent, Capabilities
-```
+- [What the SDK provides](#what-the-sdk-provides)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Platform setup](#platform-setup)
+- [Quick start](#quick-start)
+- [Initialization and configuration](#initialization-and-configuration)
+- [Consent](#consent)
+- [Sessions and collection](#sessions-and-collection)
+- [Reading HSI and raw signals](#reading-hsi-and-raw-signals)
+- [Cloud, authentication, and endpoints](#cloud-authentication-and-endpoints)
+- [Storage and sync](#storage-and-sync)
+- [Advanced workflows](#advanced-workflows)
+- [API map](#api-map)
+- [Errors and diagnostics](#errors-and-diagnostics)
+- [Testing and example app](#testing-and-example-app)
 
-For the implementation principles — what each layer is responsible for and why — see the [Architecture](#architecture) section below.
+## What the SDK provides
 
-## Repositories
+| Area | Purpose |
+| --- | --- |
+| Wear | Heart rate, HRV, sleep, motion, and wearable-provider integration |
+| Phone | Device motion, screen state, and app context |
+| Behavior | Consent-gated taps, typing, gestures, notifications, and motion events |
+| HSI Runtime | On-device signal fusion and HSI 1.3 generation |
+| Consent | Local consent state, server-issued consent tokens, and revocation |
+| Capabilities | Signed feature gating for production deployments |
+| Cloud | Device-signed HSI and lab uploads with an offline queue |
+| Synsync | Cross-device synchronization and baseline restoration |
+| Research | Lab windows, study enrolment, study consent, and separate runtime instances |
+| Syni | Consent- and capability-gated adaptive AI integration |
 
-| Repository | Purpose |
-|------------|---------|
-| **[synheart-core-flutter](https://github.com/synheart-ai/synheart-core-flutter)** | Flutter/Dart platform SDK (this repository) |
-| **[synheart-core-kotlin](https://github.com/synheart-ai/synheart-core-kotlin)** | Android/Kotlin platform SDK |
-| **[synheart-core-swift](https://github.com/synheart-ai/synheart-core-swift)** | iOS/Swift platform SDK |
-
-## Overview
-
-The Synheart Core SDK consolidates all Synheart signal channels into one SDK:
-
-- **Wear Module** → Biosignals (HR, HRV, sleep, motion)
-- **Phone Module** → Motion + context signals
-- **Behavior Module** → Digital interaction patterns
-- **HSI Runtime** → Signal fusion + state computation
-- **Consent Module** → User permission management
-- **Cloud Connector** → Secure HSI snapshot uploads
-
-**Key principle:**
-> One SDK, many modules, unified human-state model
-
-## Features
-
-- **Modular signal collection** — Wear (biosignals), Phone (motion/context), Behavior (interaction patterns)
-- **On-device state computation** — the runtime fuses signals into HSI 1.3 frames; per-head inference detail lives inside the runtime and is not surfaced individually by this SDK
-- **HSI 1.3 export** — canonical JSON wire format
-- **Consent-first architecture** — All data collection respects explicit user consent; revocation stops modules immediately
-- **Capability-gated features** — Server-signed tokens control which SDK features are available (core/extended/research)
-- **On-demand collection** — Granular start/stop control per module, custom collection intervals
-- **Raw data streams** — Direct access to wear samples and behavior events
-- **SRM baseline export/import** — `Synheart.exportRuntimeSRMSnapshot()` / `loadRuntimeSRMSnapshot(...)` let hosts persist Self-Reference Model snapshots wherever they store other secure state
-- **Device authentication** — Hardware-backed ECDSA signing via synheart-auth (Secure Enclave / Android Keystore)
-- **Secure cloud upload** — Device-signed HSI snapshot uploads with offline queue
-- **Reactive streams** — `Stream<HSIState>` and `Stream<String>` HSI updates via `dart:async`
-- **RAMEN gRPC streaming + device-first E2EE sync** — both real-time streaming and the device-first E2EE sync layer ship in the runtime and are reachable from this SDK; no extra wiring required.
-
-## Architecture
-
-### Core Principle
-
-> **All inference is computed by synheart-engine.**
->
-> **SDKs coordinate data collection and distribution.**
-
-The Core SDK strictly separates:
-- **Computation** — synheart-engine computes HSV
-- **Collection** — Core SDK modules (Wear, Phone, Behavior, Consent, Capability)
-- **Distribution** — HSI JSON export, cloud upload, raw HSV diagnostics
-
-### HSI is the public output
-
-The runtime emits **HSI 1.3 JSON** via `Synheart.onHSIUpdate` (raw string) or `Synheart.onStateUpdate` (typed `HSIState`). The internal head-level representation (HSV) is not part of the public SDK API.
-
-### Core Modules
-
-1. **Device Auth** — Hardware-backed ECDSA device identity (via synheart-auth)
-2. **Capabilities Module** — Feature gating via server-signed tokens (core/extended/research)
-3. **Consent Module** — Consent enforcement and token issuance
-4. **Wear Module** — Biosignal collection (HR, HRV, sleep, motion)
-5. **Phone Module** — Device motion and context signals
-6. **Behavior Module** — Consent-gated interaction patterns with runtime push
-7. **Runtime bridge** — Loads the runtime native binary and routes signals to it
-8. **Cloud Connector** — Device-signed, consent-gated HSI uploads, offline-queue, schema validation
-
-### Data Flow
+### Data flow
 
 ```text
-SynheartAuth (device registration + ECDSA signing)
-    ↓
-DeviceAuthProvider → RemoteCapabilityTokenFetcher
-    ↓ (fetches capability token, gates features)
-    ↓
-Wear, Phone, Behavior Modules (raw signals)
-    ↓ (consent & capability gated)
-    ↓
-CoreRuntimeBridge → Synheart runtime native binary
-  ├─ Signal processing
-  ├─ Feature extraction
-  ├─ Multi-head inference
-  └─ HSI 1.3 envelope build
-    ↓
-HSI JSON Output
-  ├─ Synheart.onHSIUpdate (raw JSON)
-  ├─ Synheart.onStateUpdate (typed projection)
-  └─ Cloud upload (device-signed, consent-gated)
+Wear / Phone / Behavior sources
+              │
+              ▼
+      Consent + capability gates
+              │
+              ▼
+       Synheart Core Flutter
+              │ FFI
+              ▼
+      Synheart native runtime
+       ├─ signal processing
+       ├─ HSI 1.3 computation
+       ├─ encrypted local storage
+       ├─ device authentication
+       └─ cloud and device sync
+              │
+              ▼
+    Stream<String> / Stream<HSIState>
 ```
 
-## Installation
+HSI is the public state output. Internal engine representations do not cross
+the FFI boundary.
 
-Add `synheart_core` to your `pubspec.yaml`:
+## Requirements
 
-```yaml
-dependencies:
-  synheart_core: ^0.7.0
-```
+- Dart `>=3.8.0 <4.0.0`
+- Flutter `>=3.32.0`
+- Android API 24+ for the package
+- iOS 15.0+ for the package
+- A Synheart Runtime binary installed in the host application
 
-Or:
+Individual data sources may impose stricter OS, permission, hardware, or vendor
+requirements. The example Android application currently targets API 28+.
+
+## Install
+
+Add the package:
 
 ```bash
 flutter pub add synheart_core
 ```
 
-Then run:
+Or declare the current package line explicitly:
 
-```bash
-flutter pub get
+```yaml
+dependencies:
+  synheart_core: ^0.10.0
 ```
 
-### Native Runtime Setup
-
-This SDK is a thin FFI shell over the **Synheart Runtime** native
-binary. The binary is not bundled with the pub.dev package — install
-it once per project with the [Synheart CLI](https://docs.synheart.ai/synheart-cli):
+Then install the native runtime:
 
 ```bash
-# Once, on your machine:
+# Install the CLI once.
 curl -fsSL https://synheart.sh/install | sh
 synheart login
 
-# In your project root:
-synheart install runtime    # downloads + installs the native runtime
-synheart sync               # reinstall what synheart.lock pins (CI-safe)
+# Run in the Flutter project root.
+synheart install runtime
 ```
 
-`synheart install runtime` auto-detects your project type (Flutter,
-Swift Package, Gradle) and drops the runtime into the right slot:
-
-- iOS: `ios/Frameworks/SynheartRuntime.xcframework/`
-- Android: `android/src/main/jniLibs/<abi>/libsynheart_runtime.so`
-
-It also writes `synheart.lock`, which pins the exact runtime version
-and per-platform artifact hashes. Commit the lockfile so CI and
-teammates get byte-identical builds via `synheart sync`.
-
-The iOS podspec uses `-force_load` so all FFI symbols are preserved
-for Dart's `dlsym`.
-
-> **Note:** If your app also uses another native static library that
-> exports `_rust_eh_personality`, you may hit a duplicate-symbol link
-> error. Resolve by linking one of them as a dynamic framework
-> instead — see the CLI's
-> [troubleshooting](https://docs.synheart.ai/synheart-cli#troubleshooting).
-
-## Pointing at the Synheart Platform (optional)
-
-The SDK works fully **on-device** without any cloud connection — HSI
-inference, consent, capabilities, and the local artifact pipeline all
-run with no platform dependency. You only need to configure platform
-endpoints if you want to opt into:
-
-- **Cloud HSI upload** (`SynheartFeature.cloud`)
-- **Server-issued consent tokens** (the consent service API)
-- **Server-issued capability tokens** (the auth/account API)
-- **Lab session export** (the platform ingest service)
-
-Defaults point at `https://api.synheart.ai`. If you're targeting a
-different environment (a self-hosted platform, a staging tenant, or a
-local `synheart local` server), inject the URLs at compile time:
+The CLI installs the native artifact in the platform project and writes
+`synheart.lock`. Commit `synheart.lock`; CI and other developers can restore the
+pinned artifact with:
 
 ```bash
-flutter run --dart-define-from-file=env/synheart.endpoints.local.json
+synheart sync
 ```
 
-**File shape** (use `env/synheart.endpoints.example.json` as a starting
-point):
+Typical installed locations:
 
-```json
-{
-  "SYNHEART_CLOUD_BASE_URL": "https://api.your-platform.example",
-  "SYNHEART_CONSENT_BASE_URL": "https://api.your-platform.example",
-  "SYNHEART_INGEST_BASE_URL": "https://api.your-platform.example",
-  "SYNHEART_LAB_INGEST_BASE_URL": "https://api.your-platform.example",
-  "SYNHEART_AUTH_BASE_URL": "https://api.your-platform.example"
-}
+- iOS: `synheart/vendor/runtime/ios/SynheartCoreRuntime.xcframework/`
+- Android: `synheart/vendor/runtime/android/jniLibs/<abi>/`
+
+The iOS plugin links ONNX Runtime separately through `onnxruntime-c`. If
+CocoaPods cannot locate the application root (most commonly in a monorepo), set
+it near the top of the host application's `ios/Podfile`:
+
+```ruby
+ENV['SYNHEART_APP_ROOT'] = File.expand_path('..', __dir__)
 ```
 
-| Define key | Used for |
-|---|---|
-| `SYNHEART_CLOUD_BASE_URL` | HSI cloud ingest (`ApiEndpoints.defaultCloudBaseUrl`) |
-| `SYNHEART_CONSENT_BASE_URL` | Consent service API (`ApiEndpoints.defaultConsentBaseUrl`) |
-| `SYNHEART_INGEST_BASE_URL` | HSI snapshot ingest (`ApiEndpoints.defaultIngestBaseUrl`) |
-| `SYNHEART_LAB_INGEST_BASE_URL` | Lab session/metadata ingest (`ApiEndpoints.defaultLabIngestBaseUrl`) |
-| `SYNHEART_AUTH_BASE_URL` | Auth/account API (exchange, refresh, account delete) |
+Then rerun `pod install` or rebuild the Flutter application.
 
-Values are read at compile time via `String.fromEnvironment` in
-`lib/src/config/api_endpoints.dart`. Gitignore your local file so the
-URLs aren't committed if you're targeting a private environment.
+## Platform setup
 
-## Usage
+Only declare permissions for modules your application enables. Permission
+declarations do not replace an in-app explanation and runtime permission flow.
 
-### Basic Usage (Production)
+### iOS
 
-The Core SDK automatically handles device registration, capability token fetching, and request signing when `DeviceAuthConfig` is provided:
-
-```dart
-import 'package:synheart_core/synheart_core.dart';
-
-// Initialize with device authentication (production)
-await Synheart.initialize(
-  userId: 'anon_user_123',
-  config: SynheartConfig(
-    appId: 'com.myapp',
-    subjectId: 'anon_user_123',
-    deviceAuthConfig: DeviceAuthConfig(
-      authBaseUrl: 'https://api.synheart.ai/auth',
-    ),
-    cloudConfig: CloudConfig(
-      subjectId: 'anon_user_123',
-      instanceId: 'instance-uuid',
-      // Request signing is handled by the runtime's hardware-backed
-      // ECDSA key — no shared secret needed in CloudConfig.
-    ),
-    consentConfig: ConsentConfig(
-      appId: 'com.myapp',
-      appApiKey: 'your-consent-api-key',
-    ),
-    wearConfig: WearConfig(),
-    behaviorConfig: BehaviorConfig(),
-  ),
-);
-```
-
-### Basic Usage (Development)
-
-For development without a device auth server, use `allowUnsignedCapabilities`:
-
-```dart
-await Synheart.initialize(
-  userId: 'anon_user_123',
-  config: SynheartConfig(
-    appId: 'com.myapp',
-    subjectId: 'anon_user_123',
-    allowUnsignedCapabilities: true,  // Dev mode — no token needed
-    wearConfig: WearConfig(),
-    behaviorConfig: BehaviorConfig(),
-  ),
-);
-
-// Subscribe to HSI updates (core state representation — raw JSON from synheart-engine)
-Synheart.onHSIUpdate.listen((hsiJson) {
-  print('HSI JSON: $hsiJson');
-});
-
-// Activate the features your app needs.
-//   SynheartFeature.wear / .behavior / .phoneContext / .cloud
-Synheart.activate(SynheartFeature.wear);
-Synheart.activate(SynheartFeature.cloud);
-```
-
-State signals (focus, emotion, recovery, etc.) are not separate
-features — they're axes inside the HSI JSON emitted by
-`Synheart.onHSIUpdate`. Parse the JSON or use `Synheart.onStateUpdate`
-to read them.
-
-### On-Demand Data Collection
-
-The SDK supports granular control over when data collection starts and stops, allowing apps to collect data only when needed (e.g., during gameplay, focus sessions, etc.).
-
-#### Manual Initialization
-
-By default, `initialize()` does not start data collection (`autoStart: false`). To control when collection starts:
-
-```dart
-// Initialize without auto-starting collection
-await Synheart.initialize(
-  userId: 'anon_user_123',
-  autoStart: false,
-  config: SynheartConfig(
-    appId: 'com.myapp',
-    subjectId: 'anon_user_123',
-    allowUnsignedCapabilities: true,  // or use deviceAuthConfig in production
-    wearConfig: WearConfig(),
-    behaviorConfig: BehaviorConfig(),
-  ),
-);
-
-// Start collection when needed (e.g., when game starts)
-await Synheart.startSession();
-
-// Stop collection when done (e.g., when game ends)
-await Synheart.stopSession();
-```
-
-#### Module-Level Control
-
-Start and stop individual modules independently:
-
-```dart
-// Start/stop individual modules
-await Synheart.startWearCollection();
-await Synheart.stopWearCollection();
-
-await Synheart.startBehaviorCollection();
-await Synheart.stopBehaviorCollection();
-
-await Synheart.startPhoneCollection();
-await Synheart.stopPhoneCollection();
-
-// Check if modules are collecting
-bool isWearCollecting = Synheart.isWearCollecting;
-bool isBehaviorCollecting = Synheart.isBehaviorCollecting;
-bool isPhoneCollecting = Synheart.isPhoneCollecting;
-```
-
-#### Custom Collection Intervals
-
-For high-frequency use cases (e.g., games), you can set custom collection intervals:
-
-```dart
-// Start wear collection with 1-second interval for real-time gameplay
-await Synheart.startWearCollection(
-  interval: Duration(seconds: 1),
-);
-
-// Later, stop when game ends
-await Synheart.stopWearCollection();
-```
-
-#### Raw Data Streams
-
-Access raw data samples and events in real-time:
-
-```dart
-// Stream of raw wear samples
-Synheart.wearSampleStream.listen((sample) {
-  print('HR: ${sample.hr} BPM');
-  print('RR Intervals: ${sample.rrIntervals}');
-  print('HRV RMSSD: ${sample.hrvRmssd} ms');
-});
-
-// Stream of raw behavior events
-Synheart.behaviorEventStream.listen((event) {
-  print('Event: ${event.type} at ${event.timestamp}');
-});
-```
-
-**Note**: Streams respect consent - no data is emitted if consent is denied.
-
-#### Behavior Session Management
-
-Start and stop behavior tracking sessions and get aggregated results:
-
-```dart
-// Start a behavior session
-final sessionId = await Synheart.startBehaviorSession();
-print('Session ID: $sessionId');
-
-// ... user interacts with app ...
-
-// Stop session and get results
-final results = await Synheart.stopBehaviorSession(sessionId);
-print('Tap Rate: ${results.tapRate}');
-print('Keystroke Rate: ${results.keystrokeRate}');
-print('Focus Hint: ${results.focusHint}');
-print('Interaction Intensity: ${results.interactionIntensity}');
-```
-
-#### Use Cases
-
-**Game App Example:**
-```dart
-// Initialize without auto-start
-await Synheart.initialize(userId: 'user', config: SynheartConfig(allowUnsignedCapabilities: true), autoStart: false);
-
-// When game starts
-await Synheart.startWearCollection(interval: Duration(seconds: 1));
-Synheart.wearSampleStream.listen((sample) {
-  // Adjust game difficulty based on HR
-  if (sample.hr != null && sample.hr! > 100) {
-    // Increase difficulty
-  }
-});
-
-// When game ends
-await Synheart.stopWearCollection();
-```
-
-**Focus Session Example:**
-```dart
-// Start behavior session when focus session begins
-final sessionId = await Synheart.startBehaviorSession();
-
-// ... user works ...
-
-// End session and analyze focus
-final results = await Synheart.stopBehaviorSession(sessionId);
-if (results.focusHint > 0.7) {
-  print('High focus session!');
-}
-```
-
-### HSI access
-
-The SDK exposes HSI 1.3 JSON frames produced by the engine — that's
-the canonical wire format consumers integrate against:
-
-```dart
-import 'package:synheart_core/synheart_core.dart';
-
-// Subscribe to HSI updates (raw JSON string from synheart-engine).
-Synheart.onHSIUpdate.listen((hsiJson) {
-  // hsiJson is already a canonical HSI 1.3 JSON string —
-  // send to an external system, validate against the spec, etc.
-  print(hsiJson);
-});
-
-// Or use the typed projection.
-Synheart.onStateUpdate.listen((state) {
-  print('Arousal: ${state.axes.affect?.arousalIndex}');
-});
-```
-
-`HSV` (the engine's internal head-shaped representation) does not
-cross the FFI boundary — it stays inside the Synheart Runtime. All
-host language SDKs (Dart, Kotlin, Swift) consume **HSI** uniformly;
-HSV details live in the engine and are not surfaced individually.
-
-See the [example app](example/) for a complete integration walkthrough.
-
-## Edge ingest (watch → phone)
-
-`EdgeIngest` is the canonical phone-side consumer of the Synheart **edge wire
-contract** (watch → phone). It is the counterpart to the watch producer and
-exists so apps stop re-implementing watch→phone ingest: parse, hash-verify
-(`payload_hash_sha256`), HSI-version validate, dedupe by `artifact_id`, and
-ACK all live here once. The core is **pure Dart** (no Flutter import), so it
-unit-tests under `dart test` / `flutter test`. The canonical message shapes are
-defined by the Synheart edge wire contract — see
-[docs.synheart.ai/synheart-core/edge](https://docs.synheart.ai/synheart-core/edge).
-
-```dart
-import 'package:synheart_core/synheart_core.dart';
-
-// 1. Construct (optionally with an EdgeIngestListener).
-final ingest = EdgeIngest();
-
-// 2. Observe the broadcast Stream<EdgeEvent> (parity with the Kotlin
-//    `SharedFlow` and Swift `events` publisher).
-final sub = ingest.events.listen((event) {
-  switch (event) {
-    case HrEvent(:final sample):        // …
-    case BioEvent(:final sample):       // …
-    case ArtifactEvent(:final artifact): render(artifact.payloadJson);
-    case SessionEventWrap(:final event): break;
-  }
-});
-
-// 3. Feed decoded bodies in; then drain + send the artifact_ack.
-final outcome = ingest.ingest(body);     // Map<String, dynamic> from the adapter
-final ack = ingest.drainAckBody();       // { "command":"artifact_ack", … }
-if (ack != null) sendOnCommandChannel(ack);  // → edge wire contract command channel
-
-// 4. Lifecycle — Flutter only: dispose() closes the broadcast
-//    StreamController. Always call it when you're done (e.g. in
-//    `State.dispose()`); otherwise the controller leaks. It is idempotent.
-//    (Kotlin/Swift have no equivalent — their hot streams are GC'd with the
-//    instance.)
-await sub.cancel();
-await ingest.dispose();
-```
-
-For parity awareness: the Kotlin SDK additionally exposes `Listener` hooks
-`onUnsupportedHsiVersion(...)` / `onHashMismatch(...)`; Dart folds those signals
-into the `EdgeOutcome` return value (`ArtifactHashMismatch`) and logging.
-
-**Delivery hardening.** Because the watch outbox is delete-on-ACK, ingest is
-hardened against two failure modes:
-
-- **Duplicate re-ack.** A duplicate `artifact_id` (already accepted) is **not**
-  re-surfaced — `ingest(...)` returns `ArtifactDuplicate` — but it **is**
-  re-queued for ACK. A lost ACK would otherwise make the watch resend forever;
-  re-acking duplicates clears the outbox. The dedupe set is a bounded LRU
-  (capacity `EdgeIngest.seenLruCapacity`), so memory stays flat.
-- **Poison-pill dead-letter.** A deterministically-corrupt artifact whose
-  `payload_hash_sha256` keeps mismatching is detected per `artifact_id`: after
-  `EdgeIngest.poisonPillThreshold` (3) mismatches it is **dead-lettered** —
-  `ingest(...)` returns `ArtifactDeadLettered`, the optional
-  `EdgeIngestListener.onPoisonPill(artifactId, expected, actual, attempts)` hook
-  fires, and the id is ack-to-discarded so it stops blocking the outbox. The
-  first/normal mismatch still returns `ArtifactHashMismatch` without acking.
-
-The pure `EdgeIngest` core is transport-agnostic; wire it to your own
-`WatchConnectivity` / Wear Data Layer plugin and feed decoded bodies into
-`ingest(...)` / `ingestRaw(...)`.
-
-## Batch Ingest Mode
-
-By default, the runtime module streams wear and behavior data to the native engine in real-time, producing HSI frames as windows complete. **Batch ingest mode** buffers all events during a session and runs a single `ingestBatch` call on stop, producing all HSI frames at once.
-
-This is useful for:
-- Offline-first apps that collect data without connectivity
-- Background recording where real-time HSI isn't needed
-- Reducing CPU usage during active sessions
-
-### Configuration
-
-```dart
-await Synheart.initialize(
-  config: SynheartConfig(
-    appId: 'your_app_id',
-    subjectId: 'sub_user_123',
-    batchIngestOnStop: true, // Enable batch mode
-  ),
-);
-```
-
-### Runtime toggle
-
-Batch mode can be toggled between sessions (the setter is static —
-`Synheart.initialize` returns `Future<void>`, so don't assign it to a
-variable):
-
-```dart
-Synheart.setBatchIngestOnStop(true);  // Next session uses batch
-Synheart.setBatchIngestOnStop(false); // Back to streaming
-```
-
-## Lab ingestion
-
-The SDK can send structured session and metadata payloads to the
-Synheart platform — useful for research workflows where the host app
-needs to record protocol windows and submit them alongside the usual
-HSI stream.
-
-### Driving a lab protocol
-
-Lab protocols are driven by the static `Synheart.lab*` API. The runtime
-keeps the open protocol state and emits a serializable payload at
-`labFinalize`:
-
-```dart
-final now = () => DateTime.now().millisecondsSinceEpoch;
-
-// 1. Start a protocol (returns a session id).
-final sessionId = Synheart.labStart(protocolJson, now());
-
-// 2. Open windows during the session.
-final windowId = Synheart.labOpenWindow(
-  windowType: 'baseline',
-  startedAtMs: now(),
-);
-//    ... collect data ...
-Synheart.labCloseWindow(windowId, now());
-
-// 3. Finalize the session — returns the JSON payload.
-final payload = Synheart.labFinalize(now());
-```
-
-### Auto-ingest on finalize
-
-When the host has been granted `research` consent and the
-`cloudConfig` is wired up, the runtime auto-enqueues the
-`labFinalize` payload for upload alongside the HSI snapshots — no
-extra config object is needed:
-
-```dart
-await Synheart.initialize(
-  config: SynheartConfig(
-    appId: 'your_app_id',
-    subjectId: 'sub_user_123',
-    cloudConfig: CloudConfig(
-      // apiKey is legacy/optional — production hosts wire request
-      // signing through the device's hardware-backed ECDSA key
-      // (see CloudConfig comment above). Pass it only if your
-      // platform deployment still requires a shared secret.
-      apiKey: 'your_platform_api_key',
-      baseUrl: 'https://api.synheart.ai',
-      subjectId: 'sub_user_123',
-      instanceId: 'device_abc',
-    ),
-  ),
-);
-
-await Synheart.grantConsent(
-  biosignals: true,
-  behavior: true,
-  phoneContext: false,
-  cloudUpload: true,
-  research: true,
-);
-```
-
-### Manual ingestion
-
-For custom workflows that build payloads outside the `lab*` API, post
-through the `Synheart.ingestion` accessor:
-
-```dart
-final response = await Synheart.ingestion.submitSessionArtifacts(payload);
-final metaResponse = await Synheart.ingestion.submitMetadata(metadataJson);
-```
-
-`submitSessionArtifacts` requires `behavior` consent;
-`submitMetadata` requires `biosignals` consent. Both return a typed
-response with `success`, `statusCode`, and an optional
-`errorMessage`.
-
-### Consent Management
-
-The SDK requires explicit user consent for data collection. **All data collection respects consent** - no data is collected or streamed without explicit user consent.
-
-The six canonical consent types are:
-`biosignals`, `phoneContext`, `behavior`, `cloudUpload`, `vendorSync`,
-`research`.
-
-#### Granting Consent
-
-```dart
-// Grant consent for specific data types (all parameters required)
-await Synheart.grantConsent(
-  biosignals: true,
-  behavior: true,
-  phoneContext: true,
-  cloudUpload: false,  // User must explicitly opt-in
-  profileId: 'profile-123', // Optional: for consent service integration
-);
-
-// If using consent service with profiles
-final profiles = await Synheart.getAvailableConsentProfiles();
-final selectedProfile = profiles.first; // User selects a profile
-await Synheart.grantConsent(
-  biosignals: true,
-  behavior: true,
-  phoneContext: true,
-  cloudUpload: true,
-  profileId: selectedProfile.id,
-);
-```
-
-#### Checking Consent Status
-
-```dart
-// Get current consent status map
-final consentStatus = Synheart.getConsentStatusMap();
-bool hasBiosignalsConsent = consentStatus['biosignals'] ?? false;
-bool hasBehaviorConsent = consentStatus['behavior'] ?? false;
-bool hasPhoneContextConsent = consentStatus['phoneContext'] ?? false;
-bool hasCloudUploadConsent = consentStatus['cloudUpload'] ?? false;
-
-// Check if consent is needed (user hasn't been asked yet)
-if (await Synheart.needsConsent()) {
-  // Show consent UI
-  final consentInfo = await Synheart.getConsentInfo();
-  // consentInfo contains descriptions for each data type
-}
-```
-
-#### Requesting Consent (Consent Service)
-
-If using the consent service (requires `ConsentConfig` with `appId` and `appApiKey`):
-
-```dart
-// Request consent using consent service UI
-final token = await Synheart.requestConsent();
-if (token != null && token.isValid) {
-  print('Consent granted with token: ${token.token}');
-}
-
-// Or use a consent profile
-final profiles = await Synheart.getAvailableConsentProfiles();
-final selectedProfile = profiles.first; // User selects
-await Synheart.grantConsent(
-  biosignals: true,
-  behavior: true,
-  phoneContext: true,
-  cloudUpload: true,
-  profileId: selectedProfile.id,
-);
-```
-
-#### Revoking Consent
-
-```dart
-// Revoke consent for a specific type (stops data collection immediately)
-await Synheart.revokeConsentType('biosignals');
-await Synheart.revokeConsentType('behavior');
-await Synheart.revokeConsentType('phoneContext');
-await Synheart.revokeConsentType('cloudUpload');
-
-// Revoke all consent
-await Synheart.revokeConsent();
-```
-
-**Important**: 
-- Consent is checked before starting any data collection
-- If consent is revoked, data collection stops immediately
-- Raw data streams (`wearSampleStream`, `behaviorEventStream`) only emit data when consent is granted
-- All module start methods respect consent - they won't start if consent is denied
-
-## Error Handling
-
-The SDK uses Dart exceptions. Most methods throw `StateError` for precondition failures:
-
-```dart
-try {
-  await Synheart.initialize(
-    userId: 'user_123',
-    config: SynheartConfig(allowUnsignedCapabilities: true),
-  );
-  await Synheart.startSession();
-} on StateError catch (e) {
-  if (e.message.contains('already configured')) {
-    print('SDK already initialized');
-  } else if (e.message.contains('Capability token')) {
-    print('Provide a valid token or set allowUnsignedCapabilities: true');
-  } else {
-    print('Error: ${e.message}');
-  }
-}
-```
-
-### Common Exceptions
-
-| Exception | When |
-|-----------|------|
-| `StateError('Synheart already configured')` | `initialize()` called twice |
-| `StateError('Capability token and secret are required...')` | No token/deviceAuthConfig and `allowUnsignedCapabilities` is false |
-| `StateError('Device registration failed...')` | Device attestation failed and `allowUnsignedCapabilities` is false |
-| `ArgumentError('... is not configured')` | Base URL still set to placeholder `example.invalid` |
-| `StateError('Synheart must be initialized...')` | Method called before `initialize()` |
-| `StateError('cloudUpload consent required')` | Cloud operation without consent |
-
-## API Reference
-
-### Synheart (Main Entry Point)
-
-| Method | Description |
-|--------|-------------|
-| `initialize({config, userId, autoStart})` | Initialize the SDK (named-arg form) |
-| `startSession()` / `stopSession()` | Start/stop data collection |
-| `startWearCollection()` / `stopWearCollection()` | Control wear module |
-| `startBehaviorCollection()` / `stopBehaviorCollection()` | Control behavior module |
-| `startPhoneCollection()` / `stopPhoneCollection()` | Control phone module |
-| `activate(feature)` / `deactivate(feature)` | Enable/disable a `SynheartFeature` (`wear`, `behavior`, `phoneContext`, `cloud`) |
-| `grantConsent({biosignals, behavior, phoneContext, cloudUpload, ...})` | Grant consent per channel |
-| `revokeConsent()` / `revokeConsentType(type)` | Revoke consent |
-| `Synheart.ingestion.flushIfEligible()` | Drain pending HSI uploads when the queue is eligible (canonical) |
-| `Synheart.runtimeDiagnostics()` | Snapshot runtime diagnostics (FFI / engine state) |
-| `Synheart.uploadQueueLength` | Sync getter — pending HSI uploads in the local queue |
-| `Synheart.lastIngestSuccessAtMs` | Sync getter — epoch-ms of the last successful ingest |
-| `Synheart.ingestion.enqueueHsiWindows(...)` | Enqueue HSI windows for cloud upload |
-| `checkNotificationListenerEnabled()` | Check notification access for behavior metrics |
-| `dispose()` | Release all resources |
-
-### Streams
-
-| Stream | Type | Description |
-|--------|------|-------------|
-| `onHSIUpdate` | `Stream<String>` | HSI JSON frames from synheart-engine |
-| `onStateUpdate` | `Stream<HSIState>` | Typed projection of `onHSIUpdate` |
-| `wearSampleStream` | `Stream<WearSample>` | Raw wear samples |
-| `behaviorEventStream` | `Stream<BehaviorEvent>` | Raw behavior events |
-
-## Prerequisites
-
-### Platform Configuration
-
-The Core SDK requires platform-specific configuration for data collection modules. The example app includes all required configurations - use it as a reference.
-
-#### iOS Configuration
-
-**Info.plist** - Add HealthKit usage descriptions (required for synheart-wear-flutter):
+Enable the HealthKit capability in Xcode when using wearable or Apple Health
+data. Add usage descriptions to `ios/Runner/Info.plist`:
 
 ```xml
-<!-- HealthKit Permissions (Required for Wear Module) -->
 <key>NSHealthShareUsageDescription</key>
-<string>Synheart Core needs access to your health data to provide personalized insights and track your biometric metrics.</string>
+<string>This app reads health data to calculate consented wellbeing insights.</string>
 <key>NSHealthUpdateUsageDescription</key>
-<string>Synheart Core needs to update your health data to sync wearable device information.</string>
+<string>This app writes supported health data when you enable health synchronization.</string>
 ```
 
-**Note**: The behavior module doesn't require additional Info.plist entries - it uses runtime permission requests.
+Use wording that accurately describes your application. See
+`example/ios/Runner/Info.plist` for a working project configuration.
 
-#### Android Configuration
+### Android
 
-The plugin ships only a library manifest — no permissions are merged
-into the consumer app automatically. Declare every permission and
-component below yourself, or the corresponding module will silently
-fail at runtime (Health Connect reads return empty, the notification
-listener won't bind, phone-call state events won't fire).
+The package does not merge all consumer permissions automatically. Add the
+permissions needed by your enabled sources to
+`android/app/src/main/AndroidManifest.xml`.
 
-**AndroidManifest.xml** — add the following permissions and services:
+Common declarations are:
 
 ```xml
-<!-- Basic permissions -->
-<uses-permission android:name="android.permission.INTERNET"/>
-<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-
-<!-- Health Connect Permissions (Required for Wear Module) -->
-<uses-permission android:name="android.permission.health.READ_HEART_RATE"/>
-<uses-permission android:name="android.permission.health.WRITE_HEART_RATE"/>
-<uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY"/>
-<uses-permission android:name="android.permission.health.WRITE_HEART_RATE_VARIABILITY"/>
-<uses-permission android:name="android.permission.health.READ_STEPS"/>
-<uses-permission android:name="android.permission.health.WRITE_STEPS"/>
-<uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>
-<uses-permission android:name="android.permission.health.WRITE_ACTIVE_CALORIES_BURNED"/>
-<uses-permission android:name="android.permission.health.READ_DISTANCE"/>
-<uses-permission android:name="android.permission.health.WRITE_DISTANCE"/>
-<uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY"/>
-
-<!-- Behavior Module Permissions -->
-<uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
-<!-- Health Connect Queries -->
-<queries>
-    <package android:name="com.google.android.apps.healthdata" />
-    <intent>
-        <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-    </intent>
-</queries>
+<!-- Health Connect: include only the record types your app reads or writes. -->
+<uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+<uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+<uses-permission android:name="android.permission.health.READ_STEPS" />
+<uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
+<uses-permission android:name="android.permission.health.READ_DISTANCE" />
+<uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
+```
 
-<!-- In <application> tag: Health Connect Intent Filter -->
-<activity android:name=".MainActivity" ...>
-    <intent-filter>
-        <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-    </intent-filter>
-</activity>
+For behavior notification access, declare the listener inside `<application>`:
 
-<!-- Health Connect Privacy Policy Activity Alias -->
-<activity-alias
-    android:name="ViewPermissionUsageActivity"
-    android:exported="true"
-    android:targetActivity=".MainActivity"
-    android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
-    <intent-filter>
-        <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
-        <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
-    </intent-filter>
-</activity-alias>
-
-<!-- Notification Listener Service (Required for Behavior Module) -->
+```xml
 <service
     android:name="ai.synheart.behavior.SynheartNotificationListenerService"
     android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
@@ -876,7 +190,10 @@ listener won't bind, phone-call state events won't fire).
 </service>
 ```
 
-**MainActivity.kt** - Must extend `FlutterFragmentActivity` (required for Health Connect on Android 14+):
+Health Connect also requires package queries, a permission-rationale intent,
+and a privacy-policy activity alias. Copy the relevant declarations from
+`example/android/app/src/main/AndroidManifest.xml`. On Android 14+, use
+`FlutterFragmentActivity` for the host activity:
 
 ```kotlin
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -884,190 +201,774 @@ import io.flutter.embedding.android.FlutterFragmentActivity
 class MainActivity : FlutterFragmentActivity()
 ```
 
-### Supported Devices
+## Quick start
 
-The Core SDK supports all devices that [synheart_wear](https://pub.dev/packages/synheart_wear) supports (Apple Watch, Fitbit, Garmin, etc.). Garmin **real-time streaming** requires a separate Garmin Health SDK license — see [`synheart-wear-flutter/docs/GARMIN_SETUP.md`](https://github.com/synheart-ai/synheart-wear-flutter/blob/main/docs/GARMIN_SETUP.md) for the integrator workflow.
+The following is a local-development setup. Unsigned capabilities must not be
+enabled in production.
 
-### Quick Start
+```dart
+import 'dart:async';
+import 'package:synheart_core/synheart_core.dart';
 
-The example app (`example/`) includes all required configurations. You can copy the relevant sections from:
-- `example/ios/Runner/Info.plist` for iOS
-- `example/android/app/src/main/AndroidManifest.xml` for Android
-- `example/android/app/src/main/kotlin/com/example/synheart_core/MainActivity.kt` for MainActivity
+late final StreamSubscription<HSIState> hsiSubscription;
 
-## Testing
+Future<void> startSynheart() async {
+  await Synheart.initialize(
+    config: SynheartConfig(
+      appId: 'com.example.my_app',
+      subjectId: 'user-123',
+      appVersion: '1.0.0',
+      allowUnsignedCapabilities: true, // Development only.
+      wearConfig: const WearConfig(),
+      phoneConfig: const PhoneConfig(),
+      behaviorConfig: const BehaviorConfig(),
+    ),
+  );
 
-### Running Tests
+  await Synheart.grantConsent(
+    biosignals: true,
+    phoneContext: false,
+    behavior: true,
+    cloudUpload: false,
+  );
+
+  hsiSubscription = Synheart.onStateUpdate.listen((state) {
+    print('Stress: ${state.hsi.stress?.value}');
+  });
+
+  await Synheart.startSession();
+}
+
+Future<void> stopSynheart() async {
+  await Synheart.stopSession();
+  await hsiSubscription.cancel();
+  await Synheart.dispose();
+}
+```
+
+`initialize()` configures the SDK but does not collect data by default.
+Collection starts with `startSession()`. Set `autoStart: true` only when the
+application has already completed its consent flow.
+
+## Initialization and configuration
+
+### Required identity
+
+For validated configuration, both `appId` and `subjectId` must be non-empty.
+`subjectId` must be stable for the signed-in or pseudonymous user and cannot
+contain `|`.
+
+```dart
+final config = SynheartConfig(
+  appId: 'com.example.my_app',
+  subjectId: 'pseudonymous-user-id',
+  mode: SynheartMode.personal,
+  appVersion: '2.3.0',
+  appName: 'Example',
+  category: 'Wellness',
+  developer: 'Example Inc.',
+);
+```
+
+`initialize()` is idempotent while initialized: concurrent callers share the
+same initialization, and later calls are no-ops. To initialize a different
+configuration after teardown, first call `Synheart.dispose()`.
+
+When the signed-in identity changes without teardown, use:
+
+```dart
+final changed = await Synheart.rebindSubjectId('new-subject-id');
+```
+
+This keeps the native runtime, consent scope, and cloud upload identity aligned.
+
+### Modes
+
+| Mode | Persistence behavior |
+| --- | --- |
+| `personal` | HSI, session summaries, and baselines; no raw biosignals or app metrics |
+| `insight` | Personal-mode data plus application metrics |
+| `research` | May persist raw biosignals; requires `PrivacyConfig(allowResearch: true)` and explicit research consent |
+
+Research mode configuration:
+
+```dart
+SynheartConfig(
+  appId: 'com.example.study',
+  subjectId: 'research-participant-id',
+  mode: SynheartMode.research,
+  privacy: const PrivacyConfig(allowResearch: true),
+  allowUnsignedCapabilities: true, // Replace in production.
+);
+```
+
+### Module configuration
+
+Modules are activated when their corresponding config is present:
+
+```dart
+SynheartConfig(
+  appId: 'com.example.my_app',
+  subjectId: 'user-123',
+  wearConfig: const WearConfig(
+    sampleRateHz: 1,
+    enableCaching: true,
+  ),
+  phoneConfig: const PhoneConfig(
+    enableMotion: true,
+    enableScreenState: true,
+    enableAppTracking: false,
+  ),
+  behaviorConfig: const BehaviorConfig(
+    enableGestureTracking: true,
+    enableTypingTracking: true,
+    enableMotionLite: false,
+    emitRawMotionSamples: false,
+  ),
+  allowUnsignedCapabilities: true,
+);
+```
+
+Features can also be activated explicitly before a session:
+
+```dart
+Synheart.activate(SynheartFeature.wear);
+Synheart.activate(SynheartFeature.behavior);
+
+final requested = Synheart.isActivated(SynheartFeature.wear);
+final operational = Synheart.isFeatureOperational(SynheartFeature.wear);
+```
+
+Activation alone does not permit collection. A feature is operational only
+when activation, consent, capability, and session gates all allow it.
+
+## Consent
+
+Consent is required before collection or cloud upload. The canonical channels
+include:
+
+- `biosignals`
+- `phoneContext`
+- `behavior`
+- `cloudUpload`
+- `vendorSync`
+- `research`
+- `syni`
+
+### Local consent
+
+Use local consent for offline applications or development:
+
+```dart
+await Synheart.grantConsent(
+  biosignals: true,
+  phoneContext: true,
+  behavior: true,
+  cloudUpload: false,
+  vendorSync: false,
+  research: false,
+  syni: false,
+);
+
+final status = Synheart.getConsentStatusMap();
+final canCollectWear = status['biosignals'] ?? false;
+```
+
+Observe changes instead of polling:
+
+```dart
+final subscription = Synheart.consentChanges.listen((snapshot) {
+  print('Biosignals: ${snapshot.biosignals}');
+  print('Cloud: ${snapshot.cloudUpload}');
+});
+```
+
+Revoke one channel or all channels:
+
+```dart
+await Synheart.revokeConsentType('behavior');
+await Synheart.revokeConsent();
+```
+
+Revocation closes the corresponding collection and delivery gates.
+
+### Hosted consent service
+
+Configure the consent service to load profiles and issue a server token:
+
+```dart
+final consent = ConsentConfig(
+  appId: 'com.example.my_app',
+  appApiKey: 'app-api-key',
+  userId: 'user-123',
+  region: 'US',
+);
+```
+
+Then integrate the profile selection into your own UI:
+
+```dart
+final profiles = await Synheart.getAvailableConsentProfiles();
+
+Synheart.setConsentUIProvider((availableProfiles) async {
+  // Present application UI and return the selected profile.
+  return availableProfiles.first;
+});
+
+final token = await Synheart.requestConsent();
+```
+
+Never ship API keys in source control. Inject deployment values through your
+build or secret-management system.
+
+## Sessions and collection
+
+### Full session lifecycle
+
+```dart
+final handle = await Synheart.startSession(durationSec: 30 * 60);
+print(handle?.sessionId);
+
+// Collection runs until the duration expires or the app stops it.
+await Synheart.stopSession();
+```
+
+At least one feature must be activated and consented. Use
+`Synheart.isSessionRunning` and `Synheart.currentSession` to inspect state.
+
+### Module-level control
+
+```dart
+await Synheart.startWearCollection(
+  interval: const Duration(seconds: 1),
+);
+await Synheart.startBehaviorCollection();
+await Synheart.startPhoneCollection();
+
+print(Synheart.isWearCollecting);
+print(Synheart.isBehaviorCollecting);
+print(Synheart.isPhoneCollecting);
+
+await Synheart.stopPhoneCollection();
+await Synheart.stopBehaviorCollection();
+await Synheart.stopWearCollection();
+```
+
+Module methods still enforce consent and capabilities.
+
+### Batch ingest on stop
+
+For background or offline-first sessions, buffer events and compute the session
+when it stops:
+
+```dart
+final config = SynheartConfig(
+  appId: 'com.example.my_app',
+  subjectId: 'user-123',
+  batchIngestOnStop: true,
+  allowUnsignedCapabilities: true,
+);
+```
+
+The setting may be changed between sessions:
+
+```dart
+Synheart.setBatchIngestOnStop(true);
+```
+
+In batch mode, HSI output is produced after the session is stopped rather than
+continuously during collection.
+
+## Reading HSI and raw signals
+
+### Canonical JSON
+
+`onHSIUpdate` emits the canonical HSI 1.3 JSON generated by the runtime:
+
+```dart
+final subscription = Synheart.onHSIUpdate.listen((hsiJson) {
+  sendToYourConsumer(hsiJson);
+});
+```
+
+### Typed state
+
+`onStateUpdate` parses each JSON frame into `HSIState`:
+
+```dart
+final subscription = Synheart.onStateUpdate.listen((state) {
+  print(state.hsi.stress?.value);
+  print(state.rawJson);
+});
+
+final latest = Synheart.currentHSIState;
+```
+
+Fields may be null when the runtime lacks sufficient input or an older HSI
+payload does not contain that axis. Keep the raw JSON when exact wire-format
+forwarding or schema validation is required.
+
+### Raw streams and session buffers
+
+```dart
+final wearSub = Synheart.wearSampleStream.listen((sample) {
+  print('HR: ${sample.hr}');
+  print('RR: ${sample.rrIntervals}');
+});
+
+final behaviorSub = Synheart.behaviorEventStream.listen((event) {
+  print('${event.type} at ${event.timestamp}');
+});
+
+final hsiWindows = Synheart.getSessionHsiWindows();
+final wearSamples = Synheart.getSessionWearSamples();
+```
+
+Raw streams are consent-gated. Cancel subscriptions when their owner is
+disposed.
+
+### Application metrics
+
+Metrics are persisted in `insight` and `research` modes and dropped in
+`personal` mode:
+
+```dart
+await Synheart.recordMetric(
+  MetricEvent(
+    name: 'reaction_time_ms',
+    timestampMs: DateTime.now().millisecondsSinceEpoch,
+    value: 318,
+    tags: const {'level': 'tutorial'},
+  ),
+);
+```
+
+## Cloud, authentication, and endpoints
+
+### Production authentication
+
+Production applications should configure device authentication. The runtime
+registers a hardware-backed device identity and signs supported requests.
+
+```dart
+final config = SynheartConfig(
+  appId: 'com.example.my_app',
+  subjectId: 'user-123',
+  deviceAuthConfig: const DeviceAuthConfig(
+    authBaseUrl: 'https://api.synheart.ai',
+    packageName: 'com.example.my_app',
+  ),
+  cloudConfig: CloudConfig(
+    subjectId: 'user-123',
+    instanceId: 'stable-installation-uuid',
+    orgId: 'organization-id',
+  ),
+);
+```
+
+Device registration is deferred until a cloud-bound operation needs it. The
+following recovery helpers are available:
+
+```dart
+final registered = await Synheart.ensureDeviceAuthRegistered();
+final repaired = await Synheart.reregisterDeviceAuth();
+final authStatus = Synheart.coreDeviceAuthStatus();
+```
+
+`allowUnsignedCapabilities` is a development escape hatch, not a production
+authentication strategy.
+
+### Endpoint configuration
+
+The default platform origin is `https://api.synheart.ai`. Override it at
+compile time:
+
+```bash
+flutter run \
+  --dart-define=SYNHEART_BASE_URL=https://api.example.com
+```
+
+Optional per-service overrides:
+
+- `SYNHEART_AUTH_BASE_URL`
+- `SYNHEART_CONSENT_BASE_URL`
+- `SYNHEART_INGEST_BASE_URL`
+
+Use `env/synheart.endpoints.example.json` with:
+
+```bash
+flutter run --dart-define-from-file=env/synheart.endpoints.local.json
+```
+
+Base URLs must be origins. The runtime appends service paths.
+
+### Upload state
+
+Cloud upload requires `cloudUpload` consent, a cloud configuration, and a valid
+device/consent credential:
+
+```dart
+print(Synheart.uploadQueueLength);
+print(Synheart.lastUploadBatchId);
+print(Synheart.lastUploadAt);
+print(Synheart.lastUploadError);
+
+final ready = await Synheart.ensureCloudConsentReady();
+await Synheart.ingestion.flushIfEligible();
+```
+
+## Storage and sync
+
+### Local sessions
+
+```dart
+final sessions = await Synheart.listSessions();
+final summary = await Synheart.getSessionSummary(sessions.first.sessionId);
+final windows = await Synheart.getHSIWindows(sessions.first.sessionId);
+final usage = await Synheart.getStorageUsage();
+
+await Synheart.setRetentionDays(30);
+await Synheart.deleteLocalSession(sessions.first.sessionId);
+```
+
+Clean up sessions left active after process termination:
+
+```dart
+await Synheart.sweepOrphanSessions(
+  olderThan: const Duration(hours: 6),
+);
+```
+
+Local erasure:
+
+```dart
+await Synheart.wipeLocalData();
+```
+
+### Cross-device sync
+
+Enable sync in configuration:
+
+```dart
+SynheartConfig(
+  appId: 'com.example.my_app',
+  subjectId: 'user-123',
+  sync: const SyncConfig(
+    enabled: true,
+    baseUrl: 'https://api.synheart.ai',
+  ),
+);
+```
+
+Check readiness before presenting sync actions:
+
+```dart
+final readiness = await Synheart.checkSyncReadiness();
+final result = await Synheart.syncNow();
+final status = await Synheart.getSyncStatus();
+```
+
+The SDK also exposes space creation, pairing, recovery, device listing,
+revocation, leave, and delete operations through the `Synheart.sync*` methods.
+Native sync failures may throw `SyncNativeException`; inspect `code`,
+`message`, and `retryable`.
+
+## Advanced workflows
+
+### Behavior tracking wrapper
+
+Wrap the app root to capture consented gestures:
+
+```dart
+return Synheart.wrapWithBehaviorDetector(
+  MaterialApp(home: const HomeScreen()),
+);
+```
+
+Behavior sessions provide aggregated interaction results:
+
+```dart
+final sessionId = await Synheart.startBehaviorSession();
+final results = await Synheart.stopBehaviorSession(sessionId);
+print(results.tapRate);
+```
+
+On Android, notification access is a special settings grant:
+
+```dart
+final enabled = await Synheart.checkNotificationListenerEnabled();
+if (!enabled) {
+  await Synheart.openNotificationListenerSettings();
+}
+```
+
+### Watch sessions
+
+The SDK re-exports `synheart_session` types and provides a watch-session stream:
+
+```dart
+final events = Synheart.startWatchSession(
+  SessionConfig(
+    mode: SessionMode.focus,
+    durationSec: 300,
+    profile: const ComputeProfile(
+      windowSec: 60,
+      emitIntervalSec: 5,
+    ),
+  ),
+);
+
+final subscription = events.listen((event) {
+  // Handle SessionStarted, SessionFrame, SessionSummary, and SessionError.
+});
+```
+
+### Baselines and scores
+
+The package exposes:
+
+- typed baseline snapshots through `Synheart.baselineSnapshots`
+- vendor-sleep baseline orchestration through `Baselines`
+- sleep, recovery, readiness, and resilience score models
+- offline baseline export/import
+- Apple Health XML and Health Connect backfill sinks
+
+These are advanced, source-specific APIs. Consult their exported Dartdoc and
+the example application before integrating them.
+
+### Edge ingest: watch to phone
+
+`EdgeIngest` is a pure-Dart, transport-independent consumer for Synheart edge
+messages. It verifies artifact hashes and HSI versions, deduplicates artifacts,
+and builds acknowledgement bodies:
+
+```dart
+final ingest = EdgeIngest();
+final subscription = ingest.events.listen((event) {
+  switch (event) {
+    case HrEvent(:final sample):
+      print(sample);
+    case BioEvent(:final sample):
+      print(sample);
+    case ArtifactEvent(:final artifact):
+      print(artifact.payloadJson);
+    case SessionEventWrap():
+      break;
+  }
+});
+
+final outcome = ingest.ingest(decodedMessage);
+final ack = ingest.drainAckBody();
+if (ack != null) {
+  sendOnCommandChannel(ack);
+}
+
+await subscription.cancel();
+await ingest.dispose();
+```
+
+The host supplies the WatchConnectivity or Wear Data Layer transport.
+
+### Lab and research
+
+The static lab API controls a protocol and its nested windows:
+
+```dart
+final now = DateTime.now().millisecondsSinceEpoch;
+final error = Synheart.labStart(protocolJson, now);
+if (error != null) {
+  throw StateError(error);
+}
+
+final windowId = Synheart.labOpenWindow(
+  windowType: 'trial',
+  label: 'baseline-rest',
+  startedAtMs: DateTime.now().millisecondsSinceEpoch,
+);
+
+if (windowId != null) {
+  Synheart.labSetWindowValues(windowId, '{"score": 0.8}');
+  Synheart.labCloseWindow(
+    windowId,
+    DateTime.now().millisecondsSinceEpoch,
+  );
+}
+
+final sessionJson = Synheart.labFinalize(
+  DateTime.now().millisecondsSinceEpoch,
+);
+```
+
+Research-study helpers include:
+
+- `validateResearchStudyCodes(...)`
+- `enrolResearchStudy(...)`
+- `researchStudyStatus()`
+- `recordStudyConsent(...)`
+- `withdrawResearchStudy()`
+- `requestStudyDataDeletion(...)`
+
+For a separate research identity alongside the personal singleton, create a
+`SynheartInstance` with a unique `subjectId` and durable `dataDir`. Never share
+a data directory between instances:
+
+```dart
+final research = SynheartInstance.create(
+  config: researchConfig,
+  dataDir: researchDataDirectory,
+);
+
+try {
+  research?.startSession();
+  // Run the research protocol on this instance.
+} finally {
+  research?.stopSession();
+  research?.dispose();
+}
+```
+
+On study withdrawal, call `wipeLocalData()` before `dispose()` when local
+research data must also be erased.
+
+## API map
+
+The package exports all public APIs from:
+
+```dart
+import 'package:synheart_core/synheart_core.dart';
+```
+
+### Lifecycle and feature gates
+
+- `Synheart.initialize(...)`, `dispose()`
+- `startSession(...)`, `stopSession()`
+- `activate(...)`, `deactivate(...)`
+- `isInitialized`, `isSessionRunning`, `currentSession`
+- `isActivated(...)`, `isFeatureOperational(...)`
+
+### Streams
+
+| API | Type |
+| --- | --- |
+| `Synheart.onHSIUpdate` | `Stream<String>` |
+| `Synheart.onStateUpdate` | `Stream<HSIState>` |
+| `Synheart.wearSampleStream` | `Stream<WearSample>` |
+| `Synheart.behaviorEventStream` | `Stream<BehaviorEvent>` |
+| `Synheart.consentChanges` | `Stream<ConsentSnapshot>` |
+| `Synheart.watchSessionEvents` | `Stream<SessionEvent>` |
+
+### Major API groups
+
+- Consent: `grantConsent`, `requestConsent`, `revokeConsent`,
+  `consentEffectiveStateTyped`
+- Collection: `startWearCollection`, `startBehaviorCollection`,
+  `startPhoneCollection`
+- Storage: `listSessions`, `getSessionSummary`, `getHSIWindows`,
+  `getStorageUsage`, `wipeLocalData`
+- Sync: `checkSyncReadiness`, `syncNow`, `syncCreateSpace`,
+  `syncGeneratePairing`, `syncJoinSpace`
+- Cloud: `Synheart.ingestion`, upload queue and last-attempt getters
+- Research: `lab*`, research-study helpers, and `SynheartInstance`
+- Models: HSI state/axes, artifacts, baselines, scores, sessions, metrics,
+  consent, sync, edge, and deletion models
+
+Generate browsable API documentation from the source with:
+
+```bash
+dart doc
+```
+
+## Errors and diagnostics
+
+Configuration validation throws `SynheartError` with a stable `code`.
+Lifecycle preconditions commonly throw `StateError`; invalid arguments throw
+`ArgumentError`; native sync failures throw `SyncNativeException`.
+
+```dart
+try {
+  await Synheart.startSession();
+} on SynheartError catch (error) {
+  print('${error.code}: ${error.message}');
+} on SyncNativeException catch (error) {
+  if (error.retryable) {
+    // Offer a retry.
+  }
+} on StateError catch (error) {
+  print(error.message);
+}
+```
+
+Runtime health:
+
+```dart
+final diagnostics = Synheart.runtimeDiagnostics();
+print(diagnostics['isAvailable']);
+print(diagnostics['version']);
+print(diagnostics['frameCount']);
+print(diagnostics['lastQuality']);
+```
+
+If `isAvailable` is false, confirm the runtime was installed for the active
+platform, run a clean build, and inspect native linker output:
+
+```bash
+flutter clean
+flutter pub get
+synheart sync
+flutter run
+```
+
+## Testing and example app
+
+Run the package tests:
 
 ```bash
 flutter test
 ```
 
-### Testing with Mock Providers
-
-The SDK ships with `MockWearSourceHandler` and mock collectors for testing without hardware:
-
-```dart
-// Initialize with default capabilities (no real token needed)
-await Synheart.initialize(
-  userId: 'test_user',
-  config: SynheartConfig(allowUnsignedCapabilities: true),
-  autoStart: false,
-);
-
-// Start session — mock data flows through all streams
-await Synheart.startSession();
-
-// Subscribe and verify
-Synheart.onHSIUpdate.listen((hsiJson) {
-  // Validate HSI JSON from synheart-engine
-  print('HSI: $hsiJson');
-});
-```
-
-## Local Development with `synheart local`
-
-For offline SDK development and testing, use the **Synheart CLI** local platform server. It replicates the cloud consent and ingest APIs locally, so you can develop without a network connection or production credentials.
-
-### Setup
-
-1. Install the Synheart CLI:
+Run static analysis:
 
 ```bash
-# macOS / Linux
-curl -fsSL https://synheart.sh/install | sh
-
-# Windows (PowerShell)
-iwr -useb https://synheart.sh/install.ps1 | iex
+flutter analyze
 ```
 
-See [docs.synheart.ai/setup/install-cli](https://docs.synheart.ai/setup/install-cli) for details.
-
-2. Start the local platform:
+The application in `example/` demonstrates initialization, consent, module
+control, HSI display, runtime diagnostics, behavior sessions, watch sessions,
+and lab windows:
 
 ```bash
-synheart local
+cd example
+flutter pub get
+flutter run
 ```
 
-This starts an HTTP server on `localhost:8083` with mock consent profiles, token issuance, and ingest endpoints.
+The example uses unsigned capabilities and placeholder service credentials for
+development. Replace those settings before using it as a production template.
 
-### Connecting your app
+## Privacy and security
 
-Point your Flutter app at the local server using `--dart-define`:
+- Collection and delivery are consent-gated.
+- State computation is on-device by default.
+- Production cloud requests use a hardware-backed device identity.
+- Cloud upload is independently consented.
+- Personal mode does not persist raw biosignals.
+- Research persistence requires explicit configuration and consent.
+- Applications are responsible for accurate permission copy, data-retention
+  controls, account deletion, and regional compliance.
 
-```bash
-flutter run --dart-define=SYNHEART_ENV=local
-```
+## Support and contributing
 
-Or specify a custom URL:
+File bugs and feature requests in
+[GitHub Issues](https://github.com/synheart-ai/synheart-core-flutter/issues).
+External pull requests are not currently accepted; see
+[CONTRIBUTING.md](CONTRIBUTING.md). Report security issues using
+[SECURITY.md](SECURITY.md), not a public issue.
 
-```bash
-flutter run \
-  --dart-define=SYNHEART_ENV=local \
-  --dart-define=SYNHEART_LOCAL_URL=http://192.168.1.100:8083
-```
-
-### Available endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/v1/apps/{id}/consent-profiles` | Fetch consent profiles |
-| `POST` | `/v1/sdk/consent-token` | Issue consent token |
-| `POST` | `/v1/sdk/consent-revoke` | Revoke consent |
-| `POST` | `/v1/hsi/ingest` | Ingest HSI snapshots |
-| `POST` | `/v1/lab/session/ingest` | Ingest lab session payload |
-| `POST` | `/v1/lab/metadata/ingest` | Ingest lab metadata |
-| `GET` | `/status` | Server status and stats |
-
-### Default credentials
-
-The `synheart local` server provides default API keys for development. Run `synheart local --help` to see defaults. Use `allowUnsignedCapabilities: true` in your SDK config to skip device attestation locally.
-
-### Testing consent flow
-
-```dart
-// In local mode, consent profiles are served from data/profiles.json
-// 3 presets are included: Personal Wellness, Research (Full), Biosignals + Cloud
-
-final profiles = await Synheart.getAvailableConsentProfiles();
-// Returns the 3 preset profiles from the local server
-
-await Synheart.grantConsent(
-  biosignals: true,
-  behavior: true,
-  phoneContext: true,
-  cloudUpload: true,
-  profileId: profiles.first.id,
-);
-```
-
-### Testing lab ingest
-
-Ingested payloads are persisted as JSON files in the local server's data directory (`{data-dir}/ingested/`), making it easy to inspect what your app is sending.
-
-## 📚 Documentation
-
-For complete documentation — the HSI specification, consent model, and
-cloud ingestion protocol — see the Synheart docs site at
+Additional protocol documentation is available at
 [docs.synheart.ai/synheart-core](https://docs.synheart.ai/synheart-core).
-
-## Contributing
-
-This repository is **source-available** under Apache-2.0. Issues are welcome — bug reports, feature requests, and questions help shape the roadmap. **Pull requests are not accepted at this time**; external PRs are closed without review.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the rationale and the issue-filing process. Security reports go through [SECURITY.md](SECURITY.md).
-
-
-## Module Overview
-
-The Synheart Core SDK consists of 9 core modules:
-
-1. **Device Auth** - Hardware-backed ECDSA device identity (via synheart-auth)
-2. **Capabilities Module** - Server-signed feature gating (core/extended/research)
-3. **Consent Module** - Consent enforcement + token issuance
-4. **Wear Module** - Biosignal collection from wearables
-5. **Phone Module** - Device motion and context signals
-6. **Behavior Module** - Consent-gated interaction patterns
-7. **HSI Runtime** - Signal fusion and state computation
-8. **Cloud Connector** - Device-signed HSI snapshot uploads
-9. **Lab Ingest** - Session and metadata ingestion
-
-## Privacy & Security
-
-- All processing is **on-device** by default
-- No raw biosignals leave the device (unconditionally denied by consent service)
-- **Device authentication** — ECDSA P-256 keys in hardware enclave, never exportable
-- **3-layer consent** — Platform, app, and user consent must all allow before any upload
-- **Consent enforced at every level** — collection, caching, streaming, and local HSI delivery all respect consent
-- **HSI stream is consent-gated** — `onHSIUpdate` only emits frames when `biosignals` consent is granted
-- **On-demand collection** — apps can minimize data collection to only when needed
-- Cloud sync uses **aggregated HSI** only
-- HSI is strictly **non-medical**; no diagnoses or clinical labels
-
-## Related Projects
-
-| Repository | Platform | Description |
-|------------|----------|-------------|
-| [Synheart docs](https://docs.synheart.ai/synheart-core) | Spec | Source of truth for documentation and API design |
-| [synheart-core-flutter](https://github.com/synheart-ai/synheart-core-flutter) | Flutter/Dart | This repository |
-| [synheart-core-kotlin](https://github.com/synheart-ai/synheart-core-kotlin) | Android/Kotlin | Android SDK implementation |
-| [synheart-core-swift](https://github.com/synheart-ai/synheart-core-swift) | iOS/Swift | iOS SDK implementation |
-| [synheart-auth-flutter](https://github.com/synheart-ai/synheart-auth-flutter) | Flutter/Dart | Device authentication (ECDSA) |
-| [synheart-wear-flutter](https://github.com/synheart-ai/synheart-wear-flutter) | Flutter/Dart | Wearable signal collection |
-| [synheart-behavior-flutter](https://github.com/synheart-ai/synheart-behavior-flutter) | Flutter/Dart | Behavior event capture |
-
-## Not a Medical Device
-
-This SDK is intended for wellness and research use only. It is not a medical device, is not intended to diagnose, treat, cure, or prevent any disease or condition, and has not been evaluated by the FDA or any other regulatory body.
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0. See [LICENSE](LICENSE).
 
 Copyright 2025-2026 Synheart AI Inc.
-
-## Patent Pending Notice
-
-This project is provided under an open-source license. Certain underlying systems, methods, and architectures described or implemented herein may be covered by one or more pending patent applications.
-
-Nothing in this repository grants any license, express or implied, to any patents or patent applications, except as provided by the applicable open-source license.

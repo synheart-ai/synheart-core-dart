@@ -1,6 +1,6 @@
 {
-  "SYNHEART_CLOUD_BASE_URL": "https://your-cloud.example.com",
-  "SYNHEART_CONSENT_BASE_URL": "https://your-consent.example.com",
-  "SYNHEART_PLATFORM_INGEST_BASE_URL": "https://your-platform.example.com",
-  "SYNHEART_AUTH_BASE_URL": "https://your-auth.example.com"
+  "SYNHEART_BASE_URL": "https://api.your-platform.example",
+  "SYNHEART_AUTH_BASE_URL": "",
+  "SYNHEART_CONSENT_BASE_URL": "",
+  "SYNHEART_INGEST_BASE_URL": ""
 }

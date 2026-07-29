@@ -9,6 +9,8 @@ The example app demonstrates how to integrate the Synheart Core SDK into a Flutt
 ## Prerequisites
 
 - Flutter SDK installed (see [Flutter documentation](https://docs.flutter.dev/get-started/install))
+- Synheart CLI installed and authenticated
+- Native runtime installed from this directory with `synheart install runtime`
 - A Synheart account with access to:
   - Consent Service API credentials (for consent service features)
   - Cloud Platform credentials (for cloud sync features)
@@ -82,45 +84,25 @@ cloudConfig: CloudConfig(
 
 **Security Note**: Never commit API keys, secrets, or credentials to version control. Consider using environment variables or secure storage solutions.
 
-### 3. Environment Variables (Recommended)
+### 3. Build-time configuration
 
-For better security, use environment variables instead of hardcoding credentials:
+The example reads consent credentials from Dart defines. Keep them outside
+source control and pass them at build time:
 
-1. Create a `.env` file in the `example` directory (add it to `.gitignore`):
-
-```env
-SYNHEART_APP_ID=your-app-id-here
-SYNHEART_API_KEY=your-api-key-here
+```bash
+flutter run \
+  --dart-define=SYNHEART_CONSENT_APP_ID=your-app-id \
+  --dart-define=SYNHEART_CONSENT_APP_API_KEY=your-api-key
 ```
 
-2. Add `flutter_dotenv` to your `pubspec.yaml`:
+To target another platform origin, add:
 
-```yaml
-dependencies:
-  flutter_dotenv: ^5.1.0
+```bash
+--dart-define=SYNHEART_BASE_URL=https://api.your-platform.example
 ```
 
-3. Load environment variables in your app:
-
-```dart
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-
-// In main() or before initialization
-await dotenv.load(fileName: ".env");
-
-// Use in configuration
-consentConfig: ConsentConfig(
-  appId: dotenv.env['SYNHEART_APP_ID']!,
-  appApiKey: dotenv.env['SYNHEART_API_KEY']!,
-  platform: 'flutter',
-  userId: userId,
-  region: 'US',
-),
-cloudConfig: CloudConfig(
-  subjectId: userId,
-  instanceId: 'unique-instance-id', // Or generate UUID
-),
-```
+For multiple endpoint values, copy `../env/synheart.endpoints.example.json` to
+a gitignored local file and use `--dart-define-from-file`.
 
 ## Running the Example App
 
