@@ -564,6 +564,36 @@ class CoreRuntimeBridge {
     }
   }
 
+  /// Push a batch of RR intervals that arrived together in one sensor
+  /// notification (e.g. a BLE Heart Rate Measurement packet carrying several
+  /// RR values under one arrival timestamp).
+  ///
+  /// [anchorTsMs] is that shared arrival timestamp; the runtime reconstructs a
+  /// distinct per-beat timestamp for each interval (newest beat at the anchor,
+  /// earlier beats back-dated) so no beat is lost. [order] states how [rrMs] is
+  /// ordered: `0` = oldest-first (BLE HRM default), `1` = newest-first. Empty
+  /// [rrMs] is a no-op. The array and provider C-string are allocated and freed
+  /// inside this call; the runtime copies what it needs.
+  void pushRrBatch(
+    int anchorTsMs,
+    List<double> rrMs, {
+    int order = 0,
+    String provider = 'default_sensor',
+  }) {
+    if (rrMs.isEmpty) return;
+    final rrPtr = malloc<Double>(rrMs.length);
+    final cstr = provider.toNativeUtf8();
+    try {
+      for (var i = 0; i < rrMs.length; i++) {
+        rrPtr[i] = rrMs[i];
+      }
+      _ffi.pushRrBatch(_handle, anchorTsMs, rrPtr, rrMs.length, order, cstr);
+    } finally {
+      malloc.free(rrPtr);
+      malloc.free(cstr);
+    }
+  }
+
   void pushHr(int tsMs, double bpm) => _ffi.pushHr(_handle, tsMs, bpm);
 
   // ── Breathing compliance ────────────────────────────────────────────

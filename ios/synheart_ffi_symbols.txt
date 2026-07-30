@@ -62,6 +62,7 @@ _synheart_core_push_behavior
 _synheart_core_push_behavior_event
 _synheart_core_push_hr
 _synheart_core_push_rr
+_synheart_core_push_rr_batch
 _synheart_core_push_sleep_stages
 _synheart_core_push_vendor_hrv
 _synheart_core_query_vendor_events

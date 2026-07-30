@@ -37,6 +37,27 @@ typedef _PushRrC =
     Void Function(Pointer<Void> h, Int64 ts, Double rr, Pointer<Utf8> provider);
 typedef _PushRrDart =
     void Function(Pointer<Void> h, int ts, double rr, Pointer<Utf8> provider);
+// Batched RR push: `rr` points to `len` doubles (RR intervals in ms) that
+// arrived together in one sensor notification; `order` is 0=oldest-first
+// (BLE HRM), 1=newest-first. Maps `size_t` → `Size`.
+typedef _PushRrBatchC =
+    Void Function(
+      Pointer<Void> h,
+      Int64 anchorTs,
+      Pointer<Double> rr,
+      Size len,
+      Int32 order,
+      Pointer<Utf8> provider,
+    );
+typedef _PushRrBatchDart =
+    void Function(
+      Pointer<Void> h,
+      int anchorTs,
+      Pointer<Double> rr,
+      int len,
+      int order,
+      Pointer<Utf8> provider,
+    );
 typedef _PushHrC = Void Function(Pointer<Void> h, Int64 ts, Double bpm);
 typedef _PushHrDart = void Function(Pointer<Void> h, int ts, double bpm);
 typedef _EnsurePipelineC = Void Function(Pointer<Void> h);
@@ -765,6 +786,9 @@ class SynheartCoreFFI {
 
   late final pushRr = _lib.lookupFunction<_PushRrC, _PushRrDart>(
     'synheart_core_push_rr',
+  );
+  late final pushRrBatch = _lib.lookupFunction<_PushRrBatchC, _PushRrBatchDart>(
+    'synheart_core_push_rr_batch',
   );
   late final pushHr = _lib.lookupFunction<_PushHrC, _PushHrDart>(
     'synheart_core_push_hr',

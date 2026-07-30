@@ -250,6 +250,17 @@ class SynheartInstance {
   void pushRr(int tsMs, double rrMs, {String provider = 'default_sensor'}) =>
       _bridge.pushRr(tsMs, rrMs, provider: provider);
 
+  /// Push a batch of RR intervals delivered together in one sensor
+  /// notification. See [CoreRuntimeBridge.pushRrBatch]. Prefer this over
+  /// looping [pushRr] when a packet carries multiple RR values sharing one
+  /// arrival timestamp (e.g. BLE HRM) — it keeps every beat.
+  void pushRrBatch(
+    int anchorTsMs,
+    List<double> rrMs, {
+    int order = 0,
+    String provider = 'default_sensor',
+  }) => _bridge.pushRrBatch(anchorTsMs, rrMs, order: order, provider: provider);
+
   void pushHr(int tsMs, double bpm) => _bridge.pushHr(tsMs, bpm);
 
   String? ingestBatch(String batchJson, int nowMs) =>
