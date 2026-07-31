@@ -296,10 +296,7 @@ class CoreRuntimeBridge {
   }
 
   /// Drain and forward all lines currently pending in the runtime ring.
-  static void _drainOnce(
-    SynheartCoreFFI lib,
-    Pointer<Utf8> Function() drain,
-  ) {
+  static void _drainOnce(SynheartCoreFFI lib, Pointer<Utf8> Function() drain) {
     Pointer<Utf8> ptr;
     try {
       ptr = drain();

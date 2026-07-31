@@ -2711,7 +2711,12 @@ class Synheart {
     int order = 0,
     String provider = 'default_sensor',
   }) {
-    _coreRuntime?.pushRrBatch(anchorTsMs, rrMs, order: order, provider: provider);
+    _coreRuntime?.pushRrBatch(
+      anchorTsMs,
+      rrMs,
+      order: order,
+      provider: provider,
+    );
   }
 
   /// Push vendor-reported HRV metrics (Tier 2). See [pushWearHr] for

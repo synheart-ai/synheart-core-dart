@@ -747,9 +747,10 @@ class SynheartCoreFFI {
   // vendored runtime won't export them, so callers must tolerate the
   // lookup throwing (see CoreRuntimeBridge.initRuntimeLogging fallback).
   late final initLoggingBuffered = _lib
-      .lookupFunction<Int32 Function(Pointer<Utf8>), int Function(Pointer<Utf8>)>(
-        'synheart_core_init_logging_buffered',
-      );
+      .lookupFunction<
+        Int32 Function(Pointer<Utf8>),
+        int Function(Pointer<Utf8>)
+      >('synheart_core_init_logging_buffered');
 
   late final drainLogs = _lib
       .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
