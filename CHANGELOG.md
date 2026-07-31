@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-07-31
+
+### Added
+- `Synheart.pushRrBatch(...)` — push a batch of RR intervals anchored to a single
+  timestamp, instead of one call per interval.
+- Buffered runtime logging (`synheart_core_init_logging_buffered` + log drain) so
+  runtime diagnostics survive a crash. Falls back gracefully when the vendored
+  runtime does not export the symbols.
+
 ## [0.10.0] - 2026-07-29
 
 ### Changed
@@ -437,7 +446,8 @@ breaking change to `processVendorEvent`.
   `synheart_behavior ^0.3.0`, `synheart_auth ^0.1.1`) instead of git
   refs.
 
-[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.10.1
 [0.10.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.10.0
 [0.9.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.9.0
 [0.8.2]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.8.2
