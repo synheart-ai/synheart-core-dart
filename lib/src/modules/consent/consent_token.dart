@@ -85,7 +85,7 @@ class ConsentToken {
     // Decode JWT to extract claims (basic decoding, no signature verification)
     final parts = token.split('.');
     if (parts.length != 3) {
-      throw FormatException('Invalid JWT format');
+      throw const FormatException('Invalid JWT format');
     }
 
     // Decode payload (second part)

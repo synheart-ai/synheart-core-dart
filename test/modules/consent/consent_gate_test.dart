@@ -37,7 +37,7 @@ void main() {
 
       // Emit a frame while consent is denied
       sourceStream.add('{"hsi_version":"1.0","frame":1}');
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(const Duration(milliseconds: 50));
 
       expect(
         hsiValues,
@@ -71,7 +71,7 @@ void main() {
       gatedStream.stream.listen(hsiValues.add);
 
       sourceStream.add('{"hsi_version":"1.0","frame":1}');
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(const Duration(milliseconds: 50));
 
       expect(
         hsiValues.length,
@@ -101,7 +101,7 @@ void main() {
       sourceStream.add('{"frame":1}');
       sourceStream.add('{"frame":2}');
       sourceStream.add('{"frame":3}');
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(const Duration(milliseconds: 50));
 
       expect(
         hsiValues,

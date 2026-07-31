@@ -740,6 +740,27 @@ class SynheartCoreFFI {
         'synheart_core_shutdown_logging',
       );
 
+  // Buffered (pull-based) logging FFI (runtime ≥ 0.19). Crash-safe for
+  // Flutter hot restart: no NativeCallable trampoline crosses the FFI
+  // boundary, so a freed Dart isolate can't leave the runtime holding a
+  // dangling function pointer. These symbols are OPTIONAL — an older
+  // vendored runtime won't export them, so callers must tolerate the
+  // lookup throwing (see CoreRuntimeBridge.initRuntimeLogging fallback).
+  late final initLoggingBuffered = _lib
+      .lookupFunction<Int32 Function(Pointer<Utf8>), int Function(Pointer<Utf8>)>(
+        'synheart_core_init_logging_buffered',
+      );
+
+  late final drainLogs = _lib
+      .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+        'synheart_core_drain_logs',
+      );
+
+  late final droppedLogLines = _lib
+      .lookupFunction<Uint64 Function(), int Function()>(
+        'synheart_core_dropped_log_lines',
+      );
+
   late final buildInfo = _lib
       .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
         'synheart_core_build_info',

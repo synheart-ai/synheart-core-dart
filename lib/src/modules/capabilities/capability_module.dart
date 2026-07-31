@@ -26,7 +26,7 @@ class CapabilityModule extends BaseSynheartModule
   /// Load capabilities from token
   Future<void> loadFromToken(CapabilityToken token, String secret) async {
     if (token.isExpired) {
-      throw CapabilityException('Capability token is expired');
+      throw const CapabilityException('Capability token is expired');
     }
 
     _token = token;
@@ -45,7 +45,7 @@ class CapabilityModule extends BaseSynheartModule
   /// channel (e.g., device-signed request).
   Future<void> loadFromTokenUnsigned(CapabilityToken token) async {
     if (token.isExpired) {
-      throw CapabilityException('Capability token is expired');
+      throw const CapabilityException('Capability token is expired');
     }
     _token = token;
     _capabilities = SDKCapabilities.fromToken(token);
