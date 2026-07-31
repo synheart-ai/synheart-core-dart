@@ -2695,6 +2695,30 @@ class Synheart {
     _coreRuntime?.pushRr(tsMs, rrMs, provider: provider);
   }
 
+  /// Push a batch of RR intervals delivered together in one sensor
+  /// notification (e.g. a BLE Heart Rate Measurement packet carrying several
+  /// RR values under one arrival timestamp).
+  ///
+  /// The runtime reconstructs a distinct per-beat timestamp for each interval
+  /// from [anchorTsMs] instead of collapsing them onto that shared arrival
+  /// time — so no beat is lost to HRV or the research export. [order] is `0`
+  /// for oldest-first (BLE HRM, the default) or `1` for newest-first. Prefer
+  /// this over looping [pushRr] whenever a packet carries more than one RR
+  /// value. See [pushRr] for the `provider` routing labels.
+  static void pushRrBatch(
+    int anchorTsMs,
+    List<double> rrMs, {
+    int order = 0,
+    String provider = 'default_sensor',
+  }) {
+    _coreRuntime?.pushRrBatch(
+      anchorTsMs,
+      rrMs,
+      order: order,
+      provider: provider,
+    );
+  }
+
   /// Push vendor-reported HRV metrics (Tier 2). See [pushWearHr] for
   /// routing semantics. Negative/-1 fields are interpreted as "not
   /// available" and omitted from the batch payload.

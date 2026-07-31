@@ -153,26 +153,110 @@ class CoreRuntimeBridge {
   _logCallable;
   static SynheartCoreFFI? _logFfi;
 
-  /// Initialize Runtime `tracing` once per process (call before [create] if you need
-  /// a custom filter or sink). Matches [SDK_LOGGING_INIT.md] / SDK auth sequence §1b.
+  /// True once logging installed via the crash-safe **buffered (pull-based)**
+  /// path. When true, [_drainTimer] is pumping lines and no `NativeCallable`
+  /// is registered — nothing can dangle across a Dart hot restart.
+  static bool _bufferedMode = false;
+
+  /// Periodic drain pump for buffered mode. Cancelled by
+  /// [shutdownRuntimeLogging].
+  static Timer? _drainTimer;
+
+  /// How often buffered mode polls the runtime's ring buffer. ~4 Hz adds at
+  /// most ~250 ms latency to diagnostic lines — an acceptable trade for
+  /// removing the hot-restart crash class.
+  static Duration bufferedDrainInterval = const Duration(milliseconds: 250);
+
+  /// Initialize Runtime `tracing` once per process (call before [create] if you
+  /// need a custom filter or sink). See the book: `book/src/abi/logging.md`.
   ///
-  /// Returns `0` on success, `1` if already initialized, negative on failure.
+  /// Prefers **buffered (pull-based) mode**: the runtime formats lines into an
+  /// internal ring buffer and this bridge polls them on a [Timer.periodic], so
+  /// no function pointer crosses FFI. This is the fix for the Flutter
+  /// hot-restart crash (`Callback invoked after it has been deleted`) — the
+  /// dying isolate can't invalidate a pointer the runtime never held.
+  ///
+  /// Falls back to the legacy push-callback path automatically when the
+  /// running runtime is too old to export the buffered symbols, so a lagging
+  /// vendored native lib still logs (it just keeps the old crash exposure on
+  /// hot restart until the lib is updated).
+  ///
+  /// [onLine] receives each decoded line in either mode. Returns `0` on
+  /// success, `1` if already initialized, negative on failure.
   static int initRuntimeLogging({
     SynheartCoreFFI? ffi,
     String? envFilter,
     void Function(String line)? onLine,
+    bool preferBuffered = true,
   }) {
     if (_loggingInstalled) return 1;
 
     final lib = ffi ?? SynheartCoreFFI.load();
     if (lib == null) return -2;
-    final chosen = envFilter ?? defaultRuntimeLogEnvFilter;
-    Pointer<Utf8> filterArg;
-    if (chosen.isEmpty) {
-      filterArg = nullptr;
-    } else {
-      filterArg = chosen.toNativeUtf8();
+
+    if (preferBuffered) {
+      final rc = _initRuntimeLoggingBuffered(lib, envFilter, onLine);
+      // null => buffered symbols unavailable on this runtime; fall through.
+      if (rc != null) return rc;
+      if (kDebugMode) {
+        debugPrint(
+          '[synheart] buffered logging unavailable on this runtime; '
+          'falling back to callback mode (hot-restart crash exposure remains)',
+        );
+      }
     }
+    return _initRuntimeLoggingCallback(lib, envFilter, onLine);
+  }
+
+  /// Buffered-mode init. Returns the runtime status code, or `null` when the
+  /// runtime doesn't export the buffered symbols (caller should fall back).
+  static int? _initRuntimeLoggingBuffered(
+    SynheartCoreFFI lib,
+    String? envFilter,
+    void Function(String line)? onLine,
+  ) {
+    // Accessing these `late final` lookups throws if the symbol is absent
+    // (older vendored .so). Probe them before committing to buffered mode.
+    final int Function(Pointer<Utf8>) initBuffered;
+    final Pointer<Utf8> Function() drain;
+    try {
+      initBuffered = lib.initLoggingBuffered;
+      drain = lib.drainLogs;
+    } catch (_) {
+      return null; // symbols missing → signal fallback
+    }
+
+    final chosen = envFilter ?? defaultRuntimeLogEnvFilter;
+    final filterArg = chosen.isEmpty ? nullptr : chosen.toNativeUtf8();
+    try {
+      final rc = initBuffered(filterArg);
+      if (rc == 0 || rc == 1) {
+        synheartRuntimeLogForwarder = onLine;
+        _logFfi = lib;
+        _bufferedMode = true;
+        _loggingInstalled = true;
+        _startDrainPump(lib, drain);
+      }
+      return rc;
+    } catch (_) {
+      return -3;
+    } finally {
+      if (filterArg != nullptr) {
+        malloc.free(filterArg);
+      }
+    }
+  }
+
+  /// Legacy push-callback init (pre-buffered runtimes, or `preferBuffered:
+  /// false`). Registers a [NativeCallable.listener] — the host MUST call
+  /// [shutdownRuntimeLogging] before the isolate is destroyed.
+  static int _initRuntimeLoggingCallback(
+    SynheartCoreFFI lib,
+    String? envFilter,
+    void Function(String line)? onLine,
+  ) {
+    final chosen = envFilter ?? defaultRuntimeLogEnvFilter;
+    final filterArg = chosen.isEmpty ? nullptr : chosen.toNativeUtf8();
     try {
       synheartRuntimeLogForwarder = onLine;
       _synheartRuntimeLogFree = lib.coreFreeString;
@@ -199,13 +283,49 @@ class CoreRuntimeBridge {
     }
   }
 
-  /// Tear down the host log callback registered by [initRuntimeLogging].
+  /// Start (or restart) the buffered-mode drain pump: poll the runtime ring,
+  /// split the `\n`-joined blob, and forward each line.
+  static void _startDrainPump(
+    SynheartCoreFFI lib,
+    Pointer<Utf8> Function() drain,
+  ) {
+    _drainTimer?.cancel();
+    _drainTimer = Timer.periodic(bufferedDrainInterval, (_) {
+      _drainOnce(lib, drain);
+    });
+  }
+
+  /// Drain and forward all lines currently pending in the runtime ring.
+  static void _drainOnce(SynheartCoreFFI lib, Pointer<Utf8> Function() drain) {
+    Pointer<Utf8> ptr;
+    try {
+      ptr = drain();
+    } catch (_) {
+      return;
+    }
+    if (ptr == nullptr) return; // empty buffer — the normal idle case
+    final blob = _readFfiStringAndFree(ptr, lib.coreFreeString);
+    if (blob == null || blob.isEmpty) return;
+    final custom = synheartRuntimeLogForwarder;
+    for (final line in blob.split('\n')) {
+      if (custom != null) {
+        custom(line);
+      } else if (kDebugMode) {
+        debugPrint('[synheart] $line');
+      }
+    }
+  }
+
+  /// Tear down runtime log forwarding installed by [initRuntimeLogging].
   ///
-  /// Hosts MUST call this before the Flutter engine / Dart isolate that
-  /// registered the [NativeCallable] is about to be destroyed (app
-  /// termination, hot restart, isolate disposal). After this returns the
-  /// The runtime guarantees no further invocations of the registered
-  /// callback.
+  /// **Buffered mode (default):** cancels the drain pump after one final
+  /// flush. Not required for correctness on hot restart — buffered mode is
+  /// crash-safe because no `NativeCallable` is registered — but calling it on
+  /// [AppLifecycleState.detached] stops the timer promptly on a clean exit.
+  ///
+  /// **Callback (legacy) mode:** REQUIRED before the Dart isolate that
+  /// registered the [NativeCallable] is destroyed, so the runtime joins its
+  /// worker before the trampoline is freed.
   ///
   /// Wire-up for Flutter apps:
   /// ```dart
@@ -220,10 +340,30 @@ class CoreRuntimeBridge {
   /// ```
   ///
   /// Idempotent: safe to call when logging was never initialised, or
-  /// twice in a row. Returns the runtime's shutdown status code:
-  /// `0` = OK, `1` = was-not-initialised, `<0` = worker join failed.
+  /// twice in a row. Returns `0` = OK, `1` = was-not-initialised,
+  /// `<0` = failure.
   static int shutdownRuntimeLogging() {
     final ffi = _logFfi;
+
+    // Buffered mode: flush once more, then stop polling. There is no worker
+    // thread or trampoline to join — cancelling the timer fully detaches us.
+    if (_bufferedMode) {
+      if (ffi != null) {
+        try {
+          _drainOnce(ffi, ffi.drainLogs);
+        } catch (_) {
+          /* best-effort final flush */
+        }
+      }
+      _drainTimer?.cancel();
+      _drainTimer = null;
+      _bufferedMode = false;
+      synheartRuntimeLogForwarder = null;
+      _loggingInstalled = false;
+      _logFfi = null;
+      return 0;
+    }
+
     var rc = 1;
     if (ffi != null) {
       try {
@@ -251,6 +391,20 @@ class CoreRuntimeBridge {
     _loggingInstalled = false;
     _logFfi = null;
     return rc;
+  }
+
+  /// Lines the runtime dropped due to ring overflow (buffered mode) or
+  /// channel backpressure — a growing value means the drain pump or callback
+  /// is falling behind. Returns `0` when logging isn't initialised or the
+  /// runtime is too old to report it.
+  static int runtimeDroppedLogLines() {
+    final ffi = _logFfi;
+    if (ffi == null) return 0;
+    try {
+      return ffi.droppedLogLines();
+    } catch (_) {
+      return 0;
+    }
   }
 
   /// Create a bridge from a config map. Returns null if the native
@@ -560,6 +714,36 @@ class CoreRuntimeBridge {
     try {
       _ffi.pushRr(_handle, tsMs, rrMs, cstr);
     } finally {
+      malloc.free(cstr);
+    }
+  }
+
+  /// Push a batch of RR intervals that arrived together in one sensor
+  /// notification (e.g. a BLE Heart Rate Measurement packet carrying several
+  /// RR values under one arrival timestamp).
+  ///
+  /// [anchorTsMs] is that shared arrival timestamp; the runtime reconstructs a
+  /// distinct per-beat timestamp for each interval (newest beat at the anchor,
+  /// earlier beats back-dated) so no beat is lost. [order] states how [rrMs] is
+  /// ordered: `0` = oldest-first (BLE HRM default), `1` = newest-first. Empty
+  /// [rrMs] is a no-op. The array and provider C-string are allocated and freed
+  /// inside this call; the runtime copies what it needs.
+  void pushRrBatch(
+    int anchorTsMs,
+    List<double> rrMs, {
+    int order = 0,
+    String provider = 'default_sensor',
+  }) {
+    if (rrMs.isEmpty) return;
+    final rrPtr = malloc<Double>(rrMs.length);
+    final cstr = provider.toNativeUtf8();
+    try {
+      for (var i = 0; i < rrMs.length; i++) {
+        rrPtr[i] = rrMs[i];
+      }
+      _ffi.pushRrBatch(_handle, anchorTsMs, rrPtr, rrMs.length, order, cstr);
+    } finally {
+      malloc.free(rrPtr);
       malloc.free(cstr);
     }
   }

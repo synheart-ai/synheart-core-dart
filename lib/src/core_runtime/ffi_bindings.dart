@@ -37,6 +37,27 @@ typedef _PushRrC =
     Void Function(Pointer<Void> h, Int64 ts, Double rr, Pointer<Utf8> provider);
 typedef _PushRrDart =
     void Function(Pointer<Void> h, int ts, double rr, Pointer<Utf8> provider);
+// Batched RR push: `rr` points to `len` doubles (RR intervals in ms) that
+// arrived together in one sensor notification; `order` is 0=oldest-first
+// (BLE HRM), 1=newest-first. Maps `size_t` → `Size`.
+typedef _PushRrBatchC =
+    Void Function(
+      Pointer<Void> h,
+      Int64 anchorTs,
+      Pointer<Double> rr,
+      Size len,
+      Int32 order,
+      Pointer<Utf8> provider,
+    );
+typedef _PushRrBatchDart =
+    void Function(
+      Pointer<Void> h,
+      int anchorTs,
+      Pointer<Double> rr,
+      int len,
+      int order,
+      Pointer<Utf8> provider,
+    );
 typedef _PushHrC = Void Function(Pointer<Void> h, Int64 ts, Double bpm);
 typedef _PushHrDart = void Function(Pointer<Void> h, int ts, double bpm);
 typedef _EnsurePipelineC = Void Function(Pointer<Void> h);
@@ -719,6 +740,28 @@ class SynheartCoreFFI {
         'synheart_core_shutdown_logging',
       );
 
+  // Buffered (pull-based) logging FFI (runtime ≥ 0.19). Crash-safe for
+  // Flutter hot restart: no NativeCallable trampoline crosses the FFI
+  // boundary, so a freed Dart isolate can't leave the runtime holding a
+  // dangling function pointer. These symbols are OPTIONAL — an older
+  // vendored runtime won't export them, so callers must tolerate the
+  // lookup throwing (see CoreRuntimeBridge.initRuntimeLogging fallback).
+  late final initLoggingBuffered = _lib
+      .lookupFunction<
+        Int32 Function(Pointer<Utf8>),
+        int Function(Pointer<Utf8>)
+      >('synheart_core_init_logging_buffered');
+
+  late final drainLogs = _lib
+      .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+        'synheart_core_drain_logs',
+      );
+
+  late final droppedLogLines = _lib
+      .lookupFunction<Uint64 Function(), int Function()>(
+        'synheart_core_dropped_log_lines',
+      );
+
   late final buildInfo = _lib
       .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
         'synheart_core_build_info',
@@ -765,6 +808,9 @@ class SynheartCoreFFI {
 
   late final pushRr = _lib.lookupFunction<_PushRrC, _PushRrDart>(
     'synheart_core_push_rr',
+  );
+  late final pushRrBatch = _lib.lookupFunction<_PushRrBatchC, _PushRrBatchDart>(
+    'synheart_core_push_rr_batch',
   );
   late final pushHr = _lib.lookupFunction<_PushHrC, _PushHrDart>(
     'synheart_core_push_hr',
