@@ -231,7 +231,7 @@ class SynheartProvider extends ChangeNotifier {
         'isAvailable': false,
         'version': null,
         'frameCount': 0,
-        'lastQuality': null,
+        'missingSymbols': const <String>[],
       };
     }
     return Synheart.runtimeDiagnostics();

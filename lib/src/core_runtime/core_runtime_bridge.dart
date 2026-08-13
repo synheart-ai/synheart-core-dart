@@ -2307,9 +2307,6 @@ class CoreRuntimeBridge {
   /// Number of HSI frames produced in the current session.
   int frameCount() => _ffi.frameCount(_handle);
 
-  /// Quality value of the last HSI frame, or 0.0 if none.
-  double lastQuality() => _ffi.lastQuality?.call(_handle) ?? 0.0;
-
   // ── Internal helpers ─────────────────────────────────────────────────
 
   /// Read a C string pointer, convert to Dart String, and free it.

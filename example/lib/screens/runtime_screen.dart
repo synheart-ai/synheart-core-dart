@@ -73,7 +73,9 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
           final isAvailable = diag['isAvailable'] as bool;
           final version = diag['version'] as String?;
           final frameCount = diag['frameCount'] as int;
-          final lastQuality = diag['lastQuality'] as String?;
+          final missingSymbols =
+              (diag['missingSymbols'] as List?)?.cast<String>() ??
+              const <String>[];
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
@@ -84,8 +86,8 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
                 _buildStatusCard(context, isAvailable, version, frameCount),
                 const SizedBox(height: 16),
 
-                // Last Quality
-                _buildQualityCard(context, lastQuality),
+                // Native symbols the loaded runtime does not export
+                _buildMissingSymbolsCard(context, missingSymbols),
                 const SizedBox(height: 16),
 
                 // Synthetic Signal Injection
@@ -143,43 +145,66 @@ class _RuntimeScreenState extends State<RuntimeScreen> {
     );
   }
 
-  Widget _buildQualityCard(BuildContext context, String? lastQuality) {
-    String formattedQuality = 'No quality data yet';
-    if (lastQuality != null) {
-      try {
-        final parsed = jsonDecode(lastQuality);
-        const encoder = JsonEncoder.withIndent('  ');
-        formattedQuality = encoder.convert(parsed);
-      } catch (_) {
-        formattedQuality = lastQuality;
-      }
-    }
-
+  /// Optional native symbols the loaded runtime failed to export.
+  ///
+  /// Empty is the healthy state. A non-empty list means the vendored runtime
+  /// predates this SDK release, so the features behind those symbols return
+  /// null/-1/empty instead of working — the list fills lazily as each feature
+  /// is first used.
+  Widget _buildMissingSymbolsCard(
+    BuildContext context,
+    List<String> missingSymbols,
+  ) {
+    final healthy = missingSymbols.isEmpty;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Last Quality',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Icon(
+                  healthy ? Icons.check_circle : Icons.warning_amber_rounded,
+                  color: healthy ? Colors.green : Colors.orange,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Native Symbols',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
+            if (healthy)
+              const Text(
+                'Every optional symbol probed so far resolved. This list '
+                'fills lazily, as each feature is first used.',
+                style: TextStyle(fontSize: 12),
+              )
+            else ...[
+              const Text(
+                'The loaded runtime does not export these symbols, so the '
+                'features behind them are disabled. Run '
+                '`synheart install runtime` to update it.',
+                style: TextStyle(fontSize: 12),
               ),
-              child: SelectableText(
-                formattedQuality,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SelectableText(
+                  missingSymbols.join('\n'),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

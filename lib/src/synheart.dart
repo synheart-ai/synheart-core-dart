@@ -41,6 +41,7 @@ import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
 import 'modules/cloud/device_auth_provider.dart';
 import 'core_runtime/core_runtime_bridge.dart';
+import 'core_runtime/ffi_bindings.dart' show SynheartCoreFFI;
 import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
 import 'sync/sync_readiness.dart';
 
@@ -1580,7 +1581,30 @@ class Synheart {
         }
       }
     } catch (e, stack) {
-      _initCompleter?.completeError(e, stack);
+      final completer = _initCompleter;
+      // Only treat this as a failed *initialization* when configuration had
+      // not already completed. Everything after `_isConfigured = true` above
+      // (pending-consent replay, cold-start device-auth heal) runs inside this
+      // same try — a throw there is a post-init hiccup, not a setup failure,
+      // and must not reset `_isConfigured` or re-complete a settled completer.
+      if (completer != null && !completer.isCompleted) {
+        // Clear the completer BEFORE completing it. Leaving it in place made
+        // failure permanent: the `_initCompleter != null` guard at the top of
+        // this method handed every subsequent `initialize()` the same
+        // already-errored future, so a transient cause (no network during
+        // capability load, a cold keychain, a slow Play Integrity bind) could
+        // never be retried — the only escape was a full `dispose()`. Cleared,
+        // the next call re-runs configuration from scratch.
+        _initCompleter = null;
+        _isConfigured = false;
+        completer.completeError(e, stack);
+        // The caller that started this attempt receives the error via the
+        // `rethrow` below, not through this future. When no *concurrent*
+        // caller is awaiting it, the completed-with-error future would
+        // otherwise surface as an unhandled async error and, in a host that
+        // treats those as fatal, take the app down on a recoverable failure.
+        completer.future.ignore();
+      }
       SynheartLogger.log(
         '[Synheart] Initialization failed: $e',
         error: e,
@@ -3172,9 +3196,8 @@ class Synheart {
   void _logRuntimeSummary() {
     if (_coreRuntime == null) return;
     final fc = _coreRuntime!.frameCount();
-    final q = _coreRuntime!.lastQuality();
     SynheartLogger.log(
-      '[Runtime] Session end: frameCount=$fc lastQuality=$q'
+      '[Runtime] Session end: frameCount=$fc'
       '${fc == 0 ? " (no HSI produced — no window completed)" : ""}',
     );
   }
@@ -4785,16 +4808,30 @@ class Synheart {
     await _consentModule!.denyConsent();
   }
 
-  /// Runtime diagnostics — returns availability, version, frame count, and last quality.
+  /// Runtime diagnostics — availability, native version, frame count, and any
+  /// optional native symbols the loaded runtime failed to export.
   ///
-  /// Useful for debugging and runtime verification screens.
-  /// Returns a map with keys: `isAvailable`, `version`, `frameCount`, `lastQuality`.
+  /// Useful for debugging and runtime verification screens. Keys:
+  ///
+  /// - `isAvailable` (`bool`) — the native bridge loaded.
+  /// - `version` (`String?`) — native runtime version.
+  /// - `frameCount` (`int`) — HSI frames produced in the current session.
+  /// - `missingSymbols` (`List<String>`) — optional symbols probed so far that
+  ///   the loaded library does not export. Non-empty means the vendored runtime
+  ///   predates this SDK release and the features behind those symbols are
+  ///   silently disabled; run `synheart install runtime` to update it. The list
+  ///   fills lazily, as each feature is first used.
+  ///
+  /// The `lastQuality` key was removed in 0.10.2 — it read a native symbol
+  /// (`synheart_core_last_quality`) that the runtime has never exported
+  /// outside the edge/watch variant, so it always reported `0.0`.
   static Map<String, dynamic> runtimeDiagnostics() {
     return {
       'isAvailable': _coreRuntime != null,
       'version': CoreRuntimeBridge.version(),
       'frameCount': _coreRuntime?.frameCount() ?? 0,
-      'lastQuality': _coreRuntime?.lastQuality() ?? 0.0,
+      'missingSymbols': SynheartCoreFFI.missingSymbols.toList(growable: false)
+        ..sort(),
     };
   }
 

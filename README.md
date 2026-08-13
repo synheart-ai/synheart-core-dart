@@ -902,11 +902,24 @@ Runtime health:
 
 ```dart
 final diagnostics = Synheart.runtimeDiagnostics();
-print(diagnostics['isAvailable']);
-print(diagnostics['version']);
-print(diagnostics['frameCount']);
-print(diagnostics['lastQuality']);
+print(diagnostics['isAvailable']);    // bool   — native bridge loaded
+print(diagnostics['version']);        // String? — native runtime version
+print(diagnostics['frameCount']);     // int    — HSI frames this session
+print(diagnostics['missingSymbols']); // List<String>
 ```
+
+`missingSymbols` lists optional native symbols the loaded runtime does not
+export. Empty is the healthy state. Anything in it means the vendored runtime
+predates this SDK release, so the features behind those symbols are disabled
+and return `null`, `-1`, or an empty list rather than throwing. Each miss is
+also logged once, naming the symbol. Update the runtime with:
+
+```bash
+synheart install runtime   # or: synheart sync
+```
+
+The list fills lazily — a symbol is probed the first time the feature that
+needs it is used — so check it after exercising the features you depend on.
 
 If `isAvailable` is false, confirm the runtime was installed for the active
 platform, run a clean build, and inspect native linker output:

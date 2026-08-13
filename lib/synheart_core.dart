@@ -40,13 +40,16 @@ export 'src/config/synheart_errors.dart';
 export 'src/sync/sync_readiness.dart';
 
 // Artifacts (Tier A)
-export 'src/artifacts/artifact_header.dart';
-export 'src/artifacts/hsi_window.dart';
+//
 // Note: the legacy 4-axis BaselineSnapshotArtifact (previously at
 // `src/artifacts/baseline_snapshot.dart`) was never deployed. The
 // replacement is the typed envelope below.
+//
+// `HsiWindowArtifact` and `TombstoneArtifact` were removed in 0.10.2 —
+// the native runtime owns Tier-A artifact production and nothing in the
+// SDK produced or consumed the Dart mirrors.
+export 'src/artifacts/artifact_header.dart';
 export 'src/artifacts/session_summary.dart';
-export 'src/artifacts/tombstone.dart';
 
 // Baseline-snapshot typed envelope. Typed builders + per-kind
 // extractors, no `Map<String, dynamic>` round-tripping. The
@@ -196,7 +199,6 @@ export 'src/modules/session/watch_session_module.dart';
 
 // Device Auth
 export 'src/modules/cloud/device_auth_provider.dart';
-export 'src/modules/capabilities/capability_token_fetcher.dart';
 
 // Device Auth (re-exported from synheart_auth, hiding name collisions)
 export 'package:synheart_auth/synheart_auth.dart' hide NetworkError;
