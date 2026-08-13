@@ -1690,8 +1690,36 @@ class CoreRuntimeBridge {
     return ms == 0 ? null : ms;
   }
 
-  Map<String, dynamic>? flushUploads() {
-    return _callJson(() => _ffi.flushUploads(_handle));
+  /// Flush the outbound ingest queue to the cloud.
+  ///
+  /// Runs on a background isolate: the native `flush_uploads` performs its
+  /// HTTP round-trip under `block_on`, so calling it on the UI isolate froze
+  /// the main thread for the duration of the request — the same failure the
+  /// doc on [fetchCloudHsiWindows] records ("froze the main thread and ANR'd
+  /// while a request was in flight"). Every other network-touching FFI call in
+  /// this bridge already went through [_runFfi]; this one was missed, and the
+  /// jank scaled with the request timeout on a slow or dead network.
+  ///
+  /// Returns null when the bridge is disposed, the symbol is unavailable, or
+  /// the native call failed.
+  Future<Map<String, dynamic>?> flushUploads() async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return _runFfi(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      try {
+        final ptr = ffi.flushUploads(handle);
+        if (ptr == nullptr) return null;
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        final decoded = jsonDecode(raw);
+        return decoded is Map<String, dynamic> ? decoded : null;
+      } catch (_) {
+        return null;
+      }
+    });
   }
 
   Map<String, dynamic>? uploadMetadata() {

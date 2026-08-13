@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io' show Directory;
 import 'dart:typed_data';
@@ -200,9 +201,35 @@ class Synheart {
 
   // (HSI subscription fields removed — HSI is now delivered via setHsiCallback)
 
-  // Session data buffers — accumulate during session, persist after stop
-  List<String> _sessionHsiBuffer = [];
-  List<WearSample> _sessionWearBuffer = [];
+  // Session data buffers — accumulate during session, persist after stop.
+  //
+  // Bounded: these used to be unbounded growing lists cleared only on the NEXT
+  // startSession(). With the default 24h session duration that meant ~8,600
+  // retained HSI JSON strings (one per ~10s window) and ~86,000 wear samples,
+  // held past session stop. They are ring buffers now — oldest entries are
+  // evicted once the cap is reached.
+  final ListQueue<String> _sessionHsiBuffer = ListQueue<String>();
+  final ListQueue<WearSample> _sessionWearBuffer = ListQueue<WearSample>();
+
+  /// Maximum HSI windows retained by [getSessionHsiWindows].
+  ///
+  /// At the runtime's ~10s window cadence this is a little over 5 hours of
+  /// history, well beyond any documented use of the buffer. Raise it only if
+  /// you genuinely need deeper in-memory history — the durable record lives in
+  /// the runtime's storage and is read via [getHSIWindows].
+  static int maxSessionHsiWindows = 2000;
+
+  /// Maximum raw wear samples retained by [getSessionWearSamples].
+  static int maxSessionWearSamples = 5000;
+
+  static void _pushBounded<T>(ListQueue<T> buffer, T value, int cap) {
+    if (cap <= 0) return;
+    buffer.addLast(value);
+    while (buffer.length > cap) {
+      buffer.removeFirst();
+    }
+  }
+
   StreamSubscription? _sessionHsiSubscription;
   StreamSubscription? _sessionWearSubscription;
 
@@ -248,23 +275,45 @@ class Synheart {
 
   // --- Typed state subscription ---
 
+  /// Most recently parsed [HSIState], keyed by the raw JSON it came from.
+  ///
+  /// [onStateUpdate] and [currentHSIState] both used to call
+  /// [HSIState.fromJson] on every delivery and every read. Because `.map` on a
+  /// broadcast stream runs once per subscriber, N listeners meant N full
+  /// `jsonDecode` passes over the same window (each carrying a 64-dimension
+  /// embedding); and because [currentHSIState] is a getter, a widget reading
+  /// it in `build()` re-parsed on every frame. Parsing once per distinct
+  /// window and handing out the immutable result removes both costs.
+  static String? _cachedHsiRaw;
+  static HSIState? _cachedHsiState;
+
+  static HSIState _parseHsiCached(String json) {
+    final cached = _cachedHsiState;
+    if (cached != null && identical(_cachedHsiRaw, json)) return cached;
+    final parsed = HSIState.fromJson(
+      json,
+      subjectId: shared._config?.subjectId ?? shared._userId ?? '',
+    );
+    _cachedHsiRaw = json;
+    _cachedHsiState = parsed;
+    return parsed;
+  }
+
   /// Stream of typed [HSIState] updates.
   ///
   /// Wraps raw JSON from [onHSIUpdate] into typed objects with axis accessors.
-  static Stream<HSIState> get onStateUpdate => shared._hsvStream.stream.map(
-    (json) => HSIState.fromJson(
-      json,
-      subjectId: shared._config?.subjectId ?? shared._userId ?? '',
-    ),
-  );
+  /// [HSIState] is immutable, so all subscribers safely share one parse of
+  /// each window.
+  static Stream<HSIState> get onStateUpdate =>
+      shared._hsvStream.stream.map(_parseHsiCached);
 
   /// Get the current HSI state as a typed object.
+  ///
+  /// Cheap to call repeatedly — repeated reads of the same window reuse the
+  /// parse performed for the first one.
   static HSIState? get currentHSIState {
     if (!shared._hsvStream.hasValue) return null;
-    return HSIState.fromJson(
-      shared._hsvStream.value,
-      subjectId: shared._config?.subjectId ?? shared._userId ?? '',
-    );
+    return _parseHsiCached(shared._hsvStream.value);
   }
 
   // --- Metrics API ---
@@ -1112,8 +1161,17 @@ class Synheart {
   static void _syncSubjectFromNative() {
     final native = _coreRuntime?.runtimeSubjectId();
     if (native != null && native.isNotEmpty) {
+      if (native != _nativeSubjectIdOverride) _invalidateHsiCache();
       _nativeSubjectIdOverride = native;
     }
+  }
+
+  /// Drop the memoized [HSIState]. A cached parse carries the subjectId it was
+  /// built with, so anything that can change the subject — or tear the
+  /// instance down — must clear it.
+  static void _invalidateHsiCache() {
+    _cachedHsiRaw = null;
+    _cachedHsiState = null;
   }
 
   /// Rebind the runtime subject id when the signed-in identity changes, then
@@ -1444,31 +1502,9 @@ class Synheart {
 
       // Wire HSI callback from core runtime → _hsvStream
       if (_coreRuntime != null) {
-        _coreRuntime!.setHsiCallback((hsiJson) {
-          // Consent gating is already enforced by the native runtime before
-          // HSI reaches state_tx. The Dart `_consentModule.current()`
-          // snapshot has been observed to return stale defaults (biosignals
-          // reads `false` even after `consentSubmitFormTyped` wrote the
-          // consent store on the native side) — causing this filter to drop
-          // 100% of HSI windows during an earlier validation run.
-          // Cross-check with the effective-state snapshot so we don't block
-          // on a Dart-side cache that's out of sync with the runtime.
-          final local = _consentModule?.current();
-          final effective = _coreRuntime?.consentEffectiveState();
-          final biosignalsEffective =
-              effective?['biosignals'] == true ||
-              effective?['research'] == true;
-          final biosignalsLocal = local?.biosignals == true;
-          if (!biosignalsEffective && !biosignalsLocal) {
-            return;
-          }
-          _hsvStream.add(hsiJson);
-          // Surface motion-state on BehaviorModule
-          // for consumers that want a posture/motion read alongside HSV
-          // delivery. Cheap parse — bails out fast when no motion_state
-          // axis is present in the snapshot.
-          _behaviorModule?.ingestHsi(hsiJson);
-        });
+        // Consent gate + fan-out live in [_deliverHsiWindow], shared with the
+        // per-event push path so both producers behave identically.
+        _coreRuntime!.setHsiCallback(_deliverHsiWindow);
       }
 
       _activationManager = ActivationManager();
@@ -2945,10 +2981,46 @@ class Synheart {
   static int epochDayFor(DateTime t) =>
       t.toUtc().millisecondsSinceEpoch ~/ 86_400_000;
 
+  /// Consent-gate a completed HSI window and fan it out to [_hsvStream] and
+  /// the behavior module.
+  ///
+  /// Shared by both HSI producers: the native `setHsiCallback` (Android) and
+  /// [_ingestSingleEvent] (the per-event push path, and the only producer that
+  /// fires on iOS, where the native callback doesn't). Before this was
+  /// factored out, only the native callback fed the stream — so on iOS the
+  /// documented `onHSIUpdate` / `onStateUpdate` surface stayed silent for
+  /// hosts driving the SDK through `pushWearHr` / `pushVendorHrv`, and the
+  /// session buffer behind `getSessionHsiWindows()` stayed empty with it.
+  ///
+  /// Consent gating is already enforced by the native runtime before HSI
+  /// reaches `state_tx`. The Dart `_consentModule.current()` snapshot has been
+  /// observed returning stale defaults (biosignals reading `false` even after
+  /// `consentSubmitFormTyped` wrote the consent store natively) — which once
+  /// dropped 100% of HSI windows during a validation run. Cross-check the
+  /// effective-state snapshot so a stale Dart-side cache can't block delivery.
+  void _deliverHsiWindow(String hsiJson) {
+    final local = _consentModule?.current();
+    final effective = _coreRuntime?.consentEffectiveState();
+    final biosignalsEffective =
+        effective?['biosignals'] == true || effective?['research'] == true;
+    final biosignalsLocal = local?.biosignals == true;
+    if (!biosignalsEffective && !biosignalsLocal) return;
+
+    if (!_hsvStream.isClosed) _hsvStream.add(hsiJson);
+    // Surface motion-state on BehaviorModule for consumers that want a
+    // posture/motion read alongside HSI delivery. Cheap parse — bails out fast
+    // when no motion_state axis is present in the snapshot.
+    _behaviorModule?.ingestHsi(hsiJson);
+  }
+
   /// Serialize a single sensor event and hand it to `ingestBatch`. Used
   /// by the provider-tagged `push*` APIs so each sample keeps its source
   /// attribution (which the raw `pushHr`/`pushRr` FFI signatures can't
-  /// carry). Invokes [onHsi] if the batch returned a completed window.
+  /// carry).
+  ///
+  /// When the batch completes a window, the result is delivered through
+  /// [_deliverHsiWindow] (so `onHSIUpdate` / `onStateUpdate` / the session
+  /// buffer all see it) and then to the legacy [onHsi] callback.
   static void _ingestSingleEvent(Map<String, dynamic> event) {
     final runtime = _coreRuntime;
     if (runtime == null) return;
@@ -2956,6 +3028,7 @@ class Synheart {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final hsi = runtime.ingestBatch(batchJson, nowMs);
     if (hsi != null) {
+      shared._deliverHsiWindow(hsi);
       onHsi?.call(hsi);
     }
   }
@@ -3159,16 +3232,17 @@ class Synheart {
   void _wireSessionBuffers() {
     _sessionHsiSubscription?.cancel();
     _sessionWearSubscription?.cancel();
-    _sessionHsiBuffer = [];
-    _sessionWearBuffer = [];
+    _sessionHsiBuffer.clear();
+    _sessionWearBuffer.clear();
     // HSI session buffer is filled via the setHsiCallback wired in configure().
     // The _hsvStream already receives consent-gated HSI; listen to it for session buffering.
     _sessionHsiSubscription = _hsvStream.stream.listen((hsiJson) {
-      _sessionHsiBuffer.add(hsiJson);
+      _pushBounded(_sessionHsiBuffer, hsiJson, maxSessionHsiWindows);
     });
     if (_wearModule != null) {
       _sessionWearSubscription = _wearModule!.rawSampleStream.listen(
-        (sample) => _sessionWearBuffer.add(sample),
+        (sample) =>
+            _pushBounded(_sessionWearBuffer, sample, maxSessionWearSamples),
       );
     }
   }
@@ -5189,8 +5263,8 @@ class Synheart {
       _sessionHsiSubscription = null;
       await _sessionWearSubscription?.cancel();
       _sessionWearSubscription = null;
-      _sessionHsiBuffer = [];
-      _sessionWearBuffer = [];
+      _sessionHsiBuffer.clear();
+      _sessionWearBuffer.clear();
 
       _consentModule = null;
       _capabilityModule = null;
@@ -5208,6 +5282,7 @@ class Synheart {
       _isConfigured = false;
       _isRunning = false;
       _initCompleter = null;
+      _invalidateHsiCache();
       _deviceAuthViaCoreRuntime = false;
       _sdkCryptoCallbacksAttached = false;
 
@@ -5435,7 +5510,7 @@ class SynheartIngestion {
     }
 
     Synheart._lastUploadAttemptAt = DateTime.now().toUtc();
-    final result = bridge.flushUploads();
+    final result = await bridge.flushUploads();
     if (result == null) {
       Synheart._lastUploadError = 'flush_uploads returned null';
       return const QueueFlushResult(
