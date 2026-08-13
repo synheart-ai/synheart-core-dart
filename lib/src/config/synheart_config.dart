@@ -182,7 +182,17 @@ class SynheartConfig {
     this.cloudConfig,
     this.consentConfig,
     this.deviceAuthConfig,
+    // ignore: deprecated_member_use_from_same_package
+    @Deprecated(
+      'Not forwarded to the runtime; use deviceAuthConfig. '
+      'Removed in 0.11.0.',
+    )
     this.capabilityToken,
+    // ignore: deprecated_member_use_from_same_package
+    @Deprecated(
+      'A signing secret must never ship in an app bundle; use '
+      'deviceAuthConfig. Removed in 0.11.0.',
+    )
     this.capabilitySecret,
     this.allowUnsignedCapabilities = false,
     this.batchIngestOnStop = false,
@@ -346,6 +356,11 @@ class CloudConfig {
     this.authProvider,
     required this.subjectId,
     required this.instanceId,
+    // ignore: deprecated_member_use_from_same_package
+    @Deprecated(
+      'An API key must never ship in an app bundle; requests are '
+      'signed with the device identity. Removed in 0.11.0.',
+    )
     this.apiKey,
     this.orgId,
     this.baseUrl = ApiEndpoints.defaultCloudBaseUrl,
@@ -390,6 +405,11 @@ class ConsentConfig {
   ConsentConfig({
     String? consentServiceUrl,
     this.appId,
+    // ignore: deprecated_member_use_from_same_package
+    @Deprecated(
+      'An API key must never ship in an app bundle; consent calls '
+      'are signed with the device identity. Removed in 0.11.0.',
+    )
     this.appApiKey,
     this.deviceId,
     String? platform,
