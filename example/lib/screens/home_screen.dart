@@ -1339,9 +1339,12 @@ class _InitializeDialogState extends State<_InitializeDialog> {
     setState(() => _isInitializing = true);
 
     try {
-      final userId = _userIdController.text.trim().isEmpty
-          ? 'user_${DateTime.now().millisecondsSinceEpoch}'
-          : _userIdController.text.trim();
+      // Resolve a subject id that PERSISTS across restarts. Minting
+      // `user_<timestamp>` here (the previous behaviour) gave the runtime a
+      // new person on every launch, so baselines never matured.
+      final userId = await SynheartProvider.resolveDemoSubjectId(
+        _userIdController.text,
+      );
 
       await widget.provider.initialize(userId: userId);
 

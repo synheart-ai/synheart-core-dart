@@ -205,6 +205,11 @@ class SynheartConfig {
   }
 
   /// Validate config and throw [SynheartError] on violations.
+  ///
+  /// Called by [Synheart.initialize] before any native work happens, so a
+  /// misconfiguration fails fast with an actionable message rather than
+  /// surfacing later as an unexplained empty `org_id` on ingest rows or a
+  /// device registration bound to the wrong subject.
   void validate() {
     if (mode == SynheartMode.research && !privacy.allowResearch) {
       throw SynheartError.researchNotAllowed;
@@ -212,19 +217,36 @@ class SynheartConfig {
     if (appId.isEmpty) {
       throw const SynheartError(
         'ERR_NOT_CONFIGURED',
-        'appId must not be empty',
+        'SynheartConfig.appId is empty. Set it to your application '
+            'identifier — the reverse-DNS bundle/package id is a good default '
+            '(e.g. appId: "com.example.my_app"), or the app id issued at '
+            'platform.synheart.ai if you have one. It identifies your app on '
+            'every session record and ingest row.\n'
+            '  await Synheart.initialize(\n'
+            '    config: SynheartConfig(appId: ..., subjectId: ...),\n'
+            '  );',
       );
     }
     if (subjectId.isEmpty) {
       throw const SynheartError(
         'ERR_NOT_CONFIGURED',
-        'subjectId must not be empty',
+        'SynheartConfig.subjectId is empty. Set it to a stable identifier for '
+            'the signed-in or pseudonymous user — it must survive app '
+            'restarts, or the runtime treats every launch as a new person and '
+            'baselines never mature. Passing `userId:` to initialize() does '
+            'NOT populate it; set it on the config.\n'
+            '  await Synheart.initialize(\n'
+            '    config: SynheartConfig(appId: ..., subjectId: ...),\n'
+            '  );',
       );
     }
     if (subjectId.contains('|')) {
-      throw const SynheartError(
+      throw SynheartError(
         'ERR_INVALID_MODE',
-        'subjectId must not contain pipe character',
+        'SynheartConfig.subjectId must not contain the "|" character '
+            '(got: "$subjectId"). The pipe is the field separator in the '
+            'runtime\'s subject-scoped storage keys, so it would corrupt the '
+            'key namespace. Strip or replace it before passing the value in.',
       );
     }
   }

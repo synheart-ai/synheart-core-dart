@@ -38,6 +38,7 @@ import 'config/synheart_mode.dart';
 import 'models/session_handle.dart';
 import 'models/hsi_state.dart';
 import 'models/metric_event.dart';
+import 'config/synheart_errors.dart';
 import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
 import 'modules/cloud/device_auth_provider.dart';
@@ -1029,7 +1030,21 @@ class Synheart {
     void Function(String line)? runtimeLogForwarder,
   }) async {
     if (config != null) {
-      config.validate();
+      try {
+        config.validate();
+      } on SynheartError catch (e) {
+        // Log before rethrowing. Hosts commonly wrap initialize() in a
+        // try/catch that renders a short toast ("Init failed"), which drops
+        // the actionable part of the message on the floor — leaving nothing in
+        // logcat to explain what to set. Emit it once here so the fix is
+        // visible in the log stream regardless of what the host does with the
+        // exception.
+        SynheartLogger.log(
+          '[Synheart] Configuration rejected (${e.code}):\n${e.message}',
+          error: e,
+        );
+        rethrow;
+      }
     }
     return shared._configure(
       appKey: config?.appId ?? 'default',

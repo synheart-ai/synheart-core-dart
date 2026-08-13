@@ -38,6 +38,30 @@ class SynheartProvider extends ChangeNotifier {
   /// Persisted; applies to next session start.
   bool _batchIngestOnStop = false;
   static const _keyBatchIngestOnStop = 'synheart.batch_ingest_on_stop';
+  static const _keySubjectId = 'synheart.subject_id';
+
+  /// A demo subject id that survives app restarts.
+  ///
+  /// `SynheartConfig.subjectId` scopes the runtime's storage, baselines, and
+  /// device identity, so it MUST be stable. The demo previously minted
+  /// `user_<millisecondsSinceEpoch>` whenever the field was left blank, which
+  /// handed the runtime a brand-new person on every launch — baselines reset
+  /// to cold-start each time and never matured.
+  ///
+  /// Generate once, persist, reuse. A real app uses its own account id here.
+  static Future<String> resolveDemoSubjectId([String? explicit]) async {
+    final trimmed = explicit?.trim() ?? '';
+    final prefs = await SharedPreferences.getInstance();
+    if (trimmed.isNotEmpty) {
+      await prefs.setString(_keySubjectId, trimmed);
+      return trimmed;
+    }
+    final stored = prefs.getString(_keySubjectId);
+    if (stored != null && stored.isNotEmpty) return stored;
+    final generated = 'demo_${DateTime.now().millisecondsSinceEpoch}';
+    await prefs.setString(_keySubjectId, generated);
+    return generated;
+  }
 
   /// Persisted user id so we can auto-initialize on next app launch (initialize once).
   static const _keyUserId = 'synheart.user_id';
@@ -50,6 +74,17 @@ class SynheartProvider extends ChangeNotifier {
   String? _savedConsentAppId;
   String? _savedConsentAppApiKey;
   static const _defaultConsentServiceUrl = 'https://your-platform.example.com';
+
+  /// Application identifier reported on every session record and ingest row.
+  ///
+  /// `SynheartConfig.appId` is REQUIRED — `validate()` rejects an empty one.
+  /// The demo defaults to its own package id so the app runs out of the box;
+  /// override with `--dart-define=SYNHEART_APP_ID=...` when you have an app
+  /// registered at platform.synheart.ai.
+  static const _defaultAppId = String.fromEnvironment(
+    'SYNHEART_APP_ID',
+    defaultValue: 'ai.synheart.core.example',
+  );
   static const _defaultConsentAppId = const String.fromEnvironment(
     'SYNHEART_CONSENT_APP_ID',
     defaultValue: '',
@@ -304,6 +339,16 @@ class SynheartProvider extends ChangeNotifier {
       final finalConfig =
           config ??
           SynheartConfig(
+            // appId and subjectId are both REQUIRED — SynheartConfig.validate()
+            // throws ERR_NOT_CONFIGURED on an empty value, which is what this
+            // demo used to hit the moment you pressed "Initialize SDK".
+            //
+            // subjectId must be STABLE across app restarts: the runtime scopes
+            // storage, baselines, and device identity to it, so a value that
+            // changes per launch makes every session look like a new person
+            // and baselines never mature.
+            appId: _defaultAppId,
+            subjectId: userId,
             allowUnsignedCapabilities: true,
             wearConfig: WearConfig(),
             phoneConfig: PhoneConfig(),
