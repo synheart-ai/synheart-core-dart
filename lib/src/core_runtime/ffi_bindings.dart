@@ -1508,7 +1508,7 @@ class SynheartCoreFFI {
 
   // ── Multi-source priority resolver ────────────────────────────────
   // All four symbols are nullable because they ship in the native runtime
-  // 5.4.0+; older runtimes return null and the high-level Dart API
+  // in newer runtimes only; older ones resolve to null and the Dart API
   // falls back to a pure-Dart in-memory store.
 
   late final int Function(Pointer<Utf8>, int)? prioritySetProvider = _optional(

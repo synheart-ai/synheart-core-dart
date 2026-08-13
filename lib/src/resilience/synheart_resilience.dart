@@ -4,7 +4,7 @@
 //
 // Stateless: hand a window of HRV samples and the sleep intervals
 // they were collected over, get back a 0–100 score with provenance
-// fields. The native function ships in the native runtime 5.4.0+;
+// fields. The native function ships in newer runtime builds;
 // older runtimes return `null` from the FFI lookup and
 // `compute()` reports `ResilienceUnavailable`.
 
@@ -205,7 +205,7 @@ class ResilienceUnavailable extends ResilienceError {
   const ResilienceUnavailable()
     : super(
         'runtime resilience FFI not present (need '
-        'native runtime 5.4.0+)',
+        'update the native runtime with `synheart install runtime`)',
       );
 }
 

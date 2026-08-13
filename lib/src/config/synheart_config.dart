@@ -133,10 +133,21 @@ class SynheartConfig {
   /// fetching, and device-signed request authentication.
   final DeviceAuthConfig? deviceAuthConfig;
 
-  /// Server-signed capability token for feature gating
+  /// Server-signed capability token for feature gating.
+  @Deprecated(
+    'Bundle-shipped capability tokens were removed from the native runtime as '
+    'a security fix; capability gating is fail-closed and driven by a verified '
+    'consent JWT. This field is no longer forwarded to the runtime. Use '
+    'deviceAuthConfig instead. Will be removed in 0.11.0.',
+  )
   final CapabilityToken? capabilityToken;
 
-  /// HMAC secret for verifying the capability token signature
+  /// HMAC secret for verifying the capability token signature.
+  @Deprecated(
+    'A signing secret must never ship inside an app bundle — it is readable by '
+    'anyone who downloads the app. The native runtime no longer accepts one. '
+    'Use deviceAuthConfig instead. Will be removed in 0.11.0.',
+  )
   final String? capabilitySecret;
 
   /// When true, allows SDK to run with default capabilities and no signed token (debug only)
@@ -303,7 +314,14 @@ class CloudConfig {
   /// Instance ID (UUID for this SDK instance)
   final String instanceId;
 
-  /// API Key for X-API-Key header (nullable when authProvider is used)
+  /// API key for the `X-API-Key` header.
+  @Deprecated(
+    'An API key must never ship inside an app bundle — it is readable by '
+    'anyone who downloads the app. The native runtime removed bundle-secret '
+    'config (cloud.api_key) as a security fix and this value is not forwarded. '
+    'Requests are signed with the hardware-backed device identity instead; see '
+    'DeviceAuthConfig. Will be removed in 0.11.0.',
+  )
   final String? apiKey;
 
   /// Organization ID (optional) - for metadata.org_id
@@ -348,7 +366,13 @@ class ConsentConfig {
   /// App ID for consent service
   final String? appId;
 
-  /// App API key for consent service authentication
+  /// App API key for consent service authentication.
+  @Deprecated(
+    'An API key must never ship inside an app bundle. The native runtime '
+    'removed bundle-secret config (app_api_key) as a security fix and this '
+    'value is not forwarded; consent calls are signed with the device '
+    'identity. Will be removed in 0.11.0.',
+  )
   final String? appApiKey;
 
   /// Device ID (UUID for this device, auto-generated if not provided)

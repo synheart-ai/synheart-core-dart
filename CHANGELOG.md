@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-08-13
+
+Hardening release from a full-repo review. No new features.
+
+### Fixed
+- **Packaging: the published archive was 70 MB and contained the proprietary
+  native runtime.** `.pubignore` replaces `.gitignore` for publishing, so the
+  `.gitignore` rules covering `ios/SynheartCoreRuntime.xcframework` (a symlink
+  the podspec creates into the consumer app — pub follows it) and
+  `example/synheart/vendor/` did not apply. The archive carried both framework
+  slices plus their dSYM DWARF blobs. Archive is now 618 KB, and a CI check
+  fails the publish job if native artifacts or an oversized archive reappear.
+- **`flushUploads` blocked the UI isolate.** The native call performs its HTTP
+  round-trip under `block_on`; it now runs on a background isolate like every
+  other network-touching FFI call in the bridge.
+- **A failed `initialize()` could never be retried.** The init completer was
+  left in place after an error, so every subsequent call received the same
+  failed future — a transient cause was permanent short of `dispose()`.
+- **HSI never reached `onHSIUpdate` / `onStateUpdate` on iOS** for hosts
+  pushing through `pushWearHr` / `pushVendorHrv`. Those delivered only to the
+  static `onHsi` callback, while the stream was fed by a native callback that
+  does not fire on iOS. Both producers now share one gated delivery path, so
+  the documented streams and `getSessionHsiWindows()` work on both platforms.
+- **Session buffers grew without bound.** `getSessionHsiWindows()` and
+  `getSessionWearSamples()` retained every entry for the session's life (24h by
+  default) and cleared only on the next `startSession()`. Both are now capped
+  ring buffers — see `maxSessionHsiWindows` / `maxSessionWearSamples`.
+- `runtimeDiagnostics()['lastQuality']` always reported `0.0`; it read a native
+  symbol the runtime has never exported outside the edge variant. Removed.
+- The example app's Runtime Diagnostics screen cast that value to `String?` and
+  would have thrown once the SDK was initialised.
+
+### Added
+- `runtimeDiagnostics()['missingSymbols']` — optional native symbols the loaded
+  runtime does not export. Previously ~20 lookups failed silently, so a runtime
+  one release behind disabled recovery scores, readiness, breathing, backfill,
+  priority resolution, data deletion, research enrolment, sync-space management
+  and cloud HSI fetch with nothing in the logs. Each miss is now logged once.
+- `HSIState.parseError` / `hasParseError` — a parse failure previously returned
+  empty axes, indistinguishable from a window the engine had not populated.
+
+### Changed
+- **BREAKING (direct `CoreRuntimeBridge` users only):**
+  `CoreRuntimeBridge.flushUploads()` returns `Future<Map<String, dynamic>?>`.
+  Add `await`. `Synheart.ingestion` callers are unaffected.
+- `Synheart.deleteCloudData()` now throws `UnsupportedError`. It never deleted
+  anything — it logged twice and returned — so a host could have wired it to a
+  "delete my cloud data" control and shipped a promise the SDK did not keep.
+  Use `requestDataDeletion()` and `wipeLocalData()`.
+- `getSyncStatus()` reflects real engine/config state instead of a hardcoded
+  `false`.
+- Error messages and doc comments no longer cite "native runtime 5.4.0+"; that
+  version scheme does not match the runtime's actual `0.x` versioning. They now
+  name the remedy (`synheart install runtime`).
+
+### Deprecated
+The native runtime removed bundle-secret configuration as a security fix, and
+these were never forwarded to it. All are removed in 0.11.0.
+- `SynheartConfig.capabilityToken`, `SynheartConfig.capabilitySecret`
+- `CloudConfig.apiKey`, `ConsentConfig.appApiKey`
+- `Synheart.deleteCloudData()`, `Synheart.getSyncStatus()`
+- `Synheart.runtimeBaselineSummary` (duplicate of `runtimeBaselinesJson`)
+
+### Removed
+- `ios/Runner/` (host-app scaffolding in a plugin package) and
+  `ios/synheart_ffi_symbols.txt` (an ld64 keep-list referenced by nothing and
+  68 symbols stale — obsolete since the runtime became a dynamic framework).
+- `HsiWindowArtifact`, `TombstoneArtifact`, `CapabilityTokenFetcher` — no
+  producers, consumers, or implementations.
+- A no-op `loadCapabilityToken('{}', secret)` call that could never load a
+  capability.
+
 ## [0.10.1] - 2026-07-31
 
 ### Added

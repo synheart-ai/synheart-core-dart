@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:io' show Directory;
 import 'dart:typed_data';
@@ -9,6 +8,7 @@ import 'package:flutter/services.dart' show MethodChannel;
 import 'package:path_provider/path_provider.dart';
 import 'package:rxdart/rxdart.dart';
 import 'config/synheart_config.dart';
+import 'core/bounded_buffer.dart';
 import 'core/logger.dart';
 import 'modules/base/module_manager.dart';
 import 'modules/base/synheart_module.dart';
@@ -208,27 +208,22 @@ class Synheart {
   // retained HSI JSON strings (one per ~10s window) and ~86,000 wear samples,
   // held past session stop. They are ring buffers now — oldest entries are
   // evicted once the cap is reached.
-  final ListQueue<String> _sessionHsiBuffer = ListQueue<String>();
-  final ListQueue<WearSample> _sessionWearBuffer = ListQueue<WearSample>();
+  final BoundedBuffer<String> _sessionHsiBuffer = BoundedBuffer<String>(
+    maxSessionHsiWindows,
+  );
+  final BoundedBuffer<WearSample> _sessionWearBuffer =
+      BoundedBuffer<WearSample>(maxSessionWearSamples);
 
   /// Maximum HSI windows retained by [getSessionHsiWindows].
   ///
   /// At the runtime's ~10s window cadence this is a little over 5 hours of
-  /// history, well beyond any documented use of the buffer. Raise it only if
-  /// you genuinely need deeper in-memory history — the durable record lives in
-  /// the runtime's storage and is read via [getHSIWindows].
-  static int maxSessionHsiWindows = 2000;
+  /// history, well beyond any documented use of the buffer. The durable record
+  /// lives in the runtime's storage and is read via [getHSIWindows]; this
+  /// buffer only serves recent in-memory history.
+  static const int maxSessionHsiWindows = 2000;
 
   /// Maximum raw wear samples retained by [getSessionWearSamples].
-  static int maxSessionWearSamples = 5000;
-
-  static void _pushBounded<T>(ListQueue<T> buffer, T value, int cap) {
-    if (cap <= 0) return;
-    buffer.addLast(value);
-    while (buffer.length > cap) {
-      buffer.removeFirst();
-    }
-  }
+  static const int maxSessionWearSamples = 5000;
 
   StreamSubscription? _sessionHsiSubscription;
   StreamSubscription? _sessionWearSubscription;
@@ -330,12 +325,17 @@ class Synheart {
   }
 
   /// Record multiple metric events for the current session.
+  ///
+  /// NOTE: despite the plural name there is no batched native path — this
+  /// forwards one `record_metric` FFI call per event. It exists as a
+  /// convenience over looping [recordMetric] yourself, not as a throughput
+  /// optimisation. Prefer keeping [events] to sane sizes until the runtime
+  /// exposes a batch entry point.
   static Future<void> recordMetrics(List<MetricEvent> events) async {
-    if (_coreRuntime != null) {
-      for (final event in events) {
-        _coreRuntime!.recordMetric(event.toJson());
-      }
-      return;
+    final runtime = _coreRuntime;
+    if (runtime == null) return;
+    for (final event in events) {
+      runtime.recordMetric(event.toJson());
     }
   }
 
@@ -829,8 +829,25 @@ class Synheart {
   }
 
   /// Get current sync status.
+  ///
+  /// Reports whether the sync engine is enabled, read from the native
+  /// sync-status snapshot and falling back to the configured value. Until
+  /// 0.10.2 this returned a hardcoded `SyncStatus(enabled: false)` regardless
+  /// of configuration or runtime state.
+  ///
+  /// [syncStatusSnapshot] and [syncReadinessSnapshot] carry the full picture
+  /// (active space, device list, why sync is not ready); prefer them for
+  /// anything beyond a boolean.
+  @Deprecated(
+    'Returns only a single boolean. Use syncReadinessSnapshot() for the '
+    'primary readiness state, or syncStatusSnapshot() for engine detail. '
+    'Will be removed in 0.11.0.',
+  )
   static Future<SyncStatus> getSyncStatus() async {
-    return const SyncStatus(enabled: false);
+    final snapshot = _coreRuntime?.syncStatus();
+    final nativeEnabled = snapshot?['enabled'];
+    if (nativeEnabled is bool) return SyncStatus(enabled: nativeEnabled);
+    return SyncStatus(enabled: shared._config?.sync.enabled ?? false);
   }
 
   // Activation API
@@ -1742,12 +1759,12 @@ class Synheart {
   /// Returns a snapshot of all HSI JSON windows accumulated during the current
   /// (or most recent) session. The list is cleared when [startSession] is called.
   static List<String> getSessionHsiWindows() =>
-      List.unmodifiable(shared._sessionHsiBuffer);
+      shared._sessionHsiBuffer.snapshot();
 
   /// Returns a snapshot of all raw wear samples accumulated during the current
   /// (or most recent) session. The list is cleared when [startSession] is called.
   static List<WearSample> getSessionWearSamples() =>
-      List.unmodifiable(shared._sessionWearBuffer);
+      shared._sessionWearBuffer.snapshot();
 
   /// Start wear data collection
   ///
@@ -3052,16 +3069,18 @@ class Synheart {
 
   /// Baseline summary from the native synheart-engine.
   ///
-  /// Returns a JSON string like `{"total":14,"ready":0,"warming":5,"empty":9}`
-  /// or `null` if the native runtime is not linked.
-  static String? get runtimeBaselineSummary {
-    return _coreRuntime?.baselinesJson();
-  }
+  /// Identical to [runtimeBaselinesJson] — both call the same native
+  /// `baselines_json`. The doc comment here previously described a distinct
+  /// summary shape (`{"total":14,"ready":0,...}`) that no code ever produced.
+  @Deprecated(
+    'Duplicate of runtimeBaselinesJson — both return the same native payload. '
+    'Use runtimeBaselinesJson. Will be removed in 0.11.0.',
+  )
+  static String? get runtimeBaselineSummary => runtimeBaselinesJson;
 
-  /// All native runtime baselines as JSON, or `null`.
-  static String? get runtimeBaselinesJson {
-    return _coreRuntime?.baselinesJson();
-  }
+  /// All native runtime baselines as JSON, or `null` when the native runtime
+  /// is not linked.
+  static String? get runtimeBaselinesJson => _coreRuntime?.baselinesJson();
 
   /// Export the native runtime SRM snapshot as JSON for cross-session persistence.
   static String? exportRuntimeSRMSnapshot() {
@@ -3237,12 +3256,11 @@ class Synheart {
     // HSI session buffer is filled via the setHsiCallback wired in configure().
     // The _hsvStream already receives consent-gated HSI; listen to it for session buffering.
     _sessionHsiSubscription = _hsvStream.stream.listen((hsiJson) {
-      _pushBounded(_sessionHsiBuffer, hsiJson, maxSessionHsiWindows);
+      _sessionHsiBuffer.add(hsiJson);
     });
     if (_wearModule != null) {
       _sessionWearSubscription = _wearModule!.rawSampleStream.listen(
-        (sample) =>
-            _pushBounded(_sessionWearBuffer, sample, maxSessionWearSamples),
+        (sample) => _sessionWearBuffer.add(sample),
       );
     }
   }
@@ -4830,29 +4848,34 @@ class Synheart {
     SynheartLogger.log('[Synheart] Module data deleted: $moduleName');
   }
 
-  /// Delete cloud data
+  /// Delete cloud data.
   ///
-  /// Clears the upload queue and notifies cloud service to delete user data.
-  /// Note: This requires an API call to the cloud service.
+  /// **This never deleted anything.** The implementation logged
+  /// "Deleting cloud data.." followed by "Cloud data deletion requested" and
+  /// returned — no queue was cleared and no request was sent. Because it was
+  /// public, documented, and resolved successfully, a host could reasonably
+  /// have wired it to a "Delete my cloud data" control and shipped a privacy
+  /// promise the SDK did not keep.
   ///
-  /// Example:
-  /// ```dart
-  /// await Synheart.deleteCloudData();
-  /// ```
+  /// Use [requestDataDeletion] instead: it drives the real GDPR Article 17
+  /// chain through the runtime, returns a [DataDeletionRequest] with a
+  /// pollable `requestId`, and publishes progress on [onDataDeletionUpdate].
+  /// Pair it with [wipeLocalData] for the full "delete my account" flow.
+  ///
+  /// Throws [UnsupportedError] rather than silently succeeding, so any
+  /// existing caller fails loudly at the point of the false promise.
+  @Deprecated(
+    'Never deleted anything — it only logged. Use requestDataDeletion() for '
+    'cloud-side erasure and wipeLocalData() for on-device data. Will be '
+    'removed in 0.11.0.',
+  )
   static Future<void> deleteCloudData() async {
-    return shared._deleteCloudData();
-  }
-
-  Future<void> _deleteCloudData() async {
-    if (!_isConfigured) {
-      throw StateError(
-        'Synheart must be initialized before deleting cloud data',
-      );
-    }
-
-    SynheartLogger.log('[Synheart] Deleting cloud data..');
-
-    SynheartLogger.log('[Synheart] Cloud data deletion requested');
+    throw UnsupportedError(
+      'Synheart.deleteCloudData() was a no-op and has been disabled. Use '
+      'Synheart.requestDataDeletion() to request cloud-side erasure (poll it '
+      'with dataDeletionStatus() or subscribe to onDataDeletionUpdate), and '
+      'Synheart.wipeLocalData() to clear on-device data.',
+    );
   }
 
   /// Revoke consent (clears token and notifies cloud)
@@ -5144,16 +5167,18 @@ class Synheart {
     }
 
     try {
-      if (resolvedConfig.capabilitySecret != null) {
-        _coreRuntime?.loadCapabilityToken(
-          '{}',
-          resolvedConfig.capabilitySecret!,
-        );
-      }
-      _capabilityModule?.loadDefaults();
+      // NOTE: this previously called
+      // `loadCapabilityToken('{}', config.capabilitySecret)` — a literal empty
+      // token JSON, so it could never load a capability. The native runtime has
+      // since removed bundle-shipped capability tokens entirely (capability
+      // gating is fail-closed and driven by a verified consent JWT), so the
+      // call was both a no-op and pointing at a removed mechanism. Dropped in
+      // 0.10.2 along with the deprecation of `capabilityToken` /
+      // `capabilitySecret` on SynheartConfig.
+      await _capabilityModule?.loadDefaults();
     } catch (e) {
       SynheartLogger.log(
-        '[Synheart] Capability token fetch failed: $e',
+        '[Synheart] Capability defaults load failed: $e',
         error: e,
       );
       if (resolvedConfig.allowUnsignedCapabilities) {
