@@ -1,4 +1,4 @@
-package ai.synheart.wear.watch
+package ai.synheart.core.example
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 
