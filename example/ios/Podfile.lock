@@ -1,103 +1,75 @@
 PODS:
-  - connectivity_plus (0.0.1):
-    - Flutter
-  - device_info_plus (0.0.1):
-    - Flutter
   - Flutter (1.0.0)
-  - flutter_onnxruntime (0.0.1):
-    - Flutter
-    - onnxruntime-objc (= 1.22.0)
   - flutter_secure_storage (6.0.0):
     - Flutter
   - health (13.2.1):
     - Flutter
-  - onnxruntime-c (1.22.0)
-  - onnxruntime-objc (1.22.0):
-    - onnxruntime-objc/Core (= 1.22.0)
-  - onnxruntime-objc/Core (1.22.0):
-    - onnxruntime-c (= 1.22.0)
-  - path_provider_foundation (0.0.1):
+  - onnxruntime-c (1.27.0)
+  - synheart_auth (0.1.7):
     - Flutter
-    - FlutterMacOS
-  - permission_handler_apple (9.3.0):
+    - SynheartAuth
+  - synheart_behavior (0.3.0):
     - Flutter
-  - shared_preferences_foundation (0.0.1):
+  - synheart_core (0.10.2):
     - Flutter
-    - FlutterMacOS
-  - synheart_behavior (1.0.0):
+    - onnxruntime-c (>= 1.20.0)
+  - synheart_session (0.2.0):
     - Flutter
-  - synheart_session (0.1.0):
+  - synheart_wear (0.4.1):
     - Flutter
-  - synheart_wear (0.3.1):
-    - Flutter
-  - url_launcher_ios (0.0.1):
+  - SynheartAuth (0.1.0)
+  - syni (1.0.0):
     - Flutter
 
 DEPENDENCIES:
-  - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
-  - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
   - Flutter (from `Flutter`)
-  - flutter_onnxruntime (from `.symlinks/plugins/flutter_onnxruntime/ios`)
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
   - health (from `.symlinks/plugins/health/ios`)
-  - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
-  - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
-  - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
+  - synheart_auth (from `.symlinks/plugins/synheart_auth/ios`)
   - synheart_behavior (from `.symlinks/plugins/synheart_behavior/ios`)
+  - synheart_core (from `.symlinks/plugins/synheart_core/ios`)
   - synheart_session (from `.symlinks/plugins/synheart_session/ios`)
   - synheart_wear (from `.symlinks/plugins/synheart_wear/ios`)
-  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
+  - syni (from `.symlinks/plugins/syni/ios`)
 
 SPEC REPOS:
   trunk:
     - onnxruntime-c
-    - onnxruntime-objc
+    - SynheartAuth
 
 EXTERNAL SOURCES:
-  connectivity_plus:
-    :path: ".symlinks/plugins/connectivity_plus/ios"
-  device_info_plus:
-    :path: ".symlinks/plugins/device_info_plus/ios"
   Flutter:
     :path: Flutter
-  flutter_onnxruntime:
-    :path: ".symlinks/plugins/flutter_onnxruntime/ios"
   flutter_secure_storage:
     :path: ".symlinks/plugins/flutter_secure_storage/ios"
   health:
     :path: ".symlinks/plugins/health/ios"
-  path_provider_foundation:
-    :path: ".symlinks/plugins/path_provider_foundation/darwin"
-  permission_handler_apple:
-    :path: ".symlinks/plugins/permission_handler_apple/ios"
-  shared_preferences_foundation:
-    :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
+  synheart_auth:
+    :path: ".symlinks/plugins/synheart_auth/ios"
   synheart_behavior:
     :path: ".symlinks/plugins/synheart_behavior/ios"
+  synheart_core:
+    :path: ".symlinks/plugins/synheart_core/ios"
   synheart_session:
     :path: ".symlinks/plugins/synheart_session/ios"
   synheart_wear:
     :path: ".symlinks/plugins/synheart_wear/ios"
-  url_launcher_ios:
-    :path: ".symlinks/plugins/url_launcher_ios/ios"
+  syni:
+    :path: ".symlinks/plugins/syni/ios"
 
 SPEC CHECKSUMS:
-  connectivity_plus: cb623214f4e1f6ef8fe7403d580fdad517d2f7dd
-  device_info_plus: 21fcca2080fbcd348be798aa36c3e5ed849eefbe
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  flutter_onnxruntime: 744f037980e9fb685736bfeceaf4c2dd8c381f8a
   flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
   health: e310387222e199d4b3261337490a67aaff6d18eb
-  onnxruntime-c: 7f778680e96145956c0a31945f260321eed2611a
-  onnxruntime-objc: 83d28b87525bd971259a66e153ea32b5d023de19
-  path_provider_foundation: bb55f6dbba17d0dccd6737fe6f7f34fbd0376880
-  permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d
-  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
-  synheart_behavior: fa9c900e62d6c237056e70bd30389899a5a1f4eb
-  synheart_session: 5c92b720b58e89b26ada373f0e29ebb75200e3ec
-  synheart_wear: ca95272f114973471a41d68760745f9e47671ca8
-  url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
+  onnxruntime-c: 412ab51682e622e3d77ddc9176aa92517d171820
+  synheart_auth: 2840313dedc10a15e093964c337bebe73666db12
+  synheart_behavior: 7671be37999a5f2824ecb0abc3eb0963666077f2
+  synheart_core: ee0e587235aa7626a8b72c7cd3325654e2ca0748
+  synheart_session: 5dad2cb9aad3c2772d6fadc7aa3767bd97404983
+  synheart_wear: 144b9f09a2e83f85c930d0580b89d0738ba34d30
+  SynheartAuth: 1f281c095bd9753fd835ad1d7a2d9ec631e94a76
+  syni: c832fd90763dd569c108d949dd9ef376d9e0d6bc
 
-PODFILE CHECKSUM: 401c052836b5d8360e70cf5b247078e81c156e8a
+PODFILE CHECKSUM: 2a72549c1b2b25039fda55a62faf3d74c072ad39
 
 COCOAPODS: 1.16.2

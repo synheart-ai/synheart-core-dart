@@ -103,7 +103,7 @@ dependencies:
   synheart_core: ^0.10.2
 ```
 
-Then install the native runtime:
+Then install the native runtimes:
 
 ```bash
 # Install the CLI once.
@@ -112,11 +112,22 @@ synheart login
 
 # Run in the Flutter project root.
 synheart install runtime
+synheart install syni     # required on iOS, see below
 ```
 
-The CLI installs the native artifact in the platform project and writes
-`synheart.lock`. Commit `synheart.lock`; CI and other developers can restore the
-pinned artifact with:
+`synheart install syni` is not optional on iOS. `synheart_core` depends on the
+`syni` package, whose iOS pod links its own vendored framework and **fails
+`pod install`** when it is absent:
+
+```
+syni: could not locate <app>/synheart/vendor/syni-runtime/SyniRuntime.xcframework
+```
+
+You get that error even if your application never uses Syni.
+
+The CLI installs the native artifacts in the platform project and writes
+`synheart.lock`, which pins each artifact by SHA-256. Commit `synheart.lock`; CI
+and other developers can restore the pinned artifacts with:
 
 ```bash
 synheart sync
@@ -125,17 +136,36 @@ synheart sync
 Typical installed locations:
 
 - iOS: `synheart/vendor/runtime/ios/SynheartCoreRuntime.xcframework/`
+- iOS: `synheart/vendor/syni-runtime/SyniRuntime.xcframework/`
 - Android: `synheart/vendor/runtime/android/jniLibs/<abi>/`
 
-The iOS plugin links ONNX Runtime separately through `onnxruntime-c`. If
-CocoaPods cannot locate the application root (most commonly in a monorepo), set
-it near the top of the host application's `ios/Podfile`:
+### iOS: set `SYNHEART_APP_ROOT`
+
+Add this near the top of your application's `ios/Podfile`:
 
 ```ruby
 ENV['SYNHEART_APP_ROOT'] = File.expand_path('..', __dir__)
 ```
 
-Then rerun `pod install` or rebuild the Flutter application.
+Treat it as required rather than as a monorepo workaround. The Synheart podspecs
+symlink their vendored framework from `<app>/synheart/vendor/...` during `pod
+install`, and without this they fall back to walking up from the pod's own
+source directory — which resolves differently per dependency kind and can fail
+in either direction:
+
+- A pod resolved from pub.dev lives under `~/.pub-cache/...`, so the walk-up
+  climbs into the cache and never reaches an application root. `pod install`
+  fails.
+- A pod resolved from a path or git dependency lives in its own checkout, and
+  the walk-up can reach a *different* project that happens to have a
+  `synheart/vendor/` directory — linking that project's runtime instead of
+  yours, and silently building against a binary your `synheart.lock` does not
+  pin.
+
+Setting the variable makes both deterministic. Then rerun `pod install`.
+
+The iOS plugin also links ONNX Runtime separately through the `onnxruntime-c`
+pod; that is resolved automatically and needs no action.
 
 ## Platform setup
 
