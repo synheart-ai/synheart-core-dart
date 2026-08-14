@@ -40,34 +40,105 @@ jobs:
             // Runtime check against the org membership API. The default
             // GITHUB_TOKEN cannot see private memberships, so this needs a
             // PAT (classic, scope: read:org) stored as ORG_READ_TOKEN.
+            //
+            // Three outcomes, and the distinction is load-bearing:
+            //
+            //   "member"   — 204. Skip.
+            //   "external" — 404. A definitive answer about the author. Close.
+            //   "unknown"  — anything else: no token, an expired one (401), a
+            //                token that cannot see this membership (302), a
+            //                server error, a network failure. These say
+            //                something about OUR INFRASTRUCTURE, not about the
+            //                author.
+            //
+            // This used to treat "unknown" as "external" and close. That is
+            // backwards: an expired ORG_READ_TOKEN made every maintainer PR get
+            // auto-closed with a message telling them the project does not
+            // accept their contribution. It also fires on `reopened`, so
+            // reopening closed it again — the PR was unrecoverable until
+            // someone noticed the 401 buried in the workflow log.
+            //
+            // Unknown now fails OPEN: leave the PR alone and ask for manual
+            // triage. The cost is that a genuinely external PR stays open until
+            // a maintainer closes it by hand. The cost of the old behaviour was
+            // silently closing our own work and turning away real contributors
+            // with a canned message that might be wrong. Failing open is the
+            // cheaper mistake.
             const orgReadToken = process.env.ORG_READ_TOKEN;
-            if (orgReadToken) {
-              // github-script@v7 bundles its dependencies, so
-              // require("@actions/github") is not resolvable from the user
-              // script — call the membership REST API directly with fetch
-              // (a global in the Actions Node runtime).
-              const resp = await fetch(
-                `https://api.github.com/orgs/${context.repo.owner}/members/${login}`,
-                {
-                  headers: {
-                    authorization: `Bearer ${orgReadToken}`,
-                    accept: "application/vnd.github+json",
-                    "user-agent": "close-external-prs",
-                  },
-                },
-              );
-              if (resp.status === 204) {
-                core.info(`Skipping: @${login} is an org member of ${context.repo.owner} (verified via ORG_READ_TOKEN)`);
-                return;
-              } else if (resp.status === 404) {
-                core.info(`@${login} is not a member of ${context.repo.owner}`);
-              } else if (resp.status === 302) {
-                core.warning(`ORG_READ_TOKEN cannot view membership for @${login} (302). Treating as external.`);
-              } else {
-                core.warning(`Membership check for @${login} errored: HTTP ${resp.status}. Treating as external.`);
-              }
+            let membership = "unknown";
+            let unknownReason = "";
+
+            if (!orgReadToken) {
+              unknownReason = "ORG_READ_TOKEN secret is not set";
+              core.warning(`${unknownReason}; cannot verify private org membership. Add a classic PAT with read:org scope.`);
             } else {
-              core.warning("ORG_READ_TOKEN secret is not set; private org members will be misclassified as external. Add a PAT with read:org scope.");
+              try {
+                // github-script@v7 bundles its dependencies, so
+                // require("@actions/github") is not resolvable from the user
+                // script — call the membership REST API directly with fetch
+                // (a global in the Actions Node runtime).
+                const resp = await fetch(
+                  `https://api.github.com/orgs/${context.repo.owner}/members/${login}`,
+                  {
+                    headers: {
+                      authorization: `Bearer ${orgReadToken}`,
+                      accept: "application/vnd.github+json",
+                      "user-agent": "close-external-prs",
+                    },
+                  },
+                );
+                if (resp.status === 204) {
+                  membership = "member";
+                } else if (resp.status === 404) {
+                  membership = "external";
+                } else if (resp.status === 401) {
+                  unknownReason = "ORG_READ_TOKEN is invalid or expired (HTTP 401)";
+                } else if (resp.status === 302) {
+                  unknownReason = `ORG_READ_TOKEN cannot view membership for @${login} (HTTP 302)`;
+                } else {
+                  unknownReason = `membership check returned HTTP ${resp.status}`;
+                }
+              } catch (err) {
+                unknownReason = `membership check threw: ${err}`;
+              }
+            }
+
+            if (membership === "member") {
+              core.info(`Skipping: @${login} is an org member of ${context.repo.owner} (verified via ORG_READ_TOKEN)`);
+              return;
+            }
+
+            if (membership === "unknown") {
+              core.warning(
+                `Cannot determine whether @${login} is a member of ${context.repo.owner}: ${unknownReason}. ` +
+                `Leaving PR #${pr.number} OPEN for manual triage rather than closing it.`,
+              );
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: [
+                  "**Automated membership check could not run**, so this PR has been left open for a maintainer to triage.",
+                  "",
+                  "Reason: `" + unknownReason + "`",
+                  "",
+                  "This is an infrastructure problem on our side, not a judgement about this pull request.",
+                  "A maintainer should fix the check and then either close this PR or proceed with review.",
+                ].join("\n"),
+              });
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  labels: ["needs-triage"],
+                });
+              } catch (err) {
+                // The label may not exist in this repo; the comment is the
+                // signal that matters.
+                core.info(`Could not add needs-triage label: ${err}`);
+              }
+              return;
             }
 
             core.info(`Closing PR #${pr.number} from external author @${login} (association=${association})`);
