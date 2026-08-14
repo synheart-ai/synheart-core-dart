@@ -121,18 +121,24 @@ class SessionScreen extends StatelessWidget {
             children: [
               _SourceRow(
                 label: 'Wear',
-                detail: 'Heart rate and HRV',
+                detail: 'Heart rate, RR intervals, vendor HRV → runtime',
                 active: c.isWearCollecting,
-              ),
-              _SourceRow(
-                label: 'Phone',
-                detail: 'Motion and device context',
-                active: c.isPhoneCollecting,
+                reachesRuntime: true,
               ),
               _SourceRow(
                 label: 'Behavior',
-                detail: 'Taps and typing rhythm',
+                detail: 'Taps, notifications, app switches → runtime',
                 active: c.isBehaviorCollecting,
+                reachesRuntime: true,
+              ),
+              _SourceRow(
+                label: 'Phone',
+                // Collected into an in-memory PhoneCache that nothing reads.
+                // Unlike wear and behavior, PhoneModule has no runtime wiring,
+                // so this data does not influence HSI.
+                detail: 'Motion and device context — cached locally only',
+                active: c.isPhoneCollecting,
+                reachesRuntime: false,
               ),
               const Divider(height: 24),
               if (!c.hasBiosignalSource) ...[
@@ -293,11 +299,21 @@ class _SourceRow extends StatelessWidget {
     required this.label,
     required this.detail,
     required this.active,
+    required this.reachesRuntime,
   });
 
   final String label;
   final String detail;
   final bool active;
+
+  /// Whether this module actually pushes into the native runtime.
+  ///
+  /// Not every collecting module does. Wear and behavior are wired through
+  /// `setBridge` / `pushBehaviorToRuntime`; phone context is collected into a
+  /// Dart-side cache with no consumer, so it never influences HSI. Showing all
+  /// three as "collecting" under a heading that says "feeding the runtime"
+  /// implied otherwise.
+  final bool reachesRuntime;
 
   @override
   Widget build(BuildContext context) {
@@ -329,8 +345,16 @@ class _SourceRow extends StatelessWidget {
             ),
           ),
           StatusPill(
-            active ? 'collecting' : 'idle',
-            tone: active ? PillTone.good : PillTone.neutral,
+            !active
+                ? 'idle'
+                : reachesRuntime
+                ? 'feeding'
+                : 'local only',
+            tone: !active
+                ? PillTone.neutral
+                : reachesRuntime
+                ? PillTone.good
+                : PillTone.neutral,
           ),
         ],
       ),
