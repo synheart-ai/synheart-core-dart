@@ -58,19 +58,45 @@ class ModuleManager {
   }
 
   /// Start all modules in dependency order
-  Future<void> startAll() async {
+  /// Start every initialized module, in dependency order.
+  ///
+  /// Resilient per module, matching [initializeAll] and [stopAll]: a module
+  /// that fails to start is logged and skipped, and the remaining modules still
+  /// start. Returns `moduleId -> error` for whatever failed; empty means all
+  /// started.
+  ///
+  /// This used to `await module.start()` unguarded, so the first throw aborted
+  /// the loop and every later module was silently skipped. Modules start in
+  /// dependency order with wear first, so on an iOS build without the HealthKit
+  /// entitlement — where the wear source cannot initialize — behavior and phone
+  /// never started either, and the host saw a session producing nothing at all
+  /// rather than one missing biosignals. Degrading to the sources that do work
+  /// is far more useful than losing the session.
+  Future<Map<String, Object>> startAll() async {
     if (!_isInitialized) {
       throw Exception('Modules must be initialized before starting');
     }
 
     final startOrder = _resolveInitializationOrder();
+    final failures = <String, Object>{};
 
     for (final moduleId in startOrder) {
       final module = _modules[moduleId];
       if (module != null && module.status == ModuleStatus.initialized) {
-        await module.start();
+        try {
+          await module.start();
+        } catch (e, st) {
+          failures[moduleId] = e;
+          SynheartLogger.log(
+            'Module $moduleId failed to start (skipped, other modules '
+            'continue): $e',
+            error: e,
+            stackTrace: st,
+          );
+        }
       }
     }
+    return failures;
   }
 
   /// Stop all modules in reverse dependency order

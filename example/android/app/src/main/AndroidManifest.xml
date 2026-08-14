@@ -24,7 +24,7 @@
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY"/>
 
     <application
-        android:label="core_example"
+        android:label="Synheart Core"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

@@ -1673,7 +1673,31 @@ class Synheart {
           startedAtMs: result['started_at_ms'] as int,
           mode: shared._config?.mode ?? SynheartMode.personal,
         );
-        await shared._startRuntimeLinkedCollection();
+        // The native session now EXISTS. Anything that throws past this point
+        // must not escape without tearing it down, or the runtime is left with
+        // a session the host does not know about — and the next startSession()
+        // fails with SessionActive, silently falling through to the Dart-only
+        // path below and handing back a `core_<ts>` handle for a session the
+        // runtime never opened. Observed on iOS, where a missing HealthKit
+        // entitlement made the wear module throw.
+        try {
+          await shared._startRuntimeLinkedCollection();
+        } catch (e, st) {
+          SynheartLogger.log(
+            '[Synheart] startSession: collection failed to start — rolling '
+            'back the native session so it is not orphaned: $e',
+            error: e,
+            stackTrace: st,
+          );
+          try {
+            _coreRuntime!.stopSession();
+          } catch (_) {
+            // Best effort; the original failure is the one worth reporting.
+          }
+          shared._currentSessionHandle = null;
+          shared._isRunning = false;
+          rethrow;
+        }
         shared._isRunning = true;
 
         return shared._currentSessionHandle;
