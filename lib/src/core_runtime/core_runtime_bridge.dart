@@ -660,7 +660,11 @@ class CoreRuntimeBridge {
   }
 
   /// Whether a session is running.
-  bool get isRunning => _ffi.isRunning(_handle) != 0;
+  ///
+  /// Guarded on [_disposed]: `Synheart.isSessionRunning` reads this from UI
+  /// code, so a read racing teardown would otherwise dereference a freed
+  /// handle across the FFI boundary.
+  bool get isRunning => _disposed ? false : _ffi.isRunning(_handle) != 0;
 
   // ── Subject identity ─────────────────────────────────────────────────
 

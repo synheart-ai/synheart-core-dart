@@ -1,5 +1,6 @@
 import 'core_runtime/core_runtime_bridge.dart';
 import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
+import 'config/runtime_config_map.dart';
 import 'config/synheart_config.dart';
 import 'modules/behavior/behavior_code.dart';
 import 'modules/cloud/device_auth_provider.dart';
@@ -105,41 +106,12 @@ class SynheartInstance {
   /// Assemble the JSON config the native `synheart_core_new` expects. Mirrors
   /// the map built in `Synheart.ensureRuntimeBridge`, but with an explicit,
   /// per-instance [dataDir] (the facade uses a single cached `_resolvedDataDir`).
+  /// Assemble the JSON config `synheart_core_new` expects, with this
+  /// instance's own [dataDir] (the facade uses one cached process-wide path).
   static Map<String, dynamic> _buildConfigMap(
     SynheartConfig config,
     String dataDir,
-  ) {
-    return {
-      'app_id': config.appId,
-      'org_id': config.cloudConfig?.orgId ?? '',
-      'subject_id': config.subjectId,
-      // Required when device_auth is enabled — the runtime derives the device
-      // identity's subject from client_id. Mirrors Synheart.ensureRuntimeBridge
-      // (which passes subjectId here); without it `synheart_core_new` fails with
-      // `ERR_NOT_CONFIGURED: client_id is required when device_auth.enabled`.
-      'client_id': config.subjectId,
-      // The API gateway origin the runtime uses for consent / ingest / platform
-      // calls. Mirrors Synheart.ensureRuntimeBridge. WITHOUT this, the runtime
-      // falls back to its hardcoded `DEFAULT_API_URL` (`https://api.synheart.ai`,
-      // prod) — so a dev build would silently talk to production and fail with
-      // "device not registered". Use the same origin the personal instance does.
-      'api_base_url': config.sync.baseUrl,
-      'mode': config.mode.name,
-      'device_id': config.deviceId,
-      'app_version': config.appVersion,
-      'platform': 'flutter',
-      'data_dir': dataDir,
-      'storage': {'enabled': config.storage.enabled},
-      'ingest': {'enabled': true, 'hsi': true, 'lab': true},
-      'device_auth': {
-        'enabled': config.deviceAuthConfig != null,
-        'auth_base_url': config.deviceAuthConfig?.authBaseUrl ?? '',
-        'package_name': config.deviceAuthConfig?.packageName ?? '',
-      },
-      'sync': {'enabled': config.sync.enabled, 'base_url': config.sync.baseUrl},
-      'privacy': {'allow_research': config.privacy.allowResearch},
-    };
-  }
+  ) => buildRuntimeConfigMap(config, dataDir: dataDir);
 
   // ── State ──────────────────────────────────────────────────────────────────
 

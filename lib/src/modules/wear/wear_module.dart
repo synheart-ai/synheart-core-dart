@@ -11,7 +11,6 @@ import '../interfaces/raw_data_provider.dart';
 import 'wear_source_handler.dart';
 import 'wear_cache.dart';
 import 'wear_module_status.dart';
-import 'mock_wear_source.dart';
 import 'synheart_wear_source_handler.dart';
 import 'wearable_event_processor.dart';
 
@@ -57,7 +56,11 @@ class WearModule extends BaseSynheartModule implements RawWearDataProvider {
   WearModule({
     required ConsentProvider consent,
     List<WearSourceHandler>? sources,
-    bool useSynheartWear = true, // Use synheart_wear package by default
+    @Deprecated(
+      'Passing false now yields no sources rather than a mock. Inject your own '
+      'WearSourceHandler via `sources:` for tests. Will be removed in 0.11.0.',
+    )
+    bool useSynheartWear = true,
     bool focusEnabled = false,
     bool emotionEnabled = false,
   }) : _consent = consent,
@@ -69,8 +72,18 @@ class WearModule extends BaseSynheartModule implements RawWearDataProvider {
                      focusEnabled: focusEnabled,
                      emotionEnabled: emotionEnabled,
                    ),
-                 ] // Use synheart_wear by default
-               : [MockWearSourceHandler()]); // Fallback to mock if disabled
+                 ]
+               // No sources. This used to fall back to a MockWearSourceHandler
+               // that synthesised heart rate, HRV, RR intervals and sleep
+               // stages from `Random()`. Those samples were indistinguishable
+               // from real ones downstream and fed the runtime's longitudinal
+               // baselines, so a host that flipped this flag silently corrupted
+               // the user's on-device reference ranges with invented numbers.
+               //
+               // Nothing is lost: `sources:` already accepts an injected
+               // WearSourceHandler, which is the supported way to supply a fake
+               // in tests. No sources means no data, which is honest.
+               : const <WearSourceHandler>[]);
 
   /// Update module enablement status
   ///

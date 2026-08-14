@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:path_provider/path_provider.dart';
 import 'package:rxdart/rxdart.dart';
+import 'config/runtime_config_map.dart';
 import 'config/synheart_config.dart';
 import 'core/bounded_buffer.dart';
 import 'core/logger.dart';
@@ -943,12 +944,11 @@ class Synheart {
   }) {
     if (_coreRuntime != null) return;
     try {
-      final orgId = shared._config?.cloudConfig?.orgId ?? '';
-      if (orgId.isEmpty) {
+      final cfg = shared._config;
+      if (cfg?.cloudConfig != null && (cfg?.cloudConfig?.orgId ?? '').isEmpty) {
         SynheartLogger.log(
-          '[Synheart] ⚠️ ensureRuntimeBridge: cloudConfig.orgId is empty — '
-          'ingest rows will be tagged with empty org_id. '
-          'Set CloudConfig.orgId in SynheartConfig before initialize().',
+          '[Synheart] ⚠️ ensureRuntimeBridge: CloudConfig is set but orgId is '
+          'empty — cloud ingest stays disabled. Set CloudConfig.orgId.',
         );
       }
       final cachedDataDir = _resolvedDataDir;
@@ -959,29 +959,16 @@ class Synheart {
           'Call Synheart.configure() before ensureRuntimeBridge().',
         );
       }
+      // Same map as [_configure], with the caller-supplied identifiers layered
+      // on top of the stored config.
       _coreRuntime = CoreRuntimeBridge.create({
+        ...buildRuntimeConfigMap(
+          cfg ?? SynheartConfig.defaults(),
+          dataDir: cachedDataDir,
+        ),
         'app_id': appId,
-        'org_id': orgId,
         'subject_id': subjectId,
-        'mode': shared._config?.mode.name ?? 'personal',
-        'device_id': shared._config?.deviceId ?? '',
-        'app_version': shared._config?.appVersion ?? '0.0.0',
-        'platform': 'flutter',
-        if (cachedDataDir != null) 'data_dir': cachedDataDir,
-        'storage': {'enabled': shared._config?.storage.enabled ?? true},
-        'ingest': {'enabled': true, 'hsi': true, 'lab': true},
-        'device_auth': {
-          'enabled': true,
-          'auth_base_url': shared._config?.deviceAuthConfig?.authBaseUrl ?? '',
-          'package_name': shared._config?.deviceAuthConfig?.packageName ?? '',
-        },
-        'sync': {
-          'enabled': shared._config?.sync.enabled ?? false,
-          'base_url': shared._config?.sync.baseUrl ?? '',
-        },
-        'privacy': {
-          'allow_research': shared._config?.privacy.allowResearch ?? false,
-        },
+        'client_id': subjectId,
       });
       if (_coreRuntime != null) {
         SynheartLogger.log(
@@ -1268,41 +1255,15 @@ class Synheart {
     // logs synchronously which crashes the async NativeCallable.listener
     // trampoline if it's already registered.
     try {
-      final orgId = resolvedCfg.cloudConfig?.orgId ?? '';
-      if (orgId.isEmpty) {
+      if (resolvedCfg.cloudConfig != null &&
+          (resolvedCfg.cloudConfig?.orgId ?? '').isEmpty) {
         SynheartLogger.log(
-          '[Synheart] ⚠️ configure: cloudConfig.orgId is empty — '
-          'ingest rows will be tagged with empty org_id. '
-          'Set CloudConfig.orgId in SynheartConfig before initialize().',
+          '[Synheart] ⚠️ configure: CloudConfig is set but orgId is empty — '
+          'cloud ingest stays disabled. Set CloudConfig.orgId.',
         );
       }
       final dataDir = await _resolveDataDir();
-      final coreJson = <String, dynamic>{
-        'app_id': resolvedCfg.appId,
-        'org_id': orgId,
-        'subject_id': resolvedCfg.subjectId,
-        'client_id': resolvedCfg.subjectId,
-        'api_base_url': resolvedCfg.sync.baseUrl,
-        'mode': resolvedCfg.mode.name,
-        'device_id': resolvedCfg.deviceId.isNotEmpty
-            ? resolvedCfg.deviceId
-            : '',
-        'app_version': resolvedCfg.appVersion,
-        'platform': resolvedCfg.platform,
-        'data_dir': dataDir,
-        'storage': {'enabled': resolvedCfg.storage.enabled},
-        'ingest': {'enabled': true, 'hsi': true, 'lab': true},
-        'device_auth': {
-          'enabled': true,
-          'auth_base_url': resolvedCfg.deviceAuthConfig?.authBaseUrl ?? '',
-          'package_name': resolvedCfg.deviceAuthConfig?.packageName ?? '',
-        },
-        'sync': {
-          'enabled': resolvedCfg.sync.enabled,
-          'base_url': resolvedCfg.sync.baseUrl,
-        },
-        'privacy': {'allow_research': resolvedCfg.privacy.allowResearch},
-      };
+      final coreJson = buildRuntimeConfigMap(resolvedCfg, dataDir: dataDir);
       _coreRuntime = CoreRuntimeBridge.create(coreJson);
       // Now safe to register the logging callback — coreNew has returned.
       final logRc = CoreRuntimeBridge.initRuntimeLogging(
@@ -1339,7 +1300,14 @@ class Synheart {
         // Success path (storageRc == 0) is intentionally silent — bootstrap
         // chatter. Surface only if attachment failed.
 
-        if (_coreRuntime!.deviceAuthTemporarilyDisabledForSubjectCompat) {
+        if (resolvedCfg.deviceAuthConfig == null) {
+          // Device auth is disabled in the runtime config (see the `device_auth`
+          // gate above), so attaching crypto callbacks would fail with
+          // `ERR_NOT_CONFIGURED: device_auth not enabled` and log a runtime
+          // ERROR that reads like a real fault. Local-only hosts are a
+          // supported configuration; stay quiet.
+        } else if (_coreRuntime!
+            .deviceAuthTemporarilyDisabledForSubjectCompat) {
           SynheartLogger.log(
             '[Synheart] Device-auth callbacks skipped: subject_id compatibility guard active.',
           );
@@ -1746,7 +1714,25 @@ class Synheart {
   }
 
   /// Whether the main data-collection session is currently running.
-  static bool get isSessionRunning => shared._isRunning;
+  ///
+  /// Prefers the native runtime's own view. This used to return the Dart flag
+  /// alone, which tracks whether the Dart modules were started — a related but
+  /// different thing. The runtime's `is_running` was never read anywhere in the
+  /// SDK, so if a session ended natively (a stop the host did not drive, or a
+  /// runtime-side teardown) every host kept reporting "collecting" indefinitely.
+  ///
+  /// Falls back to the Dart flag when the native bridge is absent, where it is
+  /// the only signal available.
+  static bool get isSessionRunning {
+    final runtime = _coreRuntime;
+    if (runtime == null) return shared._isRunning;
+    try {
+      return runtime.isRunning;
+    } catch (_) {
+      // Older runtimes may not export `is_running`; the Dart flag still holds.
+      return shared._isRunning;
+    }
+  }
 
   /// Stop the current session — halts module streaming and clears ephemeral buffers.
   ///
