@@ -111,7 +111,11 @@ class SessionScreen extends StatelessWidget {
                 'fabricates biosignals — synthetic beats would corrupt the '
                 'longitudinal baselines the runtime builds on this device.',
             trailing: StatusPill(
-              c.hasBiosignalSource ? 'receiving' : 'no signal',
+              c.hasBiosignalSource
+                  ? 'receiving'
+                  : c.wearEmittingButEmpty
+                  ? 'empty samples'
+                  : 'no signal',
               tone: c.hasBiosignalSource ? PillTone.good : PillTone.warn,
             ),
             children: [
@@ -131,22 +135,34 @@ class SessionScreen extends StatelessWidget {
                 active: c.isBehaviorCollecting,
               ),
               const Divider(height: 24),
-              if (c.lastWearSample == null)
+              if (!c.hasBiosignalSource) ...[
+                KeyValueRow('samples emitted', '${c.wearSampleCount}'),
+                KeyValueRow('carrying data', '${c.wearDataSampleCount}'),
+                const SizedBox(height: 8),
                 Text(
-                  'No biosignal samples yet.\n\n'
-                  'HSI is built from heart rate and HRV, so the runtime cannot '
-                  'produce a window until a real source is attached. Connect a '
-                  'BLE chest strap, grant Apple Health / Health Connect access, '
-                  'or pair a watch companion.\n\n'
-                  'If you own a source the SDK does not adapt, push its real '
-                  'readings with Synheart.pushRrBatch — never placeholder '
-                  'values, which would enter the same baselines as real data.',
+                  c.wearEmittingButEmpty
+                      ? 'The wear source is emitting once per second, but every '
+                            'sample so far is empty — no heart rate, no HRV, no '
+                            'RR intervals.\n\n'
+                            'This is the normal state on a phone with no '
+                            'wearable paired, or with Health Connect / Apple '
+                            'Health permission not yet granted. Watch the '
+                            '"carrying data" count, not "samples emitted": the '
+                            'latter climbs steadily either way.\n\n'
+                            'The physiological axes (arousal, stress, sleep) '
+                            'stay empty until a real reading arrives. Focus and '
+                            'capacity can still be computed from behavior and '
+                            'motion, which are arriving.'
+                      : 'No samples yet. HSI physiology is built from heart '
+                            'rate and HRV, so pair a BLE chest strap, grant '
+                            'health-data access, or connect a watch companion.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                )
-              else ...[
-                KeyValueRow('samples', '${c.wearSampleCount}'),
+                ),
+              ] else ...[
+                KeyValueRow('samples emitted', '${c.wearSampleCount}'),
+                KeyValueRow('carrying data', '${c.wearDataSampleCount}'),
                 KeyValueRow(
                   'latest hr',
                   c.lastWearSample!.hr?.toStringAsFixed(1) ?? '—',
@@ -223,6 +239,8 @@ class _AxisRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final v = value;
+    // Confidence 0.0 means the engine produced a number with nothing behind it.
+    final grounded = v != null && v.confidence > 0;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -235,7 +253,11 @@ class _AxisRow extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
-                value: v?.value.clamp(0.0, 1.0) ?? 0,
+                // Draw nothing at zero confidence. The engine emits a value
+                // alongside a confidence of 0.0 to say it has no basis for it;
+                // rendering that as a half-filled bar reads as a real
+                // measurement, which it is not.
+                value: grounded ? v.value.clamp(0.0, 1.0) : 0,
                 minHeight: 8,
                 backgroundColor: theme.colorScheme.surfaceContainerHighest,
               ),
@@ -243,17 +265,19 @@ class _AxisRow extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           SizedBox(
-            width: 92,
+            width: 116,
             child: Text(
               v == null
                   ? 'no data'
-                  : '${v.value.toStringAsFixed(2)}  ±${(1 - v.confidence).toStringAsFixed(2)}',
+                  : grounded
+                  ? '${v.value.toStringAsFixed(2)}  conf ${v.confidence.toStringAsFixed(2)}'
+                  : 'no basis',
               textAlign: TextAlign.right,
               style: theme.textTheme.bodySmall?.copyWith(
                 fontFamily: 'monospace',
-                color: v == null
-                    ? theme.colorScheme.onSurfaceVariant
-                    : theme.colorScheme.onSurface,
+                color: grounded
+                    ? theme.colorScheme.onSurface
+                    : theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),

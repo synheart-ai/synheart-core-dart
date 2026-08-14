@@ -267,6 +267,7 @@ class SynheartController extends ChangeNotifier {
       _hsiWindowCount = 0;
       _latestState = null;
       _wearSampleCount = 0;
+      _wearDataSampleCount = 0;
       _lastWearSample = null;
 
       // Subscribe BEFORE starting so the first completed window is not missed.
@@ -280,8 +281,13 @@ class SynheartController extends ChangeNotifier {
       // Raw samples as the wear module produces them. Consent-gated by the SDK:
       // nothing is emitted unless biosignals are granted.
       _wearSub ??= Synheart.wearSampleStream.listen((sample) {
-        _lastWearSample = sample;
         _wearSampleCount++;
+        if (_carriesBiosignal(sample)) {
+          // Keep the last sample that actually held a reading, so the UI shows
+          // the most recent real value rather than the most recent empty tick.
+          _lastWearSample = sample;
+          _wearDataSampleCount++;
+        }
         notifyListeners();
       });
 
@@ -330,19 +336,44 @@ class SynheartController extends ChangeNotifier {
   /// arriving rather than asserting that something is.
   WearSample? _lastWearSample;
   int _wearSampleCount = 0;
+  int _wearDataSampleCount = 0;
   StreamSubscription<WearSample>? _wearSub;
 
   WearSample? get lastWearSample => _lastWearSample;
+
+  /// Every sample the wear module emitted, including empty ones.
   int get wearSampleCount => _wearSampleCount;
+
+  /// Samples that actually carried a biosignal.
+  ///
+  /// Tracked separately because the wear source emits a [WearSample] on every
+  /// poll tick whether or not a metric resolved. With no wearable paired and no
+  /// health data available, that is one all-null envelope per second — so a
+  /// raw sample count climbing steadily says nothing about whether biosignals
+  /// are arriving, and reporting it as "receiving" would be false.
+  int get wearDataSampleCount => _wearDataSampleCount;
+
+  static bool _carriesBiosignal(WearSample s) =>
+      s.hr != null ||
+      s.hrvRmssd != null ||
+      (s.rrIntervals?.isNotEmpty ?? false);
 
   bool get isWearCollecting => Synheart.isWearCollecting;
   bool get isPhoneCollecting => Synheart.isPhoneCollecting;
   bool get isBehaviorCollecting => Synheart.isBehaviorCollecting;
 
-  /// True once a real biosignal sample has arrived. Until then the runtime has
-  /// nothing to build an HSI window from, and saying so plainly beats showing
-  /// an empty chart that looks broken.
-  bool get hasBiosignalSource => _wearSampleCount > 0;
+  /// True once a sample carrying an actual biosignal has arrived — not merely
+  /// once the stream is ticking. Until then the runtime has no heart-rate or
+  /// HRV input, so the physiological axes stay empty no matter how long the
+  /// session runs.
+  bool get hasBiosignalSource => _wearDataSampleCount > 0;
+
+  /// The wear source is emitting, but every sample so far has been empty. This
+  /// is the normal state on a phone with no wearable paired or with health
+  /// permissions not yet granted, and it is worth naming: it looks identical
+  /// to "working" if you only watch the sample counter.
+  bool get wearEmittingButEmpty =>
+      _wearSampleCount > 0 && _wearDataSampleCount == 0;
 
   // ── Behavior capture ───────────────────────────────────────────────────
 
