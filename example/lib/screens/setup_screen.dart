@@ -1,0 +1,186 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../sdk/synheart_controller.dart';
+import '../widgets/ui.dart';
+
+/// Step 1 — build a config and initialize.
+///
+/// The two required fields are `appId` and `subjectId`. Everything else has a
+/// working default. `SynheartConfig.validate()` runs before any native work, so
+/// a bad config fails here with an actionable message rather than surfacing
+/// later as an unexplained empty org_id or a mis-bound device.
+class SetupScreen extends StatefulWidget {
+  const SetupScreen({super.key});
+
+  @override
+  State<SetupScreen> createState() => _SetupScreenState();
+}
+
+class _SetupScreenState extends State<SetupScreen> {
+  final _subjectController = TextEditingController();
+  bool _seeded = false;
+
+  @override
+  void dispose() {
+    _subjectController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.watch<SynheartController>();
+
+    // Seed the field once the persisted subject id has loaded.
+    if (!_seeded && c.subjectId != null) {
+      _subjectController.text = c.subjectId!;
+      _seeded = true;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Setup'),
+        actions: [
+          if (c.isInitialized)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: StatusPill('v${c.sdkVersion}', tone: PillTone.neutral),
+              ),
+            ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (c.initError != null) ErrorBanner(c.initError!),
+
+          SectionCard(
+            title: c.isInitialized ? 'SDK initialized' : 'SDK not initialized',
+            subtitle: c.isInitialized
+                ? 'The native runtime is loaded. Grant consent next.'
+                : 'Nothing is collected until you initialize and start a session.',
+            trailing: StatusPill(
+              c.isInitialized ? 'ready' : 'inactive',
+              tone: c.isInitialized ? PillTone.good : PillTone.neutral,
+            ),
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: c.isInitialized
+                    ? OutlinedButton.icon(
+                        onPressed: c.shutdown,
+                        icon: const Icon(Icons.power_settings_new),
+                        label: const Text('Dispose SDK'),
+                      )
+                    : FilledButton.icon(
+                        onPressed: c.isInitializing ? null : c.initialize,
+                        icon: c.isInitializing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.play_arrow),
+                        label: Text(
+                          c.isInitializing ? 'Initializing…' : 'Initialize SDK',
+                        ),
+                      ),
+              ),
+            ],
+          ),
+
+          SectionCard(
+            title: 'Identity',
+            subtitle:
+                'subjectId must stay the same across restarts. The runtime '
+                'scopes storage, baselines, and device identity to it — a value '
+                'that changes per launch looks like a new person every time, so '
+                'baselines never mature.',
+            children: [
+              TextField(
+                controller: _subjectController,
+                enabled: !c.isInitialized,
+                decoration: const InputDecoration(
+                  labelText: 'subjectId',
+                  helperText: 'Your account id in a real app. Persisted here.',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onSubmitted: c.setSubjectId,
+              ),
+              const SizedBox(height: 8),
+              if (!c.isInitialized)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => c.setSubjectId(_subjectController.text),
+                    child: const Text('Save'),
+                  ),
+                ),
+              KeyValueRow('appId', SynheartController.appId, selectable: true),
+              KeyValueRow('deviceId', c.deviceId ?? '—', selectable: true),
+            ],
+          ),
+
+          SectionCard(
+            title: 'Config being used',
+            subtitle:
+                'Local-only: no CloudConfig and no DeviceAuthConfig, so nothing '
+                'leaves the device and no attestation is attempted. See SETUP.md '
+                'to enable cloud upload.',
+            children: const [_ConfigListing()],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A literal listing of the config this example passes, so a developer can copy
+/// it rather than reverse-engineer it from the controller.
+class _ConfigListing extends StatelessWidget {
+  const _ConfigListing();
+
+  static const _code = '''
+SynheartConfig(
+  appId: 'ai.synheart.core.example',   // required
+  subjectId: <persisted, stable>,      // required
+  appVersion: '1.0.0',
+  deviceId: <persisted>,
+  mode: SynheartMode.personal,
+
+  // Development only — production gates on a verified consent token.
+  allowUnsignedCapabilities: true,
+
+  // Declaring a module config activates that feature.
+  wearConfig: WearConfig(),
+  phoneConfig: PhoneConfig(),
+  behaviorConfig: BehaviorConfig(),
+
+  // Required for the runtime consent-form flow.
+  consentConfig: ConsentConfig(
+    deviceId: <persisted>,
+    platform: 'flutter',
+    userId: <subjectId>,
+  ),
+)''';
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const SelectableText(
+        _code,
+        style: TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.45),
+      ),
+    );
+  }
+}
