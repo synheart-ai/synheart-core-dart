@@ -26,12 +26,15 @@ installed native Synheart Runtime.
 - [Consent](#consent)
 - [Sessions and collection](#sessions-and-collection)
 - [Reading HSI and raw signals](#reading-hsi-and-raw-signals)
+- [Running without cloud credentials](#running-without-cloud-credentials)
 - [Cloud, authentication, and endpoints](#cloud-authentication-and-endpoints)
 - [Storage and sync](#storage-and-sync)
 - [Advanced workflows](#advanced-workflows)
 - [API map](#api-map)
 - [Errors and diagnostics](#errors-and-diagnostics)
+- [Threading and blocking calls](#threading-and-blocking-calls)
 - [Testing and example app](#testing-and-example-app)
+- [Upgrading](#upgrading)
 
 ## What the SDK provides
 
@@ -543,6 +546,43 @@ await Synheart.recordMetric(
 );
 ```
 
+## Running without cloud credentials
+
+The SDK is usable with no platform account. Omit `CloudConfig` and
+`DeviceAuthConfig` and everything on-device works: collection, HSI computation,
+consent, local storage, and baselines. Nothing leaves the device, and no
+attestation is attempted.
+
+```dart
+await Synheart.initialize(
+  config: SynheartConfig(
+    appId: 'com.example.my_app',
+    subjectId: 'usr_stable_identifier',
+    allowUnsignedCapabilities: true,       // development only
+    wearConfig: const WearConfig(),
+    // Required for the runtime consent-form flow: consentSubmitFormTyped
+    // needs a non-empty deviceId and platform to stamp on the submission.
+    consentConfig: ConsentConfig(
+      deviceId: 'dev_stable_identifier',
+      platform: 'flutter',
+      userId: 'usr_stable_identifier',
+    ),
+  ),
+);
+```
+
+What is unavailable without cloud credentials: HSI upload, cross-device sync,
+research-study enrolment, and server-issued capability tokens. Consent still
+persists locally — the runtime is offline-first and reconciles with the cloud
+profile only when cloud upload is enabled.
+
+`example/` runs this way, so it needs no setup beyond `synheart install runtime`.
+
+> Versions before 0.10.2 could not initialize in this configuration at all:
+> `initialize()` returned a null native runtime while reporting success. If you
+> are on an earlier version and see no HSI with no cloud config, that is the
+> cause.
+
 ## Cloud, authentication, and endpoints
 
 ### Production authentication
@@ -931,6 +971,22 @@ synheart sync
 flutter run
 ```
 
+## Threading and blocking calls
+
+The native runtime performs some work synchronously behind the FFI boundary.
+Calls fall into three groups, and mixing them up is the usual cause of jank.
+
+| Call | Behaviour |
+| --- | --- |
+| `syncNow()`, `flushUploads()`, `fetchCloudHsiWindows()`, `requestDataDeletion()`, device registration | Network I/O on a **background isolate**. Returns a `Future`; `await` it and drive a loading state. |
+| `grantConsent()`, `revokeConsentType()`, `consentSubmitFormTyped()` | May perform network I/O. Async; awaited calls are serialized so two consent mutations never race the native handle. |
+| `pushWearHr`, `pushRr`, `pushRrBatch`, `pushAccel`, `pushBehavior`, `tick`, `ingestBatch` | Synchronous, in-process, no I/O. Safe on the UI isolate at sensor rates. |
+| Getters — `runtimeDiagnostics()`, `uploadQueueLength`, `consentEffectiveStateTyped()`, `isSessionRunning` | Synchronous FFI reads. Cheap, but they are FFI calls: do not poll them per frame. |
+
+`onStateUpdate` parses each HSI window once and shares the result across
+subscribers, so multiple listeners cost one parse. `currentHSIState` reuses that
+same parse, making it cheap to read repeatedly.
+
 ## Testing and example app
 
 Run the package tests:
@@ -957,6 +1013,28 @@ flutter run
 
 The example uses unsigned capabilities and placeholder service credentials for
 development. Replace those settings before using it as a production template.
+
+## Upgrading
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list. Breaking and behavioural
+changes in 0.10.2:
+
+- `CoreRuntimeBridge.flushUploads()` now returns a `Future`. Only affects code
+  calling the bridge directly; `Synheart.ingestion` is unchanged.
+- `Synheart.deleteCloudData()` throws `UnsupportedError`. It never deleted
+  anything. Use `requestDataDeletion()` plus `wipeLocalData()`.
+- `runtimeDiagnostics()` no longer returns `lastQuality` (it was always `0.0`);
+  it now returns `missingSymbols` and `probedSymbols`.
+- `Synheart.isSessionRunning` reads the native runtime rather than the Dart
+  module flag, so it reflects a session ended natively.
+- Removed: `MockWearSourceHandler`, `HsiWindowArtifact`, `TombstoneArtifact`,
+  `CapabilityTokenFetcher`.
+- Deprecated, removed in 0.11.0: `SynheartConfig.capabilityToken` /
+  `.capabilitySecret`, `CloudConfig.apiKey`, `ConsentConfig.appApiKey`,
+  `getSyncStatus()`, `runtimeBaselineSummary`, `WearModule(useSynheartWear:)`.
+  The native runtime removed bundle-secret configuration as a security fix;
+  these values were never forwarded to it. Use `deviceAuthConfig` instead, and
+  never ship an API key or signing secret inside an application bundle.
 
 ## Privacy and security
 
