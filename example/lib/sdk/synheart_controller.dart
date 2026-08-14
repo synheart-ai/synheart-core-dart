@@ -390,13 +390,28 @@ class SynheartController extends ChangeNotifier {
 
   // ── 4. Diagnostics ─────────────────────────────────────────────────────
 
-  /// Native runtime health. `missingSymbols` is the one to watch: a non-empty
-  /// list means the vendored runtime predates this SDK release and the
-  /// features behind those symbols are silently disabled.
-  Map<String, dynamic> get diagnostics => Synheart.runtimeDiagnostics();
+  /// Native runtime health, with a FULL symbol audit.
+  ///
+  /// `probeAll: true` matters here. Optional bindings resolve lazily, so a
+  /// diagnostics screen that just reads `missingSymbols` reports an empty list
+  /// — and looks healthy — while having checked nothing. This example never
+  /// calls the lab, resilience, priority, or backfill APIs, so without the
+  /// probe every one of those symbols would go unexamined.
+  Map<String, dynamic> get diagnostics =>
+      Synheart.runtimeDiagnostics(probeAll: true);
 
   /// SDK version constant, kept in sync with pubspec.
   String get sdkVersion => synheartCoreVersion;
+
+  /// Whether the loaded runtime exposes the lab session ABI.
+  ///
+  /// Worth surfacing next to `missingSymbols`, because that list does NOT cover
+  /// it. Most lab operations (`lab_start`, `lab_open_window`, `lab_finalize`, …)
+  /// are bound eagerly rather than through the guarded optional path, so an
+  /// absent one throws on first access instead of being recorded as missing.
+  /// `is_lab_available` is the SDK's documented gate — check it before calling
+  /// any lab API.
+  bool get isLabAvailable => Synheart.isLabAvailable;
 
   /// HSI windows buffered during the session, capped by the SDK.
   List<String> get sessionWindows => Synheart.getSessionHsiWindows();

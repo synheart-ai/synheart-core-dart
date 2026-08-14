@@ -4914,22 +4914,33 @@ class Synheart {
   /// - `isAvailable` (`bool`) — the native bridge loaded.
   /// - `version` (`String?`) — native runtime version.
   /// - `frameCount` (`int`) — HSI frames produced in the current session.
-  /// - `missingSymbols` (`List<String>`) — optional symbols probed so far that
-  ///   the loaded library does not export. Non-empty means the vendored runtime
-  ///   predates this SDK release and the features behind those symbols are
-  ///   silently disabled; run `synheart install runtime` to update it. The list
-  ///   fills lazily, as each feature is first used.
+  /// - `missingSymbols` (`List<String>`) — optional symbols the loaded library
+  ///   does not export. Non-empty means the vendored runtime predates this SDK
+  ///   release and the features behind those symbols are silently disabled;
+  ///   run `synheart install runtime` to update it.
+  /// - `probedSymbols` (`int`) — how many optional symbols have been checked.
+  ///   Optional bindings resolve lazily, so this is `0` until something uses
+  ///   them and an empty `missingSymbols` alongside `probedSymbols: 0` means
+  ///   "nothing checked", not "all good". Pass `probeAll: true` to force a full
+  ///   audit first.
   ///
   /// The `lastQuality` key was removed in 0.10.2 — it read a native symbol
   /// (`synheart_core_last_quality`) that the runtime has never exported
   /// outside the edge/watch variant, so it always reported `0.0`.
-  static Map<String, dynamic> runtimeDiagnostics() {
+  static Map<String, dynamic> runtimeDiagnostics({bool probeAll = false}) {
+    if (probeAll) {
+      // Resolve every optional symbol so `missingSymbols` is a real audit.
+      // Off by default: it costs ~18 lookups and logs a line per miss, which
+      // belongs on a diagnostics screen rather than on every status poll.
+      SynheartCoreFFI.load()?.probeOptionalSymbols();
+    }
     return {
       'isAvailable': _coreRuntime != null,
       'version': CoreRuntimeBridge.version(),
       'frameCount': _coreRuntime?.frameCount() ?? 0,
       'missingSymbols': SynheartCoreFFI.missingSymbols.toList(growable: false)
         ..sort(),
+      'probedSymbols': SynheartCoreFFI.probedSymbolCount,
     };
   }
 

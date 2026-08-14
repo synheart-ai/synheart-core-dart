@@ -27,6 +27,7 @@ class DiagnosticsScreen extends StatelessWidget {
     final frameCount = diag['frameCount'] as int? ?? 0;
     final missing =
         (diag['missingSymbols'] as List?)?.cast<String>() ?? const <String>[];
+    final probed = diag['probedSymbols'] as int? ?? 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -56,21 +57,35 @@ class DiagnosticsScreen extends StatelessWidget {
               KeyValueRow('sdk version', c.sdkVersion),
               KeyValueRow('frames this session', '$frameCount'),
               KeyValueRow('buffered windows', '${c.sessionWindows.length}'),
+              KeyValueRow('lab ABI', c.isLabAvailable ? 'available' : 'absent'),
             ],
           ),
 
           SectionCard(
             title: 'Native symbols',
             subtitle: missing.isEmpty
-                ? 'Every optional symbol probed so far resolved. The list fills '
-                      'lazily, as each feature is first used.'
-                : 'The loaded runtime does not export these, so the features '
-                      'behind them are disabled. Run `synheart install runtime`.',
+                ? 'All $probed optional symbols resolved against this runtime.'
+                : '${missing.length} of $probed optional symbols are absent, so '
+                      'the features behind them are disabled. Run '
+                      '`synheart install runtime` to update the runtime.',
             trailing: StatusPill(
-              missing.isEmpty ? 'ok' : '${missing.length} missing',
+              missing.isEmpty ? 'all $probed ok' : '${missing.length} missing',
               tone: missing.isEmpty ? PillTone.good : PillTone.warn,
             ),
             children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                  'Covers the $probed symbols bound through the guarded path. '
+                  'Some ABIs — the lab session calls in particular — are bound '
+                  'eagerly and are not counted here: an absent one throws on '
+                  'first access rather than degrading. Check "lab ABI" above '
+                  'before calling any lab API.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
               if (missing.isNotEmpty)
                 Container(
                   width: double.infinity,

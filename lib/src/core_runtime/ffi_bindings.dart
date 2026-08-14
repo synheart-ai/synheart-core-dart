@@ -641,6 +641,47 @@ class SynheartCoreFFI {
   static Set<String> get missingSymbols =>
       Set<String>.unmodifiable(_missingSymbols);
 
+  /// Every optional symbol probed so far, resolved or not.
+  static final Set<String> _probedSymbols = <String>{};
+
+  /// How many optional symbols have been probed. Zero means nothing has been
+  /// checked yet — which is NOT the same as "everything is fine", and is why
+  /// [probeOptionalSymbols] exists.
+  static int get probedSymbolCount => _probedSymbols.length;
+
+  /// Force-resolve every optional symbol, so [missingSymbols] reflects a real
+  /// audit rather than whatever happened to be used.
+  ///
+  /// Optional bindings are `late final` and resolve lazily, so a host that
+  /// never touches (say) the lab or resilience APIs never learns those symbols
+  /// are absent. A diagnostics screen reading [missingSymbols] before this runs
+  /// reports an empty set and looks healthy while having checked nothing.
+  ///
+  /// Call this from diagnostics/support surfaces, not on the hot path: it
+  /// resolves ~18 symbols once and logs one line per miss. Idempotent — the
+  /// `late final` fields cache, so repeat calls are free.
+  void probeOptionalSymbols() {
+    // Referencing each field forces its initializer to run.
+    coreLastError;
+    recordStudyConsent;
+    baselineHydrateLocal;
+    baselineExportOffline;
+    baselineImportOffline;
+    labReenqueueSession;
+    labEnsureMetadata;
+    labMarkMetadataDirty;
+    labCurrentMetadataId;
+    version;
+    prioritySetProvider;
+    prioritySetMetricOverride;
+    priorityEffectiveRank;
+    priorityResolve;
+    resilienceComputeV1;
+    backfillOpen;
+    backfillInsertBatch;
+    backfillFinalize;
+  }
+
   /// Wrap an OPTIONAL symbol lookup so a miss is recorded and logged once
   /// instead of silently swallowed.
   ///
@@ -655,6 +696,7 @@ class SynheartCoreFFI {
   /// management and cloud HSI fetch into silent no-ops with nothing in the
   /// logs. Every miss now produces exactly one line naming the symbol.
   static T? _optional<T extends Function>(String symbol, T Function() lookup) {
+    _probedSymbols.add(symbol);
     try {
       return lookup();
     } catch (_) {
