@@ -45,10 +45,12 @@ class SessionScreen extends StatelessWidget {
           // as the consent precondition, so showing both stacked was noise.
           if (c.sessionError != null)
             ErrorBanner(c.sessionError!)
-          else if (!c.hasAnyConsent)
+          else if (!c.hasCollectionConsent)
             const ErrorBanner(
-              'No collection channel is granted. Grant at least biosignals on '
-              'the Consent tab, or the runtime will drop every HSI window.',
+              'No collection channel is granted. Grant biosignals, behavior, '
+              'or phone context on the Consent tab — cloud upload, vendor '
+              'sync, and research do not make any sensor readable on their '
+              'own, so a session would collect nothing.',
             ),
 
           SectionCard(
@@ -66,7 +68,12 @@ class SessionScreen extends StatelessWidget {
                         label: const Text('Stop session'),
                       )
                     : FilledButton.icon(
-                        onPressed: c.startSession,
+                        // Disabled without collection consent: the SDK now
+                        // rejects that case anyway, and offering a button that
+                        // throws is worse than one that is visibly unavailable.
+                        onPressed: c.hasCollectionConsent
+                            ? c.startSession
+                            : null,
                         icon: const Icon(Icons.play_arrow),
                         label: const Text('Start session'),
                       ),

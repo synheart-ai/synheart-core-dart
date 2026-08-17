@@ -1,181 +1,145 @@
-# Example App Setup Guide
+# Example app setup
 
-This guide will help you configure the Synheart Core SDK example app with your own credentials and settings.
+The example runs **local-only by default** — no credentials, nothing leaves the
+device. This guide covers that baseline and how to opt into cloud upload.
 
-## Overview
-
-The example app demonstrates how to integrate the Synheart Core SDK into a Flutter application. To use certain features (like consent service integration), you'll need to provide your own credentials.
-
-## Prerequisites
-
-- Flutter SDK installed (see [Flutter documentation](https://docs.flutter.dev/get-started/install))
-- Synheart CLI installed and authenticated
-- Native runtime installed from this directory with `synheart install runtime`
-- A Synheart account with access to:
-  - Consent Service API credentials (for consent service features)
-  - Cloud Platform credentials (for cloud sync features)
-
-## Configuration
-
-### 1. Consent Service Configuration
-
-The consent service allows you to manage user consent for data collection and processing. To enable consent service features:
-
-#### Step 1: Obtain Your Credentials
-
-You'll need:
-- **App ID**: Your application identifier from the Synheart platform
-- **App API Key**: Your API key for authenticating with the consent service
-
-Contact your Synheart representative or visit the [Synheart Developer Portal](https://platform.synheart.ai/) to obtain these credentials.
-
-#### Step 2: Configure in the Example App
-
-Open `lib/providers/synheart_provider.dart` and locate the `initialize` method. Uncomment and update the `ConsentConfig`:
-
-```dart
-consentConfig: ConsentConfig(
-  appId: 'your-app-id-here',           // Replace with your App ID
-  appApiKey: 'your-api-key-here',      // Replace with your API Key
-  platform: 'flutter',                  // Platform identifier
-  userId: userId,                       // User ID (passed to initialize)
-  region: 'US',                         // Optional: Region code
-),
-```
-
-#### Step 3: Device ID
-
-The `deviceId` is optional. If not provided, the SDK will automatically generate and persist a unique device ID for each device. You can provide a custom device ID if needed:
-
-```dart
-consentConfig: ConsentConfig(
-  appId: 'your-app-id-here',
-  appApiKey: 'your-api-key-here',
-  deviceId: 'custom-device-id',  // Optional: Custom device ID
-  // ... other fields
-),
-```
-
-### 2. Cloud Configuration (Optional)
-
-The cloud configuration enables uploading HSI snapshots to the Synheart Platform. To enable cloud sync features:
-
-#### Step 1: Obtain Your Credentials
-
-You'll need:
-- **App ID**: Your app's identifier from the Synheart Platform dashboard. The cloud derives the rest of the hierarchy (organization, tenant, project) from `app_id`, so the SDK does not need them.
-- **Subject ID**: Pseudonymous user identifier (typically the same as `userId`).
-- **Instance ID**: Unique identifier for this SDK instance (can be auto-generated).
-
-Request signing is handled automatically by the runtime using the device's hardware-backed ECDSA key — no shared secret is needed in `CloudConfig`.
-
-Contact your Synheart representative or visit the [Synheart Developer Portal](https://platform.synheart.ai/) to obtain these credentials.
-
-#### Step 2: Configure in the Example App
-
-Open `lib/providers/synheart_provider.dart` and locate the `initialize` method. Uncomment and update the `CloudConfig`:
-
-```dart
-cloudConfig: CloudConfig(
-  subjectId: userId,                     // Pseudonymous user identifier
-  instanceId: 'unique-instance-id',      // Unique instance identifier (UUID recommended)
-),
-```
-
-**Security Note**: Never commit API keys, secrets, or credentials to version control. Consider using environment variables or secure storage solutions.
-
-### 3. Build-time configuration
-
-The example reads consent credentials from Dart defines. Keep them outside
-source control and pass them at build time:
+## Baseline: no credentials
 
 ```bash
-flutter run \
-  --dart-define=SYNHEART_CONSENT_APP_ID=your-app-id \
-  --dart-define=SYNHEART_CONSENT_APP_API_KEY=your-api-key
+synheart install runtime
+synheart install syni     # required on iOS; pod install fails without it
+flutter pub get
+flutter run
 ```
 
-To target another platform origin, add:
+The config the app builds is in `lib/sdk/synheart_controller.dart`
+(`buildConfig()`), and the Setup screen prints it verbatim so you can copy it:
+
+```dart
+SynheartConfig(
+  appId: 'ai.synheart.core.example',   // required
+  subjectId: <persisted, stable>,      // required
+  appVersion: '1.0.0',
+  deviceId: <persisted>,
+  mode: SynheartMode.personal,
+
+  // Development only. Production gates capabilities on a verified consent token.
+  allowUnsignedCapabilities: true,
+
+  // Declaring a module config activates that feature.
+  wearConfig: WearConfig(),
+  phoneConfig: PhoneConfig(),
+  behaviorConfig: BehaviorConfig(),
+
+  // Required for the runtime consent-form flow — consentSubmitFormTyped needs a
+  // non-empty deviceId and platform, or consent can never be written.
+  consentConfig: ConsentConfig(
+    deviceId: <persisted>,
+    platform: 'flutter',
+    userId: <subjectId>,
+  ),
+)
+```
+
+Two fields are non-negotiable:
+
+- **`appId`** and **`subjectId`** are required. `validate()` rejects an empty
+  value before any native work happens.
+- **`subjectId` must be stable across restarts.** The runtime scopes storage,
+  baselines, and device identity to it, so a value that changes per launch looks
+  like a new person every time and baselines never mature. Passing `userId:` to
+  `initialize()` does **not** populate it — set it on the config.
+
+Override the app id at build time if you have one issued at
+platform.synheart.ai:
 
 ```bash
---dart-define=SYNHEART_BASE_URL=https://api.your-platform.example
+flutter run --dart-define=SYNHEART_APP_ID=your-app-id
 ```
 
-For multiple endpoint values, copy `../env/synheart.endpoints.example.json` to
-a gitignored local file and use `--dart-define-from-file`.
+## Enabling cloud upload
 
-## Running the Example App
+Cloud requires a provisioned organization. Add both `deviceAuthConfig` and
+`cloudConfig` to `buildConfig()`:
 
-1. **Install dependencies**:
-   ```bash
-   cd example
-   flutter pub get
-   ```
+```dart
+SynheartConfig(
+  appId: 'your-app-id',
+  subjectId: 'your-stable-user-id',
 
-2. **Configure credentials** (see Configuration section above)
+  // Hardware-backed device identity. Required — the runtime signs every ingest
+  // request with it. Without this, uploads are rejected.
+  deviceAuthConfig: const DeviceAuthConfig(
+    authBaseUrl: 'https://api.synheart.ai',
+    packageName: 'ai.synheart.core.example',
+  ),
 
-3. **Run the app**:
-   ```bash
-   flutter run
-   ```
+  cloudConfig: CloudConfig(
+    subjectId: 'your-stable-user-id',
+    instanceId: 'stable-installation-id',
+    orgId: 'your-org-id',              // REQUIRED — see below
+  ),
 
-## Features
+  consentConfig: ConsentConfig(
+    deviceId: 'your-device-id',
+    platform: 'flutter',
+    userId: 'your-stable-user-id',
+  ),
+)
+```
 
-The example app demonstrates:
+**`orgId` must be non-empty.** Cloud ingest is gated on it: with an empty
+`orgId` the SDK disables ingest entirely rather than letting the native runtime
+reject the whole configuration. You get a working local-only app and a log line
+saying cloud stayed off — not an upload failure you have to trace.
 
-- **SDK Initialization**: How to initialize the Synheart Core SDK
-- **HSI Updates**: Subscribing to HSI 1.3 state updates (`onHSIUpdate` raw JSON, `onStateUpdate` typed)
-- **Consent Management**: Managing user consent for data collection
-- **Cloud Sync**: Uploading HSI snapshots to the cloud (requires credentials)
-- **Behavior Tracking**: Monitoring user-device interactions
+Then grant cloud upload on the Consent screen. Submitting with cloud enabled
+makes the runtime fetch the default profile and issue a consent token; the
+response reports `synced` and `token`, and both must be true before uploads
+flow.
+
+> Never put an API key or signing secret in an app bundle. `CloudConfig.apiKey`
+> and `ConsentConfig.appApiKey` are deprecated and are not forwarded to the
+> runtime — it removed bundle-secret configuration as a security fix. Requests
+> are signed with the device identity instead.
 
 ## Troubleshooting
 
-### Consent Service Not Working
+**`ERR_NOT_CONFIGURED` on Initialize.** The message names the field and the fix.
+The usual cause is a missing `appId` or `subjectId`, or passing `userId:` to
+`initialize()` and expecting it to populate `config.subjectId`.
 
-- **Check credentials**: Ensure your `appId` and `appApiKey` are correct
-- **Check logs**: Look for error messages in the console output
+**`pod install` fails with `could not locate .../SyniRuntime.xcframework`.** Run
+`synheart install syni`. Also confirm `ios/Podfile` sets `SYNHEART_APP_ROOT` —
+without it the podspec walks up from the pod's own source directory, which
+resolves into `~/.pub-cache` for pub.dev dependencies and never finds your app.
 
-### No Data Appearing
+**Native runtime reports "missing" on the Runtime tab.** Run
+`synheart install runtime`, then `flutter clean && flutter run`.
 
-- **Check permissions**: Ensure health data permissions are granted (iOS HealthKit, Android Health Connect)
-- **Wait for initialization**: The SDK needs time to collect initial data (typically 30-60 seconds)
-- **Enable modules**: Make sure Wear / Behavior / Phone modules are activated
+**Symbols listed under Native symbols.** The vendored runtime predates this SDK
+release. The features behind those symbols return `null` / `-1` / empty rather
+than throwing. Run `synheart install runtime` to update it.
 
-### Cloud Sync Not Working
+**Session starts but no HSI.** Check the Signal sources card. HSI physiology is
+built from heart rate and HRV, so with no wearable paired and no health-data
+access, `arousal`, `stress`, and `sleep` stay empty by design. Focus and
+capacity can still be computed from behavior and motion. Watch the
+**carrying data** count, not **samples emitted** — the wear source emits an
+empty sample every poll tick either way.
 
-- **Verify CloudConfig**: Ensure all required fields are provided
-- **Check consent**: Cloud upload requires user consent (`cloudUpload: true`)
-- **Network connectivity**: Ensure the device has internet connectivity
+**Start session is disabled.** Grant biosignals, behavior, or phone context.
+Cloud upload, vendor sync, and research do not make any sensor readable on their
+own, so a session granted only those would collect nothing — the SDK rejects it.
 
-## Security Best Practices
+**No heart rate on iOS.** HealthKit needs the capability enabled in Xcode, which
+requires a paid Apple developer account. This example ships without it.
 
-1. **Never commit credentials**: Always use `.gitignore` for files containing secrets
-2. **Use environment variables**: Store sensitive data in environment variables or secure storage
-3. **Rotate keys regularly**: Regularly rotate your API keys for security
-4. **Use different keys per environment**: Use separate credentials for development, staging, and production
-5. **Monitor usage**: Monitor API usage to detect unauthorized access
+## Security notes
 
-## Getting Help
-
-- **Documentation**: See the main [Synheart Core SDK README](../README.md)
-- **Issues**: Report issues on [GitHub](https://github.com/synheart-ai/synheart-core-flutter/issues)
-- **Support**: Contact support@synheart.ai for assistance
-
-## Next Steps
-
-After setting up the example app:
-
-1. Explore the different screens and features
-2. Review the code to understand SDK integration patterns
-3. Adapt the example code for your own application
-4. Refer to the [main SDK documentation](../README.md) for advanced features
-
----
-
-**Important**: This example app is for demonstration purposes. In production applications, always:
-- Store credentials securely
-- Implement proper error handling
-- Follow platform-specific privacy guidelines
-- Obtain proper user consent before collecting data
-
+- Never commit credentials. Pass them with `--dart-define` or a
+  `--dart-define-from-file` JSON.
+- `allowUnsignedCapabilities: true` is development-only. It disables the
+  capability lattice; production drives it from a verified consent token.
+- The Runtime tab's **Wipe local data** clears the runtime SQLite store, the SRM
+  snapshot, and cached consent records for the current subject.

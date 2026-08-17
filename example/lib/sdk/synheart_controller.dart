@@ -82,9 +82,18 @@ class SynheartController extends ChangeNotifier {
   HSIState? get latestState => _latestState;
   int get hsiWindowCount => _hsiWindowCount;
 
-  /// True once the user has granted at least one collection channel.
-  /// [startSession] is pointless before this — nothing would be collected.
-  bool get hasAnyConsent => _consentState?.hasAnyGrant ?? false;
+  /// True when a channel that actually yields sensor data is granted.
+  ///
+  /// Deliberately NOT `hasAnyGrant`, which also counts cloudUpload,
+  /// vendorSync, research and syni. Those govern what happens to data once
+  /// collected; none makes a sensor readable. A user who granted only cloud
+  /// upload would otherwise get a session that reports `collecting` while every
+  /// module sits idle with nothing it is permitted to gather.
+  bool get hasCollectionConsent {
+    final c = _consentState;
+    if (c == null) return false;
+    return c.biosignals || c.behavior || c.phoneContext;
+  }
 
   // ── 1. Identity + initialization ───────────────────────────────────────
 

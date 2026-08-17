@@ -284,6 +284,27 @@ class Synheart {
   static String? _cachedHsiRaw;
   static HSIState? _cachedHsiState;
 
+  /// `meta.ids.hsi_id` of the most recently delivered window, for the
+  /// duplicate-suppression in [_deliverHsiWindow].
+  static String? _lastDeliveredHsiId;
+
+  /// Pull `meta.ids.hsi_id` out of a raw HSI payload, or null when the payload
+  /// is unparseable or predates RFC-IDENTITY-0001.
+  static String? _extractHsiId(String hsiJson) {
+    try {
+      final root = jsonDecode(hsiJson);
+      if (root is! Map) return null;
+      final meta = root['meta'];
+      if (meta is! Map) return null;
+      final ids = meta['ids'];
+      if (ids is! Map) return null;
+      final id = ids['hsi_id'];
+      return (id is String && id.isNotEmpty) ? id : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static HSIState _parseHsiCached(String json) {
     final cached = _cachedHsiState;
     if (cached != null && identical(_cachedHsiRaw, json)) return cached;
@@ -843,7 +864,7 @@ class Synheart {
   @Deprecated(
     'Returns only a single boolean. Use syncReadinessSnapshot() for the '
     'primary readiness state, or syncStatusSnapshot() for engine detail. '
-    'Will be removed in 0.11.0.',
+    'Will be removed in 0.12.0.',
   )
   static Future<SyncStatus> getSyncStatus() async {
     final snapshot = _coreRuntime?.syncStatus();
@@ -1191,6 +1212,7 @@ class Synheart {
   static void _invalidateHsiCache() {
     _cachedHsiRaw = null;
     _cachedHsiState = null;
+    _lastDeliveredHsiId = null;
   }
 
   /// Rebind the runtime subject id when the signed-in identity changes, then
@@ -1665,6 +1687,22 @@ class Synheart {
   /// seconds (Session SDK boundary). If null, session runs until [stopSession].
   static Future<SessionHandle?> startSession({int? durationSec}) async {
     if (_coreRuntime != null) {
+      // Same precondition the Dart fallback path enforces. Without it the
+      // runtime path would happily open a session with no collection consent —
+      // the modules then have nothing they are permitted to gather, so the
+      // session runs, reports `collecting`, and produces nothing.
+      //
+      // Note this deliberately checks COLLECTION consent. Granting only
+      // cloud-upload, vendor-sync, research, or syni does not make any sensor
+      // available, so those must not satisfy it.
+      if (!shared._hasAtLeastOneCollectionConsent()) {
+        throw StateError(
+          'Cannot start a session without collection consent. Grant at least '
+          'one of biosignals, behavior, or phoneContext first — cloud upload, '
+          'vendor sync, research, and syni do not provide sensor data on their '
+          'own, so a session granted only those would collect nothing.',
+        );
+      }
       await shared._prepareRuntimeAuthForSessionStart();
       final result = _coreRuntime!.startSession();
       if (result != null) {
@@ -3041,6 +3079,26 @@ class Synheart {
   /// dropped 100% of HSI windows during a validation run. Cross-check the
   /// effective-state snapshot so a stale Dart-side cache can't block delivery.
   void _deliverHsiWindow(String hsiJson) {
+    // Drop a window already delivered by the other producer.
+    //
+    // `ingest_batch_json` BOTH broadcasts on the runtime's `state_tx` (which
+    // drives `setHsiCallback`) and returns the same payload to Dart. So on any
+    // platform where the native callback fires — Android, and iOS as of
+    // runtime 0.19.2 — a window completed by `pushWearHr` / `pushVendorHrv`
+    // arrives twice: once through the callback, once through the return value.
+    // That double-counted `onHSIUpdate` / `onStateUpdate`, the session buffer,
+    // and anything downstream of them.
+    //
+    // Deduped on `meta.ids.hsi_id` (RFC-IDENTITY-0001) — the same key the
+    // runtime's own ingest connector dedupes on. A payload without one is
+    // delivered rather than dropped, matching the runtime's "dedup disabled
+    // for this row" behaviour: losing a window is worse than repeating one.
+    final hsiId = _extractHsiId(hsiJson);
+    if (hsiId != null) {
+      if (hsiId == _lastDeliveredHsiId) return;
+      _lastDeliveredHsiId = hsiId;
+    }
+
     final local = _consentModule?.current();
     final effective = _coreRuntime?.consentEffectiveState();
     final biosignalsEffective =
@@ -3099,7 +3157,7 @@ class Synheart {
   /// summary shape (`{"total":14,"ready":0,...}`) that no code ever produced.
   @Deprecated(
     'Duplicate of runtimeBaselinesJson — both return the same native payload. '
-    'Use runtimeBaselinesJson. Will be removed in 0.11.0.',
+    'Use runtimeBaselinesJson. Will be removed in 0.12.0.',
   )
   static String? get runtimeBaselineSummary => runtimeBaselinesJson;
 
@@ -3278,6 +3336,9 @@ class Synheart {
     _sessionWearSubscription?.cancel();
     _sessionHsiBuffer.clear();
     _sessionWearBuffer.clear();
+    // A new session starts a fresh dedup window; a leftover id from the
+    // previous session must not suppress this session's first window.
+    _lastDeliveredHsiId = null;
     // HSI session buffer is filled via the setHsiCallback wired in configure().
     // The _hsvStream already receives consent-gated HSI; listen to it for session buffering.
     _sessionHsiSubscription = _hsvStream.stream.listen((hsiJson) {
@@ -4892,7 +4953,7 @@ class Synheart {
   @Deprecated(
     'Never deleted anything — it only logged. Use requestDataDeletion() for '
     'cloud-side erasure and wipeLocalData() for on-device data. Will be '
-    'removed in 0.11.0.',
+    'removed in 0.12.0.',
   )
   static Future<void> deleteCloudData() async {
     throw UnsupportedError(
@@ -5107,6 +5168,25 @@ class Synheart {
   }
 
   /// True if at least one activated feature has consent (required to start a session).
+  /// True when at least one channel that actually yields sensor data is
+  /// granted, read from the runtime's effective state where available.
+  ///
+  /// Distinct from [ConsentEffectiveState.hasAnyGrant], which also counts
+  /// cloudUpload / vendorSync / research / syni. Those permit what happens to
+  /// data once collected; none of them makes a sensor readable, so a session
+  /// gated on `hasAnyGrant` can start with nothing to collect.
+  bool _hasAtLeastOneCollectionConsent() {
+    final effective = consentEffectiveStateTyped();
+    if (effective != null) {
+      return effective.biosignals ||
+          effective.behavior ||
+          effective.phoneContext;
+    }
+    final local = _consentModule?.current();
+    if (local == null) return false;
+    return local.biosignals || local.behavior || local.phoneContext;
+  }
+
   bool _hasAtLeastOneFeatureWithConsent() {
     final activated = _activationManager?.activatedFeatures() ?? {};
     for (final feature in activated) {

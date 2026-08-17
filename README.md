@@ -100,7 +100,7 @@ Or declare the current package line explicitly:
 
 ```yaml
 dependencies:
-  synheart_core: ^0.10.2
+  synheart_core: ^0.11.0
 ```
 
 Then install the native runtimes:
@@ -1047,7 +1047,7 @@ development. Replace those settings before using it as a production template.
 ## Upgrading
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list. Breaking and behavioural
-changes in 0.10.2:
+changes in 0.11.0:
 
 - `CoreRuntimeBridge.flushUploads()` now returns a `Future`. Only affects code
   calling the bridge directly; `Synheart.ingestion` is unchanged.
@@ -1059,7 +1059,7 @@ changes in 0.10.2:
   module flag, so it reflects a session ended natively.
 - Removed: `MockWearSourceHandler`, `HsiWindowArtifact`, `TombstoneArtifact`,
   `CapabilityTokenFetcher`.
-- Deprecated, removed in 0.11.0: `SynheartConfig.capabilityToken` /
+- Deprecated, removed in 0.12.0: `SynheartConfig.capabilityToken` /
   `.capabilitySecret`, `CloudConfig.apiKey`, `ConsentConfig.appApiKey`,
   `getSyncStatus()`, `runtimeBaselineSummary`, `WearModule(useSynheartWear:)`.
   The native runtime removed bundle-secret configuration as a security fix;

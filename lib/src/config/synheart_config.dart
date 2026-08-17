@@ -138,7 +138,7 @@ class SynheartConfig {
     'Bundle-shipped capability tokens were removed from the native runtime as '
     'a security fix; capability gating is fail-closed and driven by a verified '
     'consent JWT. This field is no longer forwarded to the runtime. Use '
-    'deviceAuthConfig instead. Will be removed in 0.11.0.',
+    'deviceAuthConfig instead. Will be removed in 0.12.0.',
   )
   final CapabilityToken? capabilityToken;
 
@@ -146,7 +146,7 @@ class SynheartConfig {
   @Deprecated(
     'A signing secret must never ship inside an app bundle — it is readable by '
     'anyone who downloads the app. The native runtime no longer accepts one. '
-    'Use deviceAuthConfig instead. Will be removed in 0.11.0.',
+    'Use deviceAuthConfig instead. Will be removed in 0.12.0.',
   )
   final String? capabilitySecret;
 
@@ -185,13 +185,13 @@ class SynheartConfig {
     // ignore: deprecated_member_use_from_same_package
     @Deprecated(
       'Not forwarded to the runtime; use deviceAuthConfig. '
-      'Removed in 0.11.0.',
+      'Will be removed in 0.12.0.',
     )
     this.capabilityToken,
     // ignore: deprecated_member_use_from_same_package
     @Deprecated(
       'A signing secret must never ship in an app bundle; use '
-      'deviceAuthConfig. Removed in 0.11.0.',
+      'deviceAuthConfig. Will be removed in 0.12.0.',
     )
     this.capabilitySecret,
     this.allowUnsignedCapabilities = false,
@@ -352,7 +352,7 @@ class CloudConfig {
     'anyone who downloads the app. The native runtime removed bundle-secret '
     'config (cloud.api_key) as a security fix and this value is not forwarded. '
     'Requests are signed with the hardware-backed device identity instead; see '
-    'DeviceAuthConfig. Will be removed in 0.11.0.',
+    'DeviceAuthConfig. Will be removed in 0.12.0.',
   )
   final String? apiKey;
 
@@ -381,7 +381,7 @@ class CloudConfig {
     // ignore: deprecated_member_use_from_same_package
     @Deprecated(
       'An API key must never ship in an app bundle; requests are '
-      'signed with the device identity. Removed in 0.11.0.',
+      'signed with the device identity. Will be removed in 0.12.0.',
     )
     this.apiKey,
     this.orgId,
@@ -408,7 +408,7 @@ class ConsentConfig {
     'An API key must never ship inside an app bundle. The native runtime '
     'removed bundle-secret config (app_api_key) as a security fix and this '
     'value is not forwarded; consent calls are signed with the device '
-    'identity. Will be removed in 0.11.0.',
+    'identity. Will be removed in 0.12.0.',
   )
   final String? appApiKey;
 
@@ -430,7 +430,7 @@ class ConsentConfig {
     // ignore: deprecated_member_use_from_same_package
     @Deprecated(
       'An API key must never ship in an app bundle; consent calls '
-      'are signed with the device identity. Removed in 0.11.0.',
+      'are signed with the device identity. Will be removed in 0.12.0.',
     )
     this.appApiKey,
     this.deviceId,

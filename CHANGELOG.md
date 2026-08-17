@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.2] - 2026-08-14
+## [0.11.0] - 2026-08-14
 
 Hardening release from a full-repo review. No new features.
+
+Released as a MINOR, not a patch: this removes and changes public API, and
+`^0.10.1` would have resolved a patch automatically into apps that use it.
 
 **Headline:** the SDK could not initialise at all without cloud credentials.
 `initialize()` returned a null native runtime — no HSI, no consent store, no
@@ -39,7 +42,7 @@ documented configuration, has never worked in this line until now.
   `.gitignore` rules covering `ios/SynheartCoreRuntime.xcframework` (a symlink
   the podspec creates into the consumer app — pub follows it) and
   `example/synheart/vendor/` did not apply. The archive carried both framework
-  slices plus their dSYM DWARF blobs. Now 605 KB, with a CI check that fails
+  slices plus their dSYM DWARF blobs. Now ~610 KB, with a CI check that fails
   the publish job if native artifacts or an oversized archive reappear.
 - **`flushUploads` blocked the UI isolate.** The native call performs its HTTP
   round-trip under `block_on`; it now runs on a background isolate like every
@@ -47,11 +50,26 @@ documented configuration, has never worked in this line until now.
 - **A failed `initialize()` could never be retried.** The init completer was
   left in place after an error, so every subsequent call received the same
   failed future — a transient cause was permanent short of `dispose()`.
-- **HSI never reached `onHSIUpdate` / `onStateUpdate` on iOS** for hosts
-  pushing through `pushWearHr` / `pushVendorHrv`. Those delivered only to the
-  static `onHsi` callback, while the stream was fed by a native callback that
-  does not fire on iOS. Both producers now share one gated delivery path, so
-  the documented streams and `getSessionHsiWindows()` work on both platforms.
+- **HSI reached only the `onHsi` callback, never `onHSIUpdate` /
+  `onStateUpdate`,** for hosts pushing through `pushWearHr` /
+  `pushVendorHrv`. Both producers now share one consent-gated delivery path.
+  (The long-standing claim that the native callback "doesn't fire on iOS" no
+  longer holds against runtime 0.19.2 — verified on device — which is why that
+  path needs the duplicate suppression below.)
+- **Duplicate HSI delivery.** `ingest_batch_json` BOTH broadcasts on the
+  runtime's `state_tx` — which drives `setHsiCallback` — and returns the same
+  payload to Dart. With both producers wired to one delivery path, every window
+  completed by a per-event push arrived twice: double `onHSIUpdate` /
+  `onStateUpdate`, double session-buffer entries, double downstream counters.
+  Now suppressed on `meta.ids.hsi_id` (RFC-IDENTITY-0001), the same key the
+  runtime's own ingest connector dedupes on. A payload without one is delivered
+  rather than dropped — losing a window is worse than repeating one.
+- **A session could start with no collection consent.** The runtime path of
+  `startSession()` performed none of the checks the Dart fallback path did, so
+  a host that had granted only cloud upload, vendor sync, research, or syni
+  could open a session that reported `collecting` while every module sat idle
+  with nothing it was permitted to gather. `startSession()` now requires at
+  least one of biosignals / behavior / phoneContext.
 - **Session buffers grew without bound.** `getSessionHsiWindows()` and
   `getSessionWearSamples()` retained every entry for the session's life (24h by
   default) and cleared only on the next `startSession()`. Both are now capped
@@ -66,6 +84,18 @@ documented configuration, has never worked in this line until now.
   `initialize()` does **not** populate `config.subjectId`, which is the most
   common way to hit the error. Failures are also logged before the throw, since
   hosts commonly catch and render a short toast that discards the detail.
+- **One failing module killed the whole session, and orphaned a native one.**
+  `ModuleManager.startAll()` awaited `module.start()` unguarded, so the first
+  throw ended the loop and every later module was skipped —
+  `initializeAll()` and `stopAll()` were already per-module resilient.
+  Modules start wear-first, so on an iOS build without the HealthKit
+  entitlement *nothing* started rather than everything-but-biosignals.
+  Separately, `startSession()` opened the native session before starting
+  modules, so a throw escaped leaving a session the host did not know about;
+  the next call then got `SessionActive`, returned null, and fell through to
+  the Dart-only path with a `core_<ts>` handle for a session the runtime never
+  opened. `startAll()` is now resilient and reports `moduleId -> error`, and
+  `startSession()` rolls the native session back on failure.
 - `runtimeDiagnostics()['lastQuality']` always reported `0.0`; it read a native
   symbol the runtime has never exported outside the edge variant. Removed.
 
@@ -108,7 +138,7 @@ documented configuration, has never worked in this line until now.
 ### Deprecated
 
 The native runtime removed bundle-secret configuration as a security fix, and
-these were never forwarded to it. All are removed in 0.11.0.
+these were never forwarded to it. All are scheduled for removal in 0.12.0.
 
 - `SynheartConfig.capabilityToken`, `SynheartConfig.capabilitySecret`
 - `CloudConfig.apiKey`, `ConsentConfig.appApiKey`
