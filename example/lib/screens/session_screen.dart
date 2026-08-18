@@ -47,10 +47,11 @@ class SessionScreen extends StatelessWidget {
             ErrorBanner(c.sessionError!)
           else if (!c.hasCollectionConsent)
             const ErrorBanner(
-              'No collection channel is granted. Grant biosignals, behavior, '
-              'or phone context on the Consent tab — cloud upload, vendor '
-              'sync, and research do not make any sensor readable on their '
-              'own, so a session would collect nothing.',
+              'No enabled feature has matching consent. A session needs both '
+              'halves of a pair — the feature enabled in SynheartConfig and its '
+              'consent granted. Grant biosignals, behavior, or phone context on '
+              'the Consent tab; cloud upload, vendor sync, and research do not '
+              'make any sensor readable on their own.',
             ),
 
           SectionCard(

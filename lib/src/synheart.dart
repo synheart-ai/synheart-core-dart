@@ -10,6 +10,7 @@ import 'package:rxdart/rxdart.dart';
 import 'config/runtime_config_map.dart';
 import 'config/synheart_config.dart';
 import 'core/bounded_buffer.dart';
+import 'core/hsi_delivery_deduper.dart';
 import 'core/logger.dart';
 import 'modules/base/module_manager.dart';
 import 'modules/base/synheart_module.dart';
@@ -203,13 +204,8 @@ class Synheart {
 
   // (HSI subscription fields removed — HSI is now delivered via setHsiCallback)
 
-  // Session data buffers — accumulate during session, persist after stop.
-  //
-  // Bounded: these used to be unbounded growing lists cleared only on the NEXT
-  // startSession(). With the default 24h session duration that meant ~8,600
-  // retained HSI JSON strings (one per ~10s window) and ~86,000 wear samples,
-  // held past session stop. They are ring buffers now — oldest entries are
-  // evicted once the cap is reached.
+  // Session data buffers — accumulate during a session, readable after stop.
+  // Bounded ring buffers; oldest entries are evicted at the cap.
   final BoundedBuffer<String> _sessionHsiBuffer = BoundedBuffer<String>(
     maxSessionHsiWindows,
   );
@@ -274,36 +270,15 @@ class Synheart {
 
   /// Most recently parsed [HSIState], keyed by the raw JSON it came from.
   ///
-  /// [onStateUpdate] and [currentHSIState] both used to call
-  /// [HSIState.fromJson] on every delivery and every read. Because `.map` on a
-  /// broadcast stream runs once per subscriber, N listeners meant N full
-  /// `jsonDecode` passes over the same window (each carrying a 64-dimension
-  /// embedding); and because [currentHSIState] is a getter, a widget reading
-  /// it in `build()` re-parsed on every frame. Parsing once per distinct
-  /// window and handing out the immutable result removes both costs.
+  /// `.map` on a broadcast stream runs once per subscriber, and
+  /// [currentHSIState] is a getter that a widget may read every frame. Parsing
+  /// each window once and sharing the immutable result avoids both costs.
   static String? _cachedHsiRaw;
   static HSIState? _cachedHsiState;
 
-  /// `meta.ids.hsi_id` of the most recently delivered window, for the
-  /// duplicate-suppression in [_deliverHsiWindow].
-  static String? _lastDeliveredHsiId;
-
-  /// Pull `meta.ids.hsi_id` out of a raw HSI payload, or null when the payload
-  /// is unparseable or predates RFC-IDENTITY-0001.
-  static String? _extractHsiId(String hsiJson) {
-    try {
-      final root = jsonDecode(hsiJson);
-      if (root is! Map) return null;
-      final meta = root['meta'];
-      if (meta is! Map) return null;
-      final ids = meta['ids'];
-      if (ids is! Map) return null;
-      final id = ids['hsi_id'];
-      return (id is String && id.isNotEmpty) ? id : null;
-    } catch (_) {
-      return null;
-    }
-  }
+  /// Suppresses windows delivered by both producers. See
+  /// [HsiDeliveryDeduper] for why two paths exist and how identity is decided.
+  static final HsiDeliveryDeduper _hsiDeduper = HsiDeliveryDeduper();
 
   static HSIState _parseHsiCached(String json) {
     final cached = _cachedHsiState;
@@ -1041,12 +1016,8 @@ class Synheart {
       try {
         config.validate();
       } on SynheartError catch (e) {
-        // Log before rethrowing. Hosts commonly wrap initialize() in a
-        // try/catch that renders a short toast ("Init failed"), which drops
-        // the actionable part of the message on the floor — leaving nothing in
-        // logcat to explain what to set. Emit it once here so the fix is
-        // visible in the log stream regardless of what the host does with the
-        // exception.
+        // Log before rethrowing, so the actionable detail reaches the log even
+        // when the host renders only a short error message.
         SynheartLogger.log(
           '[Synheart] Configuration rejected (${e.code}):\n${e.message}',
           error: e,
@@ -1212,7 +1183,7 @@ class Synheart {
   static void _invalidateHsiCache() {
     _cachedHsiRaw = null;
     _cachedHsiState = null;
-    _lastDeliveredHsiId = null;
+    _hsiDeduper.reset();
   }
 
   /// Rebind the runtime subject id when the signed-in identity changes, then
@@ -1646,13 +1617,9 @@ class Synheart {
       // same try — a throw there is a post-init hiccup, not a setup failure,
       // and must not reset `_isConfigured` or re-complete a settled completer.
       if (completer != null && !completer.isCompleted) {
-        // Clear the completer BEFORE completing it. Leaving it in place made
-        // failure permanent: the `_initCompleter != null` guard at the top of
-        // this method handed every subsequent `initialize()` the same
-        // already-errored future, so a transient cause (no network during
-        // capability load, a cold keychain, a slow Play Integrity bind) could
-        // never be retried — the only escape was a full `dispose()`. Cleared,
-        // the next call re-runs configuration from scratch.
+        // Clear the completer before completing it, so a later `initialize()`
+        // re-runs configuration instead of receiving this same errored future.
+        // A transient failure must not be permanent.
         _initCompleter = null;
         _isConfigured = false;
         completer.completeError(e, stack);
@@ -1697,10 +1664,14 @@ class Synheart {
       // available, so those must not satisfy it.
       if (!shared._hasAtLeastOneCollectionConsent()) {
         throw StateError(
-          'Cannot start a session without collection consent. Grant at least '
-          'one of biosignals, behavior, or phoneContext first — cloud upload, '
-          'vendor sync, research, and syni do not provide sensor data on their '
-          'own, so a session granted only those would collect nothing.',
+          'Cannot start a session: no enabled feature has matching consent.\n\n'
+          'A session needs BOTH sides of a pair — the feature enabled in '
+          'SynheartConfig (wearConfig / behaviorConfig / phoneConfig) AND its '
+          'consent granted (biosignals / behavior / phoneContext). Enabling '
+          'wear while granting only behavior satisfies neither, so nothing '
+          'would collect.\n\n'
+          'Cloud upload, vendor sync, research, and syni are not collection '
+          'consents — they govern what happens to data once gathered.',
         );
       }
       await shared._prepareRuntimeAuthForSessionStart();
@@ -1711,13 +1682,11 @@ class Synheart {
           startedAtMs: result['started_at_ms'] as int,
           mode: shared._config?.mode ?? SynheartMode.personal,
         );
-        // The native session now EXISTS. Anything that throws past this point
-        // must not escape without tearing it down, or the runtime is left with
-        // a session the host does not know about — and the next startSession()
-        // fails with SessionActive, silently falling through to the Dart-only
-        // path below and handing back a `core_<ts>` handle for a session the
-        // runtime never opened. Observed on iOS, where a missing HealthKit
-        // entitlement made the wear module throw.
+        // The native session now exists. Anything that throws past this point
+        // must tear it down, or the runtime keeps a session the host does not
+        // know about — and the next startSession() is refused as already
+        // active, falling through to the Dart-only path below with a handle
+        // for a session the runtime never opened.
         try {
           await shared._startRuntimeLinkedCollection();
         } catch (e, st) {
@@ -1777,14 +1746,10 @@ class Synheart {
 
   /// Whether the main data-collection session is currently running.
   ///
-  /// Prefers the native runtime's own view. This used to return the Dart flag
-  /// alone, which tracks whether the Dart modules were started — a related but
-  /// different thing. The runtime's `is_running` was never read anywhere in the
-  /// SDK, so if a session ended natively (a stop the host did not drive, or a
-  /// runtime-side teardown) every host kept reporting "collecting" indefinitely.
-  ///
-  /// Falls back to the Dart flag when the native bridge is absent, where it is
-  /// the only signal available.
+  /// Reads the native runtime, which is authoritative — the Dart module flag
+  /// tracks whether collection was started, a related but different thing, and
+  /// would keep reporting a running session after a runtime-side teardown.
+  /// Falls back to the Dart flag when the native bridge is absent.
   static bool get isSessionRunning {
     final runtime = _coreRuntime;
     if (runtime == null) return shared._isRunning;
@@ -3079,25 +3044,10 @@ class Synheart {
   /// dropped 100% of HSI windows during a validation run. Cross-check the
   /// effective-state snapshot so a stale Dart-side cache can't block delivery.
   void _deliverHsiWindow(String hsiJson) {
-    // Drop a window already delivered by the other producer.
-    //
-    // `ingest_batch_json` BOTH broadcasts on the runtime's `state_tx` (which
-    // drives `setHsiCallback`) and returns the same payload to Dart. So on any
-    // platform where the native callback fires — Android, and iOS as of
-    // runtime 0.19.2 — a window completed by `pushWearHr` / `pushVendorHrv`
-    // arrives twice: once through the callback, once through the return value.
-    // That double-counted `onHSIUpdate` / `onStateUpdate`, the session buffer,
-    // and anything downstream of them.
-    //
-    // Deduped on `meta.ids.hsi_id` (RFC-IDENTITY-0001) — the same key the
-    // runtime's own ingest connector dedupes on. A payload without one is
-    // delivered rather than dropped, matching the runtime's "dedup disabled
-    // for this row" behaviour: losing a window is worse than repeating one.
-    final hsiId = _extractHsiId(hsiJson);
-    if (hsiId != null) {
-      if (hsiId == _lastDeliveredHsiId) return;
-      _lastDeliveredHsiId = hsiId;
-    }
+    // A window completed by a per-event push reaches Dart twice — once via the
+    // native callback, once as the ingest return value. See
+    // [HsiDeliveryDeduper].
+    if (!_hsiDeduper.shouldDeliver(hsiJson)) return;
 
     final local = _consentModule?.current();
     final effective = _coreRuntime?.consentEffectiveState();
@@ -3152,9 +3102,8 @@ class Synheart {
 
   /// Baseline summary from the native synheart-engine.
   ///
-  /// Identical to [runtimeBaselinesJson] — both call the same native
-  /// `baselines_json`. The doc comment here previously described a distinct
-  /// summary shape (`{"total":14,"ready":0,...}`) that no code ever produced.
+  /// Identical to [runtimeBaselinesJson] — both read the same native
+  /// `baselines_json`.
   @Deprecated(
     'Duplicate of runtimeBaselinesJson — both return the same native payload. '
     'Use runtimeBaselinesJson. Will be removed in 0.12.0.',
@@ -3338,7 +3287,7 @@ class Synheart {
     _sessionWearBuffer.clear();
     // A new session starts a fresh dedup window; a leftover id from the
     // previous session must not suppress this session's first window.
-    _lastDeliveredHsiId = null;
+    _hsiDeduper.reset();
     // HSI session buffer is filled via the setHsiCallback wired in configure().
     // The _hsvStream already receives consent-gated HSI; listen to it for session buffering.
     _sessionHsiSubscription = _hsvStream.stream.listen((hsiJson) {
@@ -5176,15 +5125,48 @@ class Synheart {
   /// data once collected; none of them makes a sensor readable, so a session
   /// gated on `hasAnyGrant` can start with nothing to collect.
   bool _hasAtLeastOneCollectionConsent() {
+    final activated = _activationManager?.activatedFeatures() ?? const {};
+    for (final feature in _collectionFeatures) {
+      if (activated.contains(feature) && _hasCollectionConsentFor(feature)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// The features that actually acquire sensor data.
+  ///
+  /// `cloud`, `synsync` and `syni` are deliberately absent: they govern what
+  /// happens to data once collected, so none of them makes a session capable of
+  /// gathering anything.
+  static const List<SynheartFeature> _collectionFeatures = [
+    SynheartFeature.wear,
+    SynheartFeature.behavior,
+    SynheartFeature.phoneContext,
+  ];
+
+  /// Consent for [feature], preferring the runtime's effective state.
+  ///
+  /// Distinct from [_hasConsentForFeature], which reads `_consentModule` only.
+  /// That Dart-side snapshot has been observed returning stale defaults after
+  /// the runtime's consent store was already written — the same problem
+  /// [_deliverHsiWindow] guards against — so a session start gated on it alone
+  /// could reject a user who had in fact granted consent.
+  bool _hasCollectionConsentFor(SynheartFeature feature) {
     final effective = consentEffectiveStateTyped();
     if (effective != null) {
-      return effective.biosignals ||
-          effective.behavior ||
-          effective.phoneContext;
+      switch (feature) {
+        case SynheartFeature.wear:
+          return effective.biosignals;
+        case SynheartFeature.behavior:
+          return effective.behavior;
+        case SynheartFeature.phoneContext:
+          return effective.phoneContext;
+        default:
+          return false;
+      }
     }
-    final local = _consentModule?.current();
-    if (local == null) return false;
-    return local.biosignals || local.behavior || local.phoneContext;
+    return _hasConsentForFeature(feature);
   }
 
   bool _hasAtLeastOneFeatureWithConsent() {
@@ -5283,14 +5265,8 @@ class Synheart {
     }
 
     try {
-      // NOTE: this previously called
-      // `loadCapabilityToken('{}', config.capabilitySecret)` — a literal empty
-      // token JSON, so it could never load a capability. The native runtime has
-      // since removed bundle-shipped capability tokens entirely (capability
-      // gating is fail-closed and driven by a verified consent JWT), so the
-      // call was both a no-op and pointing at a removed mechanism. Dropped in
-      // 0.10.2 along with the deprecation of `capabilityToken` /
-      // `capabilitySecret` on SynheartConfig.
+      // No bundle-shipped capability token is loaded here: the runtime gates
+      // capabilities fail-closed from a verified consent JWT instead.
       await _capabilityModule?.loadDefaults();
     } catch (e) {
       SynheartLogger.log(

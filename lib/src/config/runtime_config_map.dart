@@ -3,31 +3,18 @@ import 'synheart_config.dart';
 
 /// Builds the JSON config handed to `synheart_core_new`.
 ///
-/// Pure and side-effect free so it can be unit-tested without a native runtime.
-/// It exists because the same map was previously spelled out three times —
-/// `Synheart._configure`, `Synheart.ensureRuntimeBridge`, and
-/// `SynheartInstance._buildConfigMap` — and they had already drifted apart:
-/// `SynheartInstance` gated `device_auth.enabled` on the config while the other
-/// two hardcoded `true`.
+/// Pure and side-effect free, so it can be unit-tested without a native
+/// runtime, and single-sourced so the facade and secondary instances cannot
+/// drift apart.
 ///
-/// That drift was not cosmetic. Both `Synheart` paths also hardcoded
-/// `ingest.enabled: true`, so a host with no [CloudConfig] hit
+/// Both gates below are load-bearing:
 ///
-///   ERR_NOT_CONFIGURED: cloud connector org_id must not be empty when HSI
-///   ingest is enabled
-///
-/// inside `synheart_core_new`. The handle came back null, `_coreRuntime` stayed
-/// null, and the SDK carried on to log "Initialization complete" — with no HSI,
-/// no consent store, and no storage. Local-only operation, which the SDK
-/// documents as supported, could not initialise at all.
-///
-/// Keep this the single source of truth. Both gates below are load-bearing:
-///
-/// - `ingest.*` requires a non-empty `org_id`, so it is enabled only when a
-///   [CloudConfig] supplies one.
-/// - `device_auth.enabled` requires a [DeviceAuthConfig]; enabling it without
-///   one makes the runtime reject crypto-callback registration with
-///   `ERR_NOT_CONFIGURED: device_auth not enabled`.
+/// - `ingest.*` requires a non-empty `org_id`. Enabling it without one makes
+///   the runtime reject the entire configuration, which surfaces as a null
+///   handle rather than a targeted error — so ingest is enabled only when a
+///   [CloudConfig] supplies an org id, leaving local-only hosts working.
+/// - `device_auth.enabled` requires a [DeviceAuthConfig]. Enabling it without
+///   one makes crypto-callback registration fail.
 Map<String, dynamic> buildRuntimeConfigMap(
   SynheartConfig config, {
   String? dataDir,
@@ -48,14 +35,10 @@ Map<String, dynamic> buildRuntimeConfigMap(
     'client_id': config.subjectId,
     // API gateway origin for consent / ingest / platform calls.
     //
-    // Resolved here rather than passed through raw. `SyncConfig.baseUrl`
-    // defaults to `ApiEndpoints.defaultAuthBaseUrl`, which is a const alias for
-    // the SYNHEART_AUTH_BASE_URL dart-define and is EMPTY unless the host sets
-    // it. An empty value makes the runtime fall back to its own hardcoded
-    // production URL — so a dev build with no dart-defines silently talked to
-    // production, which is the exact hazard the SynheartInstance config comment
-    // warns about. `resolvedAuthBaseUrl` applies the documented fallback chain
-    // explicitly instead.
+    // Resolved rather than passed through raw: `SyncConfig.baseUrl` defaults to
+    // a dart-define that is empty unless the host sets it, and an empty value
+    // makes the runtime fall back to its own built-in default. Resolving here
+    // keeps the chosen endpoint explicit.
     'api_base_url': config.sync.baseUrl.isNotEmpty
         ? config.sync.baseUrl
         : ApiEndpoints.resolvedAuthBaseUrl,

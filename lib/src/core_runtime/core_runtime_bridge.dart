@@ -1696,13 +1696,10 @@ class CoreRuntimeBridge {
 
   /// Flush the outbound ingest queue to the cloud.
   ///
-  /// Runs on a background isolate: the native `flush_uploads` performs its
-  /// HTTP round-trip under `block_on`, so calling it on the UI isolate froze
-  /// the main thread for the duration of the request — the same failure the
-  /// doc on [fetchCloudHsiWindows] records ("froze the main thread and ANR'd
-  /// while a request was in flight"). Every other network-touching FFI call in
-  /// this bridge already went through [_runFfi]; this one was missed, and the
-  /// jank scaled with the request timeout on a slow or dead network.
+  /// Runs on a background isolate: the native `flush_uploads` performs its HTTP
+  /// round-trip synchronously, so calling it on the UI isolate blocks the main
+  /// thread for the length of the request — unbounded on a slow or dead
+  /// network.
   ///
   /// Returns null when the bridge is disposed, the symbol is unavailable, or
   /// the native call failed.
@@ -1766,9 +1763,8 @@ class CoreRuntimeBridge {
   /// when the native symbol is absent (older vendored lib).
   ///
   /// The FFI call performs blocking network I/O, so it runs on a background
-  /// isolate (mirroring [sdkRegisterDevice]) — calling it on the UI isolate
-  /// froze the main thread and ANR'd while a request was in flight (e.g. a
-  /// pull-to-refresh keyed on a subject the backend never satisfies).
+  /// isolate (mirroring [sdkRegisterDevice]); on the UI isolate it would block
+  /// the main thread for the length of the request.
   Future<List<Map<String, dynamic>>> fetchCloudHsiWindows({
     required int fromMs,
     required int toMs,

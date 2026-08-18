@@ -82,17 +82,24 @@ class SynheartController extends ChangeNotifier {
   HSIState? get latestState => _latestState;
   int get hsiWindowCount => _hsiWindowCount;
 
-  /// True when a channel that actually yields sensor data is granted.
+  /// True when an enabled feature ALSO has its matching consent granted.
   ///
-  /// Deliberately NOT `hasAnyGrant`, which also counts cloudUpload,
-  /// vendorSync, research and syni. Those govern what happens to data once
-  /// collected; none makes a sensor readable. A user who granted only cloud
-  /// upload would otherwise get a session that reports `collecting` while every
-  /// module sits idle with nothing it is permitted to gather.
+  /// Both halves are required. This example enables wear, phone and behavior in
+  /// [buildConfig], so any one of the three consents pairs with something — but
+  /// an app that enables only `wearConfig` and is granted only `behavior` has
+  /// no working pair: wear is enabled but not permitted, behavior is permitted
+  /// but not enabled. Nothing would collect.
+  ///
+  /// Deliberately NOT `hasAnyGrant`, which also counts cloudUpload, vendorSync,
+  /// research and syni. Those govern what happens to data once collected; none
+  /// makes a sensor readable. `Synheart.startSession()` enforces the same rule.
   bool get hasCollectionConsent {
     final c = _consentState;
     if (c == null) return false;
-    return c.biosignals || c.behavior || c.phoneContext;
+    final cfg = buildConfig();
+    return (cfg.wearConfig != null && c.biosignals) ||
+        (cfg.behaviorConfig != null && c.behavior) ||
+        (cfg.phoneConfig != null && c.phoneContext);
   }
 
   // ── 1. Identity + initialization ───────────────────────────────────────

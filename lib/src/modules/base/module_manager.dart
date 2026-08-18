@@ -65,13 +65,10 @@ class ModuleManager {
   /// start. Returns `moduleId -> error` for whatever failed; empty means all
   /// started.
   ///
-  /// This used to `await module.start()` unguarded, so the first throw aborted
-  /// the loop and every later module was silently skipped. Modules start in
-  /// dependency order with wear first, so on an iOS build without the HealthKit
-  /// entitlement — where the wear source cannot initialize — behavior and phone
-  /// never started either, and the host saw a session producing nothing at all
-  /// rather than one missing biosignals. Degrading to the sources that do work
-  /// is far more useful than losing the session.
+  /// Modules start in dependency order, so an unguarded failure would skip
+  /// every later module — a single unavailable source (no health permission, no
+  /// paired wearable) would cost the whole session rather than one signal.
+  /// Degrading to the sources that do work is more useful than losing all.
   Future<Map<String, Object>> startAll() async {
     if (!_isInitialized) {
       throw Exception('Modules must be initialized before starting');

@@ -2,22 +2,17 @@ import 'dart:collection';
 
 /// A fixed-capacity FIFO buffer that evicts its oldest entry once full.
 ///
-/// Backs the session HSI / wear buffers behind `Synheart.getSessionHsiWindows()`
-/// and `Synheart.getSessionWearSamples()`. Those were plain growing lists,
-/// cleared only on the *next* `startSession()` — so with the default 24h
-/// session duration a long-running session retained roughly 8,600 HSI JSON
-/// strings (one per ~10s window) and 86,000 wear samples, and kept holding them
-/// after the session stopped.
+/// Backs the in-memory session history behind
+/// `Synheart.getSessionHsiWindows()` and `Synheart.getSessionWearSamples()`,
+/// bounding what a long-running session can retain.
 ///
 /// Eviction is silent by design: the durable record lives in the native
-/// runtime's storage and is read back through `Synheart.getHSIWindows()`. This
-/// buffer only exists to serve recent in-memory history.
+/// runtime's storage and is read back through `Synheart.getHSIWindows()`.
 class BoundedBuffer<T> {
-  /// Maximum entries retained. Adding beyond this evicts from the front.
+  /// Maximum entries retained; adding beyond this evicts from the front.
   ///
-  /// A capacity of zero (or less) makes [add] a no-op — the buffer is disabled
-  /// rather than unbounded, so a misconfigured cap cannot reintroduce unbounded
-  /// growth.
+  /// Zero or less disables the buffer rather than unbounding it, so a
+  /// misconfigured cap can never restore unbounded growth.
   final int capacity;
 
   final ListQueue<T> _items;

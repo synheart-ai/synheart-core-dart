@@ -625,16 +625,14 @@ class SynheartCoreFFI {
 
   static SynheartCoreFFI? _instance;
 
-  /// Names of optional `synheart_core_*` symbols the loaded native library did
-  /// not export, recorded the first time each one is probed.
+  /// Optional `synheart_core_*` symbols the loaded library does not export,
+  /// recorded the first time each is probed.
   ///
-  /// Optional bindings resolve lazily (`late final`), so a name lands here the
-  /// first time the feature behind it is used — which is also the moment a
-  /// developer is looking for an explanation. Surfaced through
-  /// `Synheart.runtimeDiagnostics()['missingSymbols']`.
-  ///
-  /// A non-empty set means the vendored runtime predates this SDK release:
-  /// those features return `null` / `-1` / `const []` instead of working.
+  /// Bindings resolve lazily, so a name lands here when the feature behind it is
+  /// first used. Surfaced through
+  /// `Synheart.runtimeDiagnostics()['missingSymbols']`; a non-empty set means
+  /// the vendored runtime predates this SDK release and those features return
+  /// `null` / `-1` / `const []` rather than working.
   static final Set<String> _missingSymbols = <String>{};
 
   /// Unmodifiable view of [_missingSymbols].
@@ -649,17 +647,13 @@ class SynheartCoreFFI {
   /// [probeOptionalSymbols] exists.
   static int get probedSymbolCount => _probedSymbols.length;
 
-  /// Force-resolve every optional symbol, so [missingSymbols] reflects a real
+  /// Force-resolve every optional symbol so [missingSymbols] reflects a real
   /// audit rather than whatever happened to be used.
   ///
-  /// Optional bindings are `late final` and resolve lazily, so a host that
-  /// never touches (say) the lab or resilience APIs never learns those symbols
-  /// are absent. A diagnostics screen reading [missingSymbols] before this runs
-  /// reports an empty set and looks healthy while having checked nothing.
-  ///
-  /// Call this from diagnostics/support surfaces, not on the hot path: it
-  /// resolves ~18 symbols once and logs one line per miss. Idempotent — the
-  /// `late final` fields cache, so repeat calls are free.
+  /// Without this, a host that never touches a given feature never learns its
+  /// symbol is absent, and an empty [missingSymbols] looks healthy while
+  /// nothing has been checked. Intended for diagnostics surfaces rather than
+  /// the hot path; idempotent, since the lookups cache.
   void probeOptionalSymbols() {
     // Referencing each field forces its initializer to run.
     coreLastError;
@@ -683,18 +677,12 @@ class SynheartCoreFFI {
   }
 
   /// Wrap an OPTIONAL symbol lookup so a miss is recorded and logged once
-  /// instead of silently swallowed.
+  /// rather than silently swallowed — a runtime that predates this SDK release
+  /// would otherwise disable whole feature areas with nothing in the logs.
   ///
   /// [lookup] must perform the `_lib.lookupFunction<NativeT, DartT>(symbol)`
-  /// call itself — dart:ffi requires the native type to be concrete at the call
+  /// call itself: dart:ffi requires the native type to be concrete at the call
   /// site, so it cannot be passed through a type variable.
-  ///
-  /// Replaces the bare `try { ... } catch (_) { return null; }` idiom this file
-  /// used at ~20 sites. That idiom made a version mismatch invisible: a runtime
-  /// one release behind turned recovery scores, readiness, breathing, backfill,
-  /// priority resolution, data deletion, research enrolment, sync-space
-  /// management and cloud HSI fetch into silent no-ops with nothing in the
-  /// logs. Every miss now produces exactly one line naming the symbol.
   static T? _optional<T extends Function>(String symbol, T Function() lookup) {
     _probedSymbols.add(symbol);
     try {

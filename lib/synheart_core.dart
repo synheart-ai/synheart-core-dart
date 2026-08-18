@@ -45,9 +45,8 @@ export 'src/sync/sync_readiness.dart';
 // `src/artifacts/baseline_snapshot.dart`) was never deployed. The
 // replacement is the typed envelope below.
 //
-// `HsiWindowArtifact` and `TombstoneArtifact` were removed in 0.10.2 —
-// the native runtime owns Tier-A artifact production and nothing in the
-// SDK produced or consumed the Dart mirrors.
+// The native runtime owns Tier-A artifact production; the SDK exposes only the
+// header and session-summary types.
 export 'src/artifacts/artifact_header.dart';
 export 'src/artifacts/session_summary.dart';
 

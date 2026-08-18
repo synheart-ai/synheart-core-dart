@@ -41,29 +41,21 @@ jobs:
             // GITHUB_TOKEN cannot see private memberships, so this needs a
             // PAT (classic, scope: read:org) stored as ORG_READ_TOKEN.
             //
-            // Three outcomes, and the distinction is load-bearing:
+            // Three outcomes, and the distinction matters:
             //
-            //   "member"   — 204. Skip.
-            //   "external" — 404. A definitive answer about the author. Close.
-            //   "unknown"  — anything else: no token, an expired one (401), a
-            //                token that cannot see this membership (302), a
-            //                server error, a network failure. These say
-            //                something about OUR INFRASTRUCTURE, not about the
-            //                author.
+            //   member   — 204. Skip.
+            //   external — 404. A fact about the author. Close.
+            //   unknown  — anything else (missing or invalid token, a token
+            //              that cannot see this membership, a server or
+            //              network error). These describe the check, not the
+            //              author.
             //
-            // This used to treat "unknown" as "external" and close. That is
-            // backwards: an expired ORG_READ_TOKEN made every maintainer PR get
-            // auto-closed with a message telling them the project does not
-            // accept their contribution. It also fires on `reopened`, so
-            // reopening closed it again — the PR was unrecoverable until
-            // someone noticed the 401 buried in the workflow log.
-            //
-            // Unknown now fails OPEN: leave the PR alone and ask for manual
-            // triage. The cost is that a genuinely external PR stays open until
-            // a maintainer closes it by hand. The cost of the old behaviour was
-            // silently closing our own work and turning away real contributors
-            // with a canned message that might be wrong. Failing open is the
-            // cheaper mistake.
+            // Unknown fails OPEN: leave the PR alone and ask for manual
+            // triage. Closing on an inconclusive check would reject
+            // legitimate PRs — including from private org members, who arrive
+            // as association=CONTRIBUTOR, the very case this API call exists
+            // to resolve — and the workflow also runs on `reopened`, so the
+            // author could not recover the PR themselves.
             const orgReadToken = process.env.ORG_READ_TOKEN;
             let membership = "unknown";
             let unknownReason = "";
@@ -111,7 +103,7 @@ jobs:
             if (membership === "unknown") {
               core.warning(
                 `Cannot determine whether @${login} is a member of ${context.repo.owner}: ${unknownReason}. ` +
-                `Leaving PR #${pr.number} OPEN for manual triage rather than closing it.`,
+                `Leaving PR #${pr.number} open for manual triage.`,
               );
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
@@ -122,8 +114,8 @@ jobs:
                   "",
                   "Reason: `" + unknownReason + "`",
                   "",
-                  "This is an infrastructure problem on our side, not a judgement about this pull request.",
-                  "A maintainer should fix the check and then either close this PR or proceed with review.",
+                  "This is a problem with the check itself, not a judgement about this pull request.",
+                  "A maintainer will take a look.",
                 ].join("\n"),
               });
               try {
@@ -134,8 +126,8 @@ jobs:
                   labels: ["needs-triage"],
                 });
               } catch (err) {
-                // The label may not exist in this repo; the comment is the
-                // signal that matters.
+                // The label may not exist; the comment is the signal that
+                // matters.
                 core.info(`Could not add needs-triage label: ${err}`);
               }
               return;

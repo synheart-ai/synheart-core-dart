@@ -1,18 +1,16 @@
 # Files to exclude from the published package.
 #
 # IMPORTANT: when a `.pubignore` exists, pub uses it *instead of* `.gitignore`
-# for this directory — none of the `.gitignore` rules apply to publishing. Any
-# path that must stay out of the pub.dev archive has to be repeated here, even
-# if `.gitignore` already covers it for version control.
+# for this directory. Any path that must stay out of the archive has to be
+# repeated here, even if `.gitignore` already covers it for version control.
 
 # ── Native runtime (proprietary, CLI-provisioned) ──────────────────────
 #
-# The runtime is downloaded per-project by `synheart install runtime` and is
-# NOT part of this package. `ios/SynheartCoreRuntime.xcframework` is a symlink
-# the podspec's prepare_command creates into the consumer app; pub follows
-# symlinks, so without these rules the archive swells to ~70 MB compressed
-# (~250 MB of framework binaries plus dSYM DWARF blobs) and republishes a
-# proprietary artifact. Verified via `dart pub publish --dry-run`.
+# The runtime is downloaded per-project by `synheart install runtime` and is not
+# part of this package. `ios/SynheartCoreRuntime.xcframework` is a symlink the
+# podspec's prepare_command creates into the consumer app, and pub follows
+# symlinks — so these rules are what keep several hundred MB of native binaries
+# out of the archive.
 *.xcframework/
 **/*.xcframework/
 ios/SynheartCoreRuntime.xcframework
@@ -28,6 +26,9 @@ ios/Runner/
 
 # Development files
 .claude/
+# Review/working notes must never reach the published package.
+PR_*.md
+*_REQUIRED_FIXES.md
 __dev__/
 .env*
 !.env.example

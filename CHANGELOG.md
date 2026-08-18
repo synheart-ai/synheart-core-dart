@@ -61,15 +61,21 @@ documented configuration, has never worked in this line until now.
   payload to Dart. With both producers wired to one delivery path, every window
   completed by a per-event push arrived twice: double `onHSIUpdate` /
   `onStateUpdate`, double session-buffer entries, double downstream counters.
-  Now suppressed on `meta.ids.hsi_id` (RFC-IDENTITY-0001), the same key the
-  runtime's own ingest connector dedupes on. A payload without one is delivered
-  rather than dropped — losing a window is worse than repeating one.
-- **A session could start with no collection consent.** The runtime path of
-  `startSession()` performed none of the checks the Dart fallback path did, so
-  a host that had granted only cloud upload, vendor sync, research, or syni
-  could open a session that reported `collecting` while every module sat idle
-  with nothing it was permitted to gather. `startSession()` now requires at
-  least one of biosignals / behavior / phoneContext.
+  Now suppressed by `HsiDeliveryDeduper` on `meta.ids.hsi_id`
+  (RFC-IDENTITY-0001), the same key the runtime's own ingest connector dedupes
+  on. It keeps a bounded set of recent ids rather than a single last-id slot,
+  because the producers do not always interleave as `A, A` — the sync return
+  and the async callback can be separated by a background-tick window, giving
+  `A, B, A`. A payload without an id is delivered rather than dropped: losing a
+  window is worse than repeating one.
+- **A session could start with nothing able to collect.** The runtime path of
+  `startSession()` performed none of the checks the Dart fallback path did.
+  `startSession()` now requires at least one enabled feature whose matching
+  consent is granted — both halves of a pair. Consent alone is not enough:
+  enabling only `wearConfig` while granting only `behavior` leaves wear
+  permitted-but-not-enabled and behavior enabled-but-not-permitted, so nothing
+  collects. Cloud upload, vendor sync, research and syni never qualify; they
+  govern what happens to data once gathered.
 - **Session buffers grew without bound.** `getSessionHsiWindows()` and
   `getSessionWearSamples()` retained every entry for the session's life (24h by
   default) and cleared only on the next `startSession()`. Both are now capped
