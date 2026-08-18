@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main, dev]
 
+# Least privilege for the default GITHUB_TOKEN. Both jobs only check out the
+# repo and run Flutter. Declared explicitly so the scope does not widen with the
+# org default.
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze and Format

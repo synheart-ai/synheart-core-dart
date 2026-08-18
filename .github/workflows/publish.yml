@@ -5,6 +5,11 @@ on:
         tags:
             - "v[0-9]+.[0-9]+.[0-9]+*"
 
+# Least privilege by default. `verify` only reads the repo; `publish` declares
+# its own wider block below (id-token: write, for OIDC) which overrides this.
+permissions:
+    contents: read
+
 jobs:
     # Gate the pub.dev publish on the same checks CI runs on main. Previously
     # `publish` fired independently of CI, so a tag whose tests failed (e.g. the
@@ -48,17 +53,11 @@ jobs:
             - name: Publish dry-run
               run: dart pub publish --dry-run
 
-            # Guard the packaging regression fixed in 0.10.2: `.pubignore`
-            # replaces `.gitignore` for publishing, so anything the repo relies
-            # on `.gitignore` for (the CLI-installed
-            # `ios/SynheartCoreRuntime.xcframework` symlink,
-            # `example/synheart/vendor/`) silently lands in the archive. That
-            # took the package from ~600 KB to 70 MB and republished the
-            # proprietary native runtime plus its dSYM DWARF blobs.
-            #
-            # A clean CI checkout does not have those artifacts, so this job
-            # would not have caught it on its own — the check exists to fail a
-            # publish run from any environment where they are present.
+            # `.pubignore` replaces `.gitignore` for publishing, so paths the
+            # repo only excludes via `.gitignore` — the CLI-installed native
+            # runtime among them — can reach the archive. A clean CI checkout
+            # has no such artifacts, so this guard exists to fail a publish run
+            # from any environment where they are present.
             - name: Check archive size and contents
               run: |
                 set -euo pipefail
