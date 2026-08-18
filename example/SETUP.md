@@ -57,51 +57,82 @@ platform.synheart.ai:
 flutter run --dart-define=SYNHEART_APP_ID=your-app-id
 ```
 
-## Enabling cloud upload
+## Enabling device attestation and cloud upload
 
-Cloud requires a provisioned organization. Add both `deviceAuthConfig` and
-`cloudConfig` to `buildConfig()`:
+These are **two independent opt-ins**, and attestation does not need an org id:
 
-```dart
-SynheartConfig(
-  appId: 'your-app-id',
-  subjectId: 'your-stable-user-id',
+```bash
+# Attestation only — enough to exercise device registration.
+flutter run --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai
 
-  // Hardware-backed device identity. Required — the runtime signs every ingest
-  // request with it. Without this, uploads are rejected.
-  deviceAuthConfig: const DeviceAuthConfig(
-    authBaseUrl: 'https://api.synheart.ai',
-    packageName: 'ai.synheart.core.example',
-  ),
-
-  cloudConfig: CloudConfig(
-    subjectId: 'your-stable-user-id',
-    instanceId: 'stable-installation-id',
-    orgId: 'your-org-id',              // REQUIRED — see below
-  ),
-
-  consentConfig: ConsentConfig(
-    deviceId: 'your-device-id',
-    platform: 'flutter',
-    userId: 'your-stable-user-id',
-  ),
-)
+# Attestation + HSI upload.
+flutter run \
+  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai \
+  --dart-define=SYNHEART_ORG_ID=your-org-id
 ```
 
-**`orgId` must be non-empty.** Cloud ingest is gated on it: with an empty
-`orgId` the SDK disables ingest entirely rather than letting the native runtime
-reject the whole configuration. You get a working local-only app and a log line
-saying cloud stayed off — not an upload failure you have to trace.
+`SYNHEART_AUTH_URL` adds a `DeviceAuthConfig`, and that is all attestation
+needs — every registration trigger in the SDK keys off `DeviceAuthConfig` and
+none of them consults the cloud config.
 
-Then grant cloud upload on the Consent screen. Submitting with cloud enabled
-makes the runtime fetch the default profile and issue a consent token; the
-response reports `synced` and `token`, and both must be true before uploads
-flow.
+`SYNHEART_ORG_ID` adds a `CloudConfig` on top, which is what enables HSI upload.
+Cloud ingest stays disabled without a non-empty org id, because the runtime
+rejects an entire configuration whose ingest is enabled without one.
+
+Upload also depends on attestation: the runtime signs every ingest request with
+the device key, so an org id alone does nothing.
+
+### When attestation actually runs
+
+**Registration is triggered by cloud-upload consent, not by `initialize()`.**
+Configuring `DeviceAuthConfig` only makes it *possible*. The flow starts at
+whichever of these happens first:
+
+| Stage | Trigger |
+| --- | --- |
+| `initialize()` | only if cloud consent was already granted in a previous launch |
+| `grantConsent(cloudUpload: true, …)` | starts registration in the background |
+| `consentSubmitFormTyped(…allowCloud: true)` | same, via the runtime consent form |
+| `startSession()` | preflight; skipped entirely when cloud consent is off |
+| `ensureDeviceAuthRegistered()` | explicit and idempotent |
+| `reregisterDeviceAuth()` | forced re-attestation |
+
+The two consent paths deliberately **do not await** registration. The flow binds
+the platform attestation service, mints a key, and performs an HTTPS round-trip;
+awaiting it on a consent handler can block long enough to trip the OS
+watchdog. Poll `Synheart.coreDeviceAuthStatus()` instead of waiting on a Future.
+
+### Testing it
+
+1. Launch with `--dart-define=SYNHEART_AUTH_URL=...` (an org id is not needed
+   to test attestation).
+2. **Setup** tab → Initialize SDK. The *Device attestation* card shows
+   `pending`, with `status` from the runtime.
+3. **Consent** tab → enable **Cloud upload** → Submit. This is the moment
+   registration begins.
+4. Back on **Setup**, the card moves to `registered` and shows the device id.
+
+*Register now* forces an attempt without changing consent (idempotent — it
+no-ops when already registered). *Re-attest* bypasses locally restored state,
+which is what you want when the server has lost or revoked the device record.
+
+### What it needs to succeed
+
+Registration throws a distinct `StateError` for each missing precondition:
+
+- the native runtime bridge must be loaded,
+- the runtime must export the `synheart_core_sdk_*` symbols,
+- crypto callbacks must be attached — which requires the `synheart_auth` plugin
+  registered and its native crypto library bundled.
+
+On a device that cannot attest, the runtime reports
+`ERR_DEVICE_AUTH: attestation unavailable` and stays local-only rather than
+failing the session. That is expected on simulators, on rooted or jailbroken
+devices, and on builds without the platform attestation entitlement.
 
 > Never put an API key or signing secret in an app bundle. `CloudConfig.apiKey`
 > and `ConsentConfig.appApiKey` are deprecated and are not forwarded to the
-> runtime — it removed bundle-secret configuration as a security fix. Requests
-> are signed with the device identity instead.
+> runtime — requests are signed with the attested device identity instead.
 
 ## Troubleshooting
 
@@ -134,6 +165,13 @@ own, so a session granted only those would collect nothing — the SDK rejects i
 
 **No heart rate on iOS.** HealthKit needs the capability enabled in Xcode, which
 requires a paid Apple developer account. This example ships without it.
+
+**Attestation stays `pending`.** Check the *Device attestation* card's
+`ABI available` row first — false means the loaded runtime does not export the
+device-auth symbols, so run `synheart install runtime`. If it is true and status
+never advances, the device cannot attest (simulator, rooted/jailbroken, or a
+build without the platform attestation entitlement); the SDK stays local-only by
+design rather than failing the session.
 
 ## Security notes
 

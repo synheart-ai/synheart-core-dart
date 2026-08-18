@@ -40,6 +40,23 @@ class SynheartController extends ChangeNotifier {
     defaultValue: 'ai.synheart.core.example',
   );
 
+  /// Auth service origin. This alone enables device attestation.
+  ///   --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai
+  static const String authBaseUrl = String.fromEnvironment('SYNHEART_AUTH_URL');
+
+  /// Organization id, required only for HSI upload — cloud ingest stays
+  /// disabled without one. Independent of attestation.
+  ///   --dart-define=SYNHEART_ORG_ID=org_...
+  static const String orgId = String.fromEnvironment('SYNHEART_ORG_ID');
+
+  /// Attestation is possible. Every registration trigger in the SDK keys off
+  /// `DeviceAuthConfig`; none of them consults the cloud config.
+  static bool get attestationConfigured => authBaseUrl.isNotEmpty;
+
+  /// Upload is possible. Needs an org id AND an attested identity, since the
+  /// runtime signs every ingest request with the device key.
+  static bool get uploadConfigured => orgId.isNotEmpty && attestationConfigured;
+
   static const _kSubjectId = 'example.subject_id';
   static const _kDeviceId = 'example.device_id';
 
@@ -171,8 +188,20 @@ class SynheartController extends ChangeNotifier {
         userId: _subjectId,
       ),
 
-      // No CloudConfig / DeviceAuthConfig: this example is local-only.
-      // Adding them enables device attestation and HSI upload — see SETUP.md.
+      // Both opt-in and independent: SYNHEART_AUTH_URL alone enables
+      // attestation, SYNHEART_ORG_ID adds upload on top. With neither, the
+      // example is local-only. Granting cloud-upload consent is what actually
+      // triggers registration. See SETUP.md.
+      deviceAuthConfig: attestationConfigured
+          ? DeviceAuthConfig(authBaseUrl: authBaseUrl, packageName: appId)
+          : null,
+      cloudConfig: uploadConfigured
+          ? CloudConfig(
+              subjectId: _subjectId ?? '',
+              instanceId: _deviceId ?? '',
+              orgId: orgId,
+            )
+          : null,
     );
   }
 
@@ -418,6 +447,40 @@ class SynheartController extends ChangeNotifier {
 
   /// SDK version constant, kept in sync with pubspec.
   String get sdkVersion => synheartCoreVersion;
+
+  // ── Device attestation ─────────────────────────────────────────────────
+  //
+  // Registration is triggered by CLOUD-UPLOAD CONSENT, not by initialize().
+  // Granting it starts the flow in the background (it can park the calling
+  // thread for seconds, so the SDK deliberately does not await it) — poll
+  // [attestationStatus] to watch it progress.
+
+  /// Whether the loaded runtime exports the device-auth ABI at all.
+  bool get attestationAvailable => Synheart.coreSdkDeviceAuthAvailable;
+
+  /// Runtime attestation snapshot: `{status, device_id, ...}`, or null when
+  /// device auth is not configured or the ABI is absent.
+  Map<String, dynamic>? get attestationStatus =>
+      Synheart.coreDeviceAuthStatus();
+
+  /// True once this process has completed a registration.
+  bool get attestationRegistered => Synheart.deviceAuthUsedCoreRuntime;
+
+  /// Force a registration attempt without waiting for a consent change.
+  /// Returns false when device auth is not configured.
+  Future<bool> registerDevice() async {
+    final ok = await Synheart.ensureDeviceAuthRegistered();
+    notifyListeners();
+    return ok;
+  }
+
+  /// Re-attest from scratch, bypassing a locally restored `registered` state.
+  /// Use when the server has lost or revoked the device record.
+  Future<bool> reregisterDevice() async {
+    final ok = await Synheart.reregisterDeviceAuth();
+    notifyListeners();
+    return ok;
+  }
 
   /// Whether the loaded runtime exposes the lab session ABI.
   ///

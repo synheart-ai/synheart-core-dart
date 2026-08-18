@@ -126,11 +126,82 @@ class _SetupScreenState extends State<SetupScreen> {
           ),
 
           SectionCard(
+            title: 'Device attestation',
+            subtitle: SynheartController.attestationConfigured
+                ? 'Registration is triggered by CLOUD-UPLOAD CONSENT, not by '
+                      'initialize(). Grant it on the Consent tab and watch the '
+                      'status change here — the SDK runs the flow in the '
+                      'background rather than blocking the consent screen.'
+                : 'Not configured, so this build never attests. Pass '
+                      '--dart-define=SYNHEART_AUTH_URL=... to enable it — an '
+                      'org id is only needed for upload, not attestation. '
+                      'See SETUP.md.',
+            trailing: StatusPill(
+              !SynheartController.attestationConfigured
+                  ? 'off'
+                  : c.attestationRegistered
+                  ? 'registered'
+                  : 'pending',
+              tone: !SynheartController.attestationConfigured
+                  ? PillTone.neutral
+                  : c.attestationRegistered
+                  ? PillTone.good
+                  : PillTone.warn,
+            ),
+            children: [
+              if (SynheartController.attestationConfigured) ...[
+                KeyValueRow('auth url', SynheartController.authBaseUrl),
+                KeyValueRow(
+                  'upload',
+                  SynheartController.uploadConfigured
+                      ? 'enabled (org ${SynheartController.orgId})'
+                      : 'off — no SYNHEART_ORG_ID',
+                ),
+                KeyValueRow('ABI available', '${c.attestationAvailable}'),
+                KeyValueRow(
+                  'status',
+                  c.attestationStatus?['status']?.toString() ?? '—',
+                ),
+                KeyValueRow(
+                  'device id',
+                  c.attestationStatus?['device_id']?.toString() ?? '—',
+                  selectable: true,
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    OutlinedButton(
+                      onPressed: c.isInitialized ? c.registerDevice : null,
+                      child: const Text('Register now'),
+                    ),
+                    OutlinedButton(
+                      onPressed: c.isInitialized ? c.reregisterDevice : null,
+                      child: const Text('Re-attest'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Register now is idempotent — it no-ops when already '
+                  'registered. Re-attest forces a fresh registration, for when '
+                  'the server has lost or revoked the device record.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+
+          SectionCard(
             title: 'Config being used',
-            subtitle:
-                'Local-only: no CloudConfig and no DeviceAuthConfig, so nothing '
-                'leaves the device and no attestation is attempted. See SETUP.md '
-                'to enable cloud upload.',
+            subtitle: SynheartController.attestationConfigured
+                ? 'DeviceAuthConfig is set from dart-defines, so attestation '
+                      'is active. Upload additionally needs SYNHEART_ORG_ID.'
+                : 'Local-only: no CloudConfig and no DeviceAuthConfig, so '
+                      'nothing leaves the device and no attestation is '
+                      'attempted. See SETUP.md to enable cloud upload.',
             children: const [_ConfigListing()],
           ),
         ],

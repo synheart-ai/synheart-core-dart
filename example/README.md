@@ -5,8 +5,11 @@ performs it. Every SDK call lives in one file, so the integration reads
 top-to-bottom rather than being scattered across screens.
 
 **It runs with no credentials.** No `CloudConfig`, no `DeviceAuthConfig` —
-collection, HSI computation, consent, and local storage all work offline. See
-[SETUP.md](SETUP.md) to enable cloud upload.
+collection, HSI computation, consent, and local storage all work offline.
+
+Cloud upload and device attestation are opt-in via two dart-defines; the Setup
+tab then shows attestation progress live. Note that registration is triggered by
+**cloud-upload consent**, not by `initialize()`. See [SETUP.md](SETUP.md).
 
 ## Prerequisites
 
