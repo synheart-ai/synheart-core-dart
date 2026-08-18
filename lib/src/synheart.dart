@@ -5354,14 +5354,18 @@ class Synheart {
     try {
       SynheartLogger.log('[Synheart] Stopping..');
 
-      // Clear HSI callback (core runtime handles cleanup in dispose)
-      _coreRuntime?.clearHsiCallback();
-
       // Remove consent listener (best-effort)
       _consentModule?.removeListener(_onConsentChanged);
 
-      // Stop core modules
+      // Stop the modules FIRST, then unhook the HSI callback. The reverse
+      // order unregistered the dispatch path while the engine was still
+      // producing windows, widening the race documented on
+      // CoreRuntimeBridge._retiredCallables. Stopping first means nothing is
+      // emitting by the time we clear.
       await _moduleManager.stopAll();
+
+      // Clear HSI callback (core runtime handles cleanup in dispose)
+      _coreRuntime?.clearHsiCallback();
 
       _isRunning = false;
       SynheartLogger.log('[Synheart] Stopped');
