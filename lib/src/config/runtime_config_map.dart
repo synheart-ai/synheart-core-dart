@@ -15,6 +15,24 @@ import 'synheart_config.dart';
 ///   [CloudConfig] supplies an org id, leaving local-only hosts working.
 /// - `device_auth.enabled` requires a [DeviceAuthConfig]. Enabling it without
 ///   one makes crypto-callback registration fail.
+/// The platform origin this config will use, or empty when none was supplied.
+///
+/// `SyncConfig.baseUrl` wins; otherwise the `SYNHEART_BASE_URL` dart-define via
+/// [ApiEndpoints]. Both empty means the host named no environment and the
+/// runtime will fall back to its own default.
+String _resolveApiBaseUrl(SynheartConfig config) =>
+    config.sync.baseUrl.isNotEmpty
+    ? config.sync.baseUrl
+    : ApiEndpoints.resolvedAuthBaseUrl;
+
+/// Whether an explicit platform origin was configured.
+///
+/// Worth checking before enabling anything cloud-bound: without one the runtime
+/// silently uses its own default, so a build intended for a non-default
+/// environment would talk to the wrong host with no error to explain it.
+bool apiBaseUrlConfigured(SynheartConfig config) =>
+    _resolveApiBaseUrl(config).isNotEmpty;
+
 Map<String, dynamic> buildRuntimeConfigMap(
   SynheartConfig config, {
   String? dataDir,
@@ -35,13 +53,18 @@ Map<String, dynamic> buildRuntimeConfigMap(
     'client_id': config.subjectId,
     // API gateway origin for consent / ingest / platform calls.
     //
-    // Resolved rather than passed through raw: `SyncConfig.baseUrl` defaults to
-    // a dart-define that is empty unless the host sets it, and an empty value
-    // makes the runtime fall back to its own built-in default. Resolving here
-    // keeps the chosen endpoint explicit.
-    'api_base_url': config.sync.baseUrl.isNotEmpty
-        ? config.sync.baseUrl
-        : ApiEndpoints.resolvedAuthBaseUrl,
+    // Omitted rather than sent empty when no origin was configured. The SDK no
+    // longer carries a built-in host, so there is nothing to resolve to when
+    // `SyncConfig.baseUrl` and `SYNHEART_BASE_URL` are both unset, and sending
+    // `""` would assert an origin the host never chose.
+    //
+    // With the key absent the runtime applies its own default. That is fine for
+    // a local-only build, which makes no network calls at all — but it means a
+    // CLOUD build that forgets to set an origin inherits the runtime's default
+    // rather than failing. Set `SYNHEART_BASE_URL` explicitly for anything that
+    // talks to a non-default environment; see `apiBaseUrlConfigured` below.
+    if (_resolveApiBaseUrl(config).isNotEmpty)
+      'api_base_url': _resolveApiBaseUrl(config),
     'mode': config.mode.name,
     'device_id': config.deviceId,
     'app_version': config.appVersion,

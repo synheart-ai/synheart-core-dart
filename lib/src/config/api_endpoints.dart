@@ -4,9 +4,24 @@
 /// Override via `SYNHEART_BASE_URL` and the per-service `_*_OVERRIDE` keys.
 abstract final class ApiEndpoints {
   // ── Base URL ────────────────────────────────────────────────────────
+  /// Platform origin, supplied at build time.
+  ///
+  /// Deliberately empty by default. A host baked in here ships inside every
+  /// copy of this package and silently becomes the destination for any build
+  /// that forgot to name one — including forks and self-hosted deployments,
+  /// which is exactly the case that must not default to someone else's server.
+  ///
+  /// When empty, the SDK passes no origin to the native runtime and the runtime
+  /// applies its own built-in default, keeping one source of truth for the
+  /// endpoint rather than two that can drift.
+  ///
+  /// Set it explicitly:
+  ///
+  /// ```bash
+  /// flutter run --dart-define=SYNHEART_BASE_URL=https://your-api-host
+  /// ```
   static const String defaultBaseUrl = String.fromEnvironment(
     'SYNHEART_BASE_URL',
-    defaultValue: 'https://api.synheart.ai',
   );
 
   // ── Per-service base URL overrides (optional, for legacy/dev) ─────

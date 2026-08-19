@@ -2,6 +2,15 @@
 import 'package:flutter/foundation.dart';
 import 'package:synheart_core/synheart_core.dart';
 
+/// Platform origin, supplied at build time — never hard-coded.
+///
+///   flutter run --dart-define-from-file=env/defines.dev.json
+///
+/// Empty by default so a checked-out copy targets no environment until one is
+/// named. Baking a URL in here would silently point every fork at whatever
+/// host happened to be written down when the file was authored.
+const String authBaseUrl = String.fromEnvironment('SYNHEART_AUTH_URL');
+
 /// Minimal Synheart Core usage — the smallest thing that produces HSI.
 ///
 /// This is the snippet pub.dev shows on the package page. The runnable Flutter
@@ -36,23 +45,29 @@ Future<void> main() async {
           platform: 'flutter',
           userId: 'usr_stable_identifier',
         ),
-        deviceAuthConfig: DeviceAuthConfig(
-          authBaseUrl: 'https://api.synheart.io',
-          // A debug build, an emulator, or a de-Googled ROM produces no Play
-          // Integrity / App Attest material, so the runtime skips registration
-          // and stays local-only. This asks the server to admit it anyway,
-          // sending `format:"none"` with an empty blob — nothing fake is sent.
-          //
-          // Gate it on kDebugMode. Hard-coding `true` ships a store build that
-          // asks to skip attestation on every launch.
-          //
-          // The flag alone does nothing: development mode must also be enabled
-          // for this app id server-side, and it must be a DEVELOPMENT app id.
-          // A device admitted this way is recorded `unattested` — it still
-          // signs every request with a hardware key, it just carries no
-          // provenance claim. Check with `Synheart.coreDeviceAuthStatus()`.
-          allowUnattestedDevRegistration: kDebugMode,
-        ),
+        // Omitted entirely when no origin was supplied: this snippet stays
+        // local-only unless a build names an environment.
+        deviceAuthConfig: authBaseUrl.isEmpty
+            ? null
+            : DeviceAuthConfig(
+                authBaseUrl: authBaseUrl,
+                // A debug build, an emulator, or a de-Googled ROM produces no
+                // Play Integrity / App Attest material, so the runtime skips
+                // registration and stays local-only. This asks the server to
+                // admit it anyway, sending `format:"none"` with an empty blob —
+                // nothing fake is sent.
+                //
+                // Gate it on kDebugMode. Hard-coding `true` ships a store build
+                // that asks to skip attestation on every launch.
+                //
+                // The flag alone does nothing: development mode must also be
+                // enabled for this app id server-side, and it must be a
+                // DEVELOPMENT app id. A device admitted this way is recorded
+                // `unattested` — it still signs every request with a hardware
+                // key, it just carries no provenance claim. Check with
+                // `Synheart.coreDeviceAuthStatus()`.
+                allowUnattestedDevRegistration: kDebugMode,
+              ),
       ),
     );
   } on SynheartError catch (e) {

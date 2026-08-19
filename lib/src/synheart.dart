@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:path_provider/path_provider.dart';
 import 'package:rxdart/rxdart.dart';
+import 'config/api_endpoints.dart';
 import 'config/runtime_config_map.dart';
 import 'config/synheart_config.dart';
 import 'core/bounded_buffer.dart';
@@ -1509,8 +1510,14 @@ class Synheart {
       // resolves _deviceAuthProvider at call time (device auth registers
       // later, during consent / auto-heal) and builds an X-Synheart-Proof
       // bound to the exact request URL.
+      // Resolve through ApiEndpoints rather than repeating a literal origin.
+      // A hard-coded host here silently overrides SYNHEART_BASE_URL for this
+      // one caller, so a build pointed at another environment would still send
+      // Syni traffic to whichever host happened to be written down.
       final syniCloudOrigin =
-          (resolvedConfig.cloudConfig?.baseUrl ?? 'https://api.synheart.ai')
+          (resolvedConfig.cloudConfig?.baseUrl.isNotEmpty == true
+                  ? resolvedConfig.cloudConfig!.baseUrl
+                  : ApiEndpoints.resolvedCloudBaseUrl)
               .replaceAll(RegExp(r'/+$'), '');
       // SDK-side default for hosts that don't wire their own
       // SyniCloudConfig. Lazily produce X-Synheart-Proof headers via

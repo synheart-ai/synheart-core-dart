@@ -91,11 +91,25 @@ void main() {
       expect(map['subject_id'], 'usr_abc');
     });
 
-    test('api_base_url is always populated from sync config', () {
-      // Left empty, the runtime falls back to its hardcoded production URL, so
-      // a dev build would silently talk to production.
+    test('api_base_url is omitted rather than sent empty when unconfigured', () {
+      // The SDK carries no built-in host, so with neither SyncConfig.baseUrl nor
+      // SYNHEART_BASE_URL set there is nothing to resolve to. Sending "" would
+      // assert an origin the host never chose; omitting the key lets the runtime
+      // apply its own default.
       final map = buildRuntimeConfigMap(localOnly());
-      expect(map['api_base_url'], isNotEmpty);
+      expect(map.containsKey('api_base_url'), isFalse);
+      expect(apiBaseUrlConfigured(localOnly()), isFalse);
+    });
+
+    test('api_base_url is sent when the host names an origin', () {
+      final config = SynheartConfig(
+        appId: 'app_x',
+        subjectId: 'sub_x',
+        sync: const SyncConfig(baseUrl: 'https://api.example.test'),
+      );
+      final map = buildRuntimeConfigMap(config);
+      expect(map['api_base_url'], 'https://api.example.test');
+      expect(apiBaseUrlConfigured(config), isTrue);
     });
 
     test('data_dir is omitted rather than sent empty when unresolved', () {

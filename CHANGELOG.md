@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — BREAKING
+
+- The SDK no longer carries a built-in API host. `ApiEndpoints.defaultBaseUrl`
+  was `https://api.synheart.ai`; it now defaults to empty and comes from
+  `SYNHEART_BASE_URL`. Publishing a company host inside every copy of the
+  package made it the destination for any build that forgot to name one,
+  including forks and self-hosted deployments.
+
+  **Action:** set `SYNHEART_BASE_URL` (dart-define, or
+  `--dart-define-from-file`) on any build that talks to the cloud. Apps that
+  already set it are unaffected.
+
+  With nothing configured, `api_base_url` is now **omitted** from the runtime
+  config rather than sent empty, and the native runtime applies its own
+  default. `apiBaseUrlConfigured(config)` reports whether an explicit origin was
+  supplied.
+
+### Added
+
+- `HSIAxes.focusQuality`, `interruptionPressure`, `interactionMode` and
+  `hasDigital`, parsed from `axes.digital[]`. These are derived from interaction
+  rather than physiology, so they resolve on hardware with no biosignal source.
+  Previously the whole domain was discarded at the parse boundary.
+- `SyncNativeError.reason`, `retryAfterMs` and `detail`, with
+  `isUnsupported` / `isMisconfigured` / `isPolicyRefusal`. `reason` now appears
+  in `toString()`.
+- `docs/INTEGRATION.md` — ordered walkthrough from platform prerequisites to
+  first upload.
+
+### Fixed
+
+- `flushIfEligible` reported "cloudUpload consent not granted" whenever
+  `hasConsent` returned false. Once cloud is configured the runtime denies every
+  consent type until a consent token is issued, so the message blamed a consent
+  screen that was already correct. It now names the real cause.
+- `hasConsent` accepts either consent-key spelling; the Dart fallback path only
+  understood camelCase.
+- The Syni cloud origin resolved through a hard-coded literal instead of
+  `ApiEndpoints`, overriding `SYNHEART_BASE_URL` for that one caller.
+
 ## [0.11.0] - 2026-08-14
 
 Hardening release from a full-repo review. No new features.
