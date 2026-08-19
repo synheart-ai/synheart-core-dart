@@ -27,7 +27,7 @@ Everything here happens at [platform.synheart.ai](https://platform.synheart.ai)
 before you write any code. The SDK runs **local-only with none of it** — see
 [Running without cloud credentials](../README.md#running-without-cloud-credentials)
 — so skip to [Install](#2-install) if you only need on-device HSI. Cloud upload
-needs all six.
+needs all eight.
 
 They are ordered because each depends on the one above it.
 
@@ -55,14 +55,23 @@ The Flutter SDK does **not** consume the tenant id. The runtime configuration
 carries `app_id` and `org_id` only. It appears in your credential file for use
 by platform APIs the SDK does not call; setting it changes no SDK behavior.
 
-### 1.4 Create an app
+### 1.4 Create a project
+
+Groups the apps that belong to one product line inside the tenant. Yields a
+**`prj_…` id**.
+
+Like the tenant, the Flutter SDK does **not** consume it — the runtime
+configuration carries `app_id` and `org_id` only. It is issued into the same
+credential file for platform APIs outside this SDK.
+
+### 1.5 Create an app
 
 One per shipping application, per environment. Yields an **`app_…` id**, which
 the SDK takes as `SynheartConfig.appId`.
 
 This is the point at which the credentials become downloadable — the app is the
 last of the four ids to be issued, so the file is complete only once it exists.
-See [What you end up with](#what-you-end-up-with).
+See [1.6](#16-download-the-credentials).
 
 **Use a separate app id for development.** [Development mode](#73-development-builds-that-cannot-attest)
 is enabled per app id, and it must never be enabled on the id your store build
@@ -75,36 +84,7 @@ uses.
 > They are different values and are not interchangeable — passing the `app_…`
 > id as the package name fails attestation.
 
-### 1.5 Create an app policy
-
-Declares what this app is permitted to collect and upload. The runtime
-intersects the user's consent against it, which is why the **effective** state
-can grant less than the user asked for. See [Consent](#4-consent).
-
-### 1.6 Create a consent profile
-
-The default profile for the app id. **Cloud upload does not work without it**,
-and the failure is easy to misread.
-
-Once a cloud consent client is configured, the runtime holds every consent type
-closed until the consent service issues a **token**, whatever the user chose.
-No profile means no token, which means nothing uploads even though your consent
-screen shows everything granted:
-
-```
-consent profile fetch deferred; keeping offline choice
-  | GET …/consent/v1/sdk/{app_id}/consent-profile
-    {"code":"PROFILE_NOT_FOUND","message":"Consent profile not found"}
-```
-
-Confirm it resolved before debugging anything else — the success line is:
-
-```
-default consent profile loaded | profile_id=…
-consent token issued | expires_at_ms=… synced=true
-```
-
-### What you end up with
+### 1.6 Download the credentials
 
 **Download the credentials from the platform** once the app exists — do not
 transcribe the four ids by hand from separate screens. The platform emits them
@@ -132,6 +112,35 @@ Downloading the file rather than copying values individually is worth insisting
 on: `org_…`, `ten_…`, `prj_…` and `app_…` differ only by prefix, and a pair
 swapped between two environments produces authentication failures that look
 like a broken SDK.
+
+### 1.7 Create an app policy
+
+Declares what this app is permitted to collect and upload. The runtime
+intersects the user's consent against it, which is why the **effective** state
+can grant less than the user asked for. See [Consent](#4-consent).
+
+### 1.8 Create a consent profile
+
+The default profile for the app id. **Cloud upload does not work without it**,
+and the failure is easy to misread.
+
+Once a cloud consent client is configured, the runtime holds every consent type
+closed until the consent service issues a **token**, whatever the user chose.
+No profile means no token, which means nothing uploads even though your consent
+screen shows everything granted:
+
+```
+consent profile fetch deferred; keeping offline choice
+  | GET …/consent/v1/sdk/{app_id}/consent-profile
+    {"code":"PROFILE_NOT_FOUND","message":"Consent profile not found"}
+```
+
+Confirm it resolved before debugging anything else — the success line is:
+
+```
+default consent profile loaded | profile_id=…
+consent token issued | expires_at_ms=… synced=true
+```
 
 ---
 
@@ -424,7 +433,7 @@ await Synheart.ingestion.flushIfEligible();
 ```
 
 Upload requires all of: a non-empty `orgId`, cloud-upload consent, an issued
-consent token ([1.6](#16-create-a-consent-profile)), and a registered device —
+consent token ([1.8](#18-create-a-consent-profile)), and a registered device —
 the runtime signs every ingest request with the device key.
 
 ---
@@ -510,7 +519,7 @@ not silently. Nothing fake is transmitted: the request carries
 `attestation.format = "none"` with an empty blob.
 
 - Gate it on `kDebugMode` or a dev flavor so a store build cannot ship it on.
-- Use the development app id from [1.4](#14-create-an-app). Never enable
+- Use the development app id from [1.5](#15-create-an-app). Never enable
   server-side development mode for a production app id.
 - A device admitted this way is recorded **`unattested`**. It holds a hardware
   key and signs every request; it simply carries no provenance claim. Ingest,
@@ -537,7 +546,7 @@ Keyed on what you will actually see.
 | `startSession()` throws about consent | No enabled feature has matching consent | Grant a consent that pairs with a declared module ([4.4](#44-enablement-and-consent-are-both-required)) |
 | Windows arrive, all axes `confidence: 0` | No biosignal source | Expected on a bare phone. Read the digital axes, or attach a BLE strap |
 | No digital axes in the first window | One-window lag by design | Wait for the next emission |
-| `PROFILE_NOT_FOUND` on the consent profile | No consent profile for the app id | [1.6](#16-create-a-consent-profile) |
+| `PROFILE_NOT_FOUND` on the consent profile | No consent profile for the app id | [1.8](#18-create-a-consent-profile) |
 | "cloudUpload consent not granted" while the UI shows it granted | No consent token issued | Almost always `PROFILE_NOT_FOUND` above |
 | `REGISTRATION_REJECTED`, `reason: policy` | Server refused this device | Check the app id is provisioned in this environment |
 | `no attestation material - device cannot attest` | Debug build or emulator | [7.3](#73-development-builds-that-cannot-attest) |

@@ -74,6 +74,11 @@ example/synheart/vendor/
 /example/android/app/src/main/jniLibs
 /example/android/.settings
 # Local endpoint defines (do not commit real endpoints)
+# Dart-defines. Populated files carry organization identifiers and endpoints;
+# only the placeholder templates are checked in. Covers both env/ roots, since
+# the integration guide has developers copy a template in each.
+env/*.json
+!env/synheart.endpoints.example.json
 env/*.local.json
 
 .cursor/
