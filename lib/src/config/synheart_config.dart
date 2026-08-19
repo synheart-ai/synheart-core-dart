@@ -39,10 +39,25 @@ class DeviceAuthConfig {
   /// Optional; leave empty if not applicable.
   final String packageName;
 
+  /// **Development only.** Register the device even when the platform produces
+  /// no attestation material (Play Integrity / App Attest unavailable — an
+  /// emulator, a de-Googled ROM, a sideloaded debug build).
+  ///
+  /// With this `false` (the default), such a device skips registration and runs
+  /// local-only. With it `true`, the runtime submits the registration with
+  /// `attestation.format = "none"` and an empty blob, and the **server** decides.
+  ///
+  /// This is **not** a security bypass. It only stops the client giving up
+  /// early. Acceptance still requires development mode on this app's record in
+  /// the Synheart dashboard; with that off, registration is refused server-side.
+  /// Never enable it on a production app id — use a separate development app id.
+  final bool allowUnattestedDevRegistration;
+
   const DeviceAuthConfig({
     required this.authBaseUrl,
     this.capabilityBaseUrl,
     this.packageName = '',
+    this.allowUnattestedDevRegistration = false,
   });
 
   String get resolvedCapabilityBaseUrl => capabilityBaseUrl ?? authBaseUrl;

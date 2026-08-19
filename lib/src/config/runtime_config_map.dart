@@ -53,6 +53,8 @@ Map<String, dynamic> buildRuntimeConfigMap(
       'enabled': deviceAuthEnabled,
       'auth_base_url': config.deviceAuthConfig?.authBaseUrl ?? '',
       'package_name': config.deviceAuthConfig?.packageName ?? '',
+      'allow_unattested_dev_registration':
+          config.deviceAuthConfig?.allowUnattestedDevRegistration ?? false,
     },
     'sync': {'enabled': config.sync.enabled, 'base_url': config.sync.baseUrl},
     'privacy': {'allow_research': config.privacy.allowResearch},
