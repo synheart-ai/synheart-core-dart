@@ -118,6 +118,63 @@ class SessionScreen extends StatelessWidget {
             ],
           ),
 
+          // Uploading needs no host code: the runtime subscribes to the engine's
+          // HSI broadcast, enqueues each window itself, and POSTs on
+          // CloudConfig.uploadInterval. This card exists to make that visible
+          // and to force a flush — not to drive it.
+          if (SynheartController.uploadConfigured)
+            SectionCard(
+              title: 'Cloud ingest',
+              subtitle:
+                  'The runtime uploads on its own: it enqueues every window as '
+                  'it closes and POSTs on CloudConfig.uploadInterval. No host '
+                  'code required. When nothing arrives, the cause is almost '
+                  'always the consent gate below, not a missing call.',
+              trailing: StatusPill(
+                c.uploadError != null
+                    ? 'error'
+                    : c.uploadedCount > 0
+                    ? 'uploaded ${c.uploadedCount}'
+                    : 'nothing sent',
+                tone: c.uploadError != null
+                    ? PillTone.warn
+                    : c.uploadedCount > 0
+                    ? PillTone.good
+                    : PillTone.neutral,
+              ),
+              children: [
+                KeyValueRow('queued, not yet sent', '${c.uploadQueueLength}'),
+                KeyValueRow('uploaded by Flush now', '${c.uploadedCount}'),
+                KeyValueRow(
+                  'last flush',
+                  c.lastFlushAt?.toIso8601String().substring(11, 19) ?? '—',
+                ),
+                if (c.uploadError != null) ...[
+                  const SizedBox(height: 8),
+                  ErrorBanner(c.uploadError!),
+                ],
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: c.isFlushing ? null : c.flushUploads,
+                    icon: const Icon(Icons.cloud_upload_outlined),
+                    label: Text(c.isFlushing ? 'Flushing…' : 'Flush now'),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'The runtime flushes on its own schedule; this only forces '
+                  'one early. The counter above tracks what these manual '
+                  'flushes sent, so it can read 0 while automatic uploads are '
+                  'succeeding — watch the queue depth for the real signal.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+
           SectionCard(
             title: 'Signal sources',
             subtitle:

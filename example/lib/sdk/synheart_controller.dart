@@ -571,6 +571,65 @@ class SynheartController extends ChangeNotifier {
   /// attestation material. True only in debug — see [buildConfig].
   bool get allowsUnattestedDevRegistration => kDebugMode;
 
+  // ── Cloud ingest ───────────────────────────────────────────────────────
+  //
+  // The host does NOT drive uploading. The runtime owns the whole pipeline:
+  // it subscribes to the engine's HSI broadcast, enqueues each window into a
+  // SQLite upload queue (gated on cloud-upload consent, buffering the windows
+  // that arrive during the cold-start token race), and POSTs the queue on
+  // `CloudConfig.uploadInterval`.
+  //
+  //   cloud HSI auto-enqueue: listening (engine HSI → ingest queue)
+  //   ingest POST succeeded | url=…/ingest/v1/hsi status_code=200
+  //
+  // So `Synheart.ingestion.enqueueHsiWindows(...)` is NOT part of the normal
+  // path — the runtime's own log calls it the fallback for "if engine skips
+  // this channel". Calling it per window on top of the automatic bridge queues
+  // every window twice.
+  //
+  // What is worth having is visibility, and a way to force a flush rather than
+  // waiting out the interval. That is all this section does.
+
+  int _uploadedCount = 0;
+  String? _uploadError;
+  DateTime? _lastFlushAt;
+  bool _isFlushing = false;
+
+  int get uploadedCount => _uploadedCount;
+  String? get uploadError => _uploadError;
+  DateTime? get lastFlushAt => _lastFlushAt;
+  bool get isFlushing => _isFlushing;
+
+  /// Windows the runtime has queued but not yet POSTed. Climbs on its own as
+  /// windows close, and drains on the runtime's own upload interval.
+  int get uploadQueueLength => Synheart.uploadQueueLength;
+
+  /// POST whatever is queued now, instead of waiting for the runtime's own
+  /// interval. Safe to call when the queue is empty.
+  Future<void> flushUploads() async {
+    if (!uploadConfigured || _isFlushing) return;
+    _isFlushing = true;
+    notifyListeners();
+    try {
+      final result = await Synheart.ingestion.flushIfEligible();
+      _lastFlushAt = DateTime.now();
+      if (result.success) {
+        _uploadedCount += result.uploaded;
+        _uploadError = null;
+      } else {
+        // Surfaced rather than swallowed: the common failures here are a
+        // missing cloud-upload consent and an unregistered device, and both
+        // look identical to "nothing happened" if the message is dropped.
+        _uploadError = result.errorMessage ?? 'flush failed';
+      }
+    } catch (e) {
+      _uploadError = '$e';
+    } finally {
+      _isFlushing = false;
+      notifyListeners();
+    }
+  }
+
   /// The provenance claim on the registered device: `attested`, `unattested`,
   /// or `unknown`.
   ///

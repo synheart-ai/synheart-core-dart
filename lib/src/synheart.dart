@@ -2202,7 +2202,30 @@ class Synheart {
   /// Bridge-first ingestion facade for queue + upload orchestration.
   static SynheartIngestion get ingestion => SynheartIngestion.instance;
 
-  /// Check if user has granted a specific consent
+  /// Whether a consent type is currently ENFORCEABLE — which is not the same
+  /// question as whether the user granted it.
+  ///
+  /// Once a cloud consent client is configured, the runtime returns false for
+  /// every consent type until the consent service has issued a token, whatever
+  /// the user chose:
+  ///
+  /// ```rust
+  /// if cloud_configured && self.consent_status() != ConsentStatus::Granted {
+  ///     return false;
+  /// }
+  /// ```
+  ///
+  /// So a local-only app sees the user's choice here, while a cloud-configured
+  /// app sees the user's choice AND cloud confirmation. A false result does not
+  /// mean the user declined.
+  ///
+  /// To read what the user actually chose, use [consentEffectiveStateTyped].
+  /// Use this when the answer gates an action that must not proceed without
+  /// cloud-side confirmation, such as an upload.
+  ///
+  /// Accepts either spelling of a consent type (`cloudUpload` or
+  /// `cloud_upload`); the Dart fallback path only understands camelCase, so the
+  /// name is normalised before dispatch.
   ///
   /// Example:
   /// ```dart
@@ -5643,6 +5666,39 @@ class SynheartIngestion {
     }
   }
 
+  /// Explain a closed cloud gate in terms of what the caller can act on.
+  ///
+  /// `hasConsent` is not a simple read of the user's choice. Once a cloud
+  /// consent client is configured, the runtime returns false for EVERY consent
+  /// type until the consent service has issued a token, whatever the user
+  /// granted:
+  ///
+  /// ```rust
+  /// if cloud_configured && self.consent_status() != ConsentStatus::Granted {
+  ///     return false;
+  /// }
+  /// ```
+  ///
+  /// Reporting that as "consent not granted" sends developers to re-check a
+  /// consent screen that is already correct. The usual cause is a consent
+  /// service that never issued a token — commonly a `PROFILE_NOT_FOUND` on the
+  /// app id — so this separates "the user said no" from "the user said yes and
+  /// the cloud has not confirmed it".
+  static String _describeClosedCloudGate() {
+    final effective = Synheart._coreRuntime?.consentEffectiveState();
+    final grantedLocally =
+        effective?['cloud_upload'] == true || effective?['cloudUpload'] == true;
+
+    if (!grantedLocally) {
+      return 'cloudUpload consent not granted';
+    }
+    return 'cloudUpload is granted locally, but the runtime is holding the '
+        'cloud gate closed: no consent token has been issued. Every consent '
+        'type reads as denied in this state, regardless of what the user chose. '
+        'Check the consent service for this app id — a missing default consent '
+        'profile (PROFILE_NOT_FOUND) is the usual cause.';
+  }
+
   Future<QueueFlushResult> flushIfEligible({bool requireConsent = true}) async {
     final bridge = Synheart._coreRuntime;
     if (bridge == null) {
@@ -5658,13 +5714,14 @@ class SynheartIngestion {
     }
     if (requireConsent && !await Synheart.hasConsent('cloudUpload')) {
       Synheart._lastUploadAttemptAt = DateTime.now().toUtc();
-      Synheart._lastUploadError = 'cloudUpload consent not granted';
-      return const QueueFlushResult(
+      final why = _describeClosedCloudGate();
+      Synheart._lastUploadError = why;
+      return QueueFlushResult(
         success: false,
         uploaded: 0,
         failed: 0,
         requeued: 0,
-        errorMessage: 'cloudUpload consent not granted',
+        errorMessage: why,
       );
     }
 
