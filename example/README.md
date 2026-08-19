@@ -36,8 +36,8 @@ your machine.
 
 ```bash
 flutter run \
-  --dart-define=SYNHEART_BASE_URL=https://api.synheart.io \
-  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.io \
+  --dart-define=SYNHEART_BASE_URL=https://<your-synheart-api-host> \
+  --dart-define=SYNHEART_AUTH_URL=https://<your-synheart-api-host> \
   --dart-define=SYNHEART_APP_ID=app_… \
   --dart-define=SYNHEART_ORG_ID=org_… \
   --dart-define=SYNHEART_PACKAGE_NAME=ai.synheart.core.example
@@ -47,15 +47,15 @@ flutter run \
 
 ```bash
 flutter run \
-  --dart-define=SYNHEART_BASE_URL=https://api.synheart.io \
-  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.io
+  --dart-define=SYNHEART_BASE_URL=https://<your-synheart-api-host> \
+  --dart-define=SYNHEART_AUTH_URL=https://<your-synheart-api-host>
 ```
 
 Dev endpoints are `.io`. Set **both** URLs: `SYNHEART_AUTH_URL` only reaches
 `DeviceAuthConfig`, while consent and ingest resolve through
-`SYNHEART_BASE_URL`, which otherwise defaults to `https://api.synheart.ai`
-(production). Setting one and not the other splits a run across two
-environments.
+`SYNHEART_BASE_URL`. The SDK carries no built-in origin, so setting only one
+of the two sends registration to one host while consent and ingest fall back
+to the runtime's own default — splitting a run across two environments.
 
 ## Prerequisites
 

@@ -3,6 +3,12 @@
 The example runs **local-only by default** — no credentials, nothing leaves the
 device. This guide covers that baseline and how to opt into cloud upload.
 
+For the platform side — creating the organization, tenant, app, app policy and
+consent profile that cloud upload needs — see
+[docs/INTEGRATION.md](../docs/INTEGRATION.md#1-platform-prerequisites). Cloud
+upload does not work without a consent profile for the app id, and that failure
+is easy to misread as a consent problem.
+
 ## Baseline: no credentials
 
 ```bash
@@ -52,13 +58,18 @@ Two fields are non-negotiable:
 
 ## Supplying credentials
 
-Credentials issued at platform.synheart.ai arrive as a small JSON file:
+**Download the credentials file** from platform.synheart.ai after creating the
+app — the four ids are issued together, so there is no need to copy them one at
+a time:
 
 ```json
 { "org_id": "org_…", "tenant_id": "ten_…", "project_id": "prj_…", "app_id": "app_…" }
 ```
 
-Copy the template and fill in the values you were issued:
+All four are identifiers rather than secrets; none of them is an API key. They
+are organization-specific, so the populated file stays out of git.
+
+Copy the template and transfer the values from the download:
 
 ```bash
 cp env/defines.example.json env/defines.dev.json
@@ -66,8 +77,8 @@ cp env/defines.example.json env/defines.dev.json
 
 ```jsonc
 {
-  "SYNHEART_BASE_URL":     "https://api.synheart.io",  // dev endpoints are .io
-  "SYNHEART_AUTH_URL":     "https://api.synheart.io",
+  "SYNHEART_BASE_URL":     "https://<your-synheart-api-host>",
+  "SYNHEART_AUTH_URL":     "https://<your-synheart-api-host>",
 
   "SYNHEART_APP_ID":       "app_…",                    // from app_id
   "SYNHEART_ORG_ID":       "org_…",                    // from org_id
@@ -75,12 +86,14 @@ cp env/defines.example.json env/defines.dev.json
 }
 ```
 
-**Set both URLs.** They are not redundant. `SYNHEART_AUTH_URL` only reaches
-`DeviceAuthConfig`, so on its own it points attestation at dev while consent and
-ingest keep resolving through `ApiEndpoints.defaultBaseUrl` — which ships as
-`https://api.synheart.ai`, production. `SYNHEART_BASE_URL` is what moves that
-default, and every per-service URL falls back to it. Setting one and not the
-other splits a single run across two environments.
+**Set both URLs.** They are not redundant. `SYNHEART_AUTH_URL` reaches
+`DeviceAuthConfig` and moves device registration only; consent and ingest
+resolve through `SYNHEART_BASE_URL`, which every per-service URL falls back to.
+
+The SDK ships no built-in origin, so setting only `SYNHEART_AUTH_URL` sends
+registration to your host while consent and ingest fall back to the runtime's
+own default — one run split across two environments. The symptom is
+authentication failures with no obvious cause.
 
 Then build with it:
 
@@ -114,13 +127,13 @@ With individual flags rather than a defines file:
 ```bash
 # Attestation only — enough to exercise device registration.
 flutter run \
-  --dart-define=SYNHEART_BASE_URL=https://api.synheart.io \
-  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.io
+  --dart-define=SYNHEART_BASE_URL=https://<your-synheart-api-host> \
+  --dart-define=SYNHEART_AUTH_URL=https://<your-synheart-api-host>
 
 # Attestation + HSI upload.
 flutter run \
-  --dart-define=SYNHEART_BASE_URL=https://api.synheart.io \
-  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.io \
+  --dart-define=SYNHEART_BASE_URL=https://<your-synheart-api-host> \
+  --dart-define=SYNHEART_AUTH_URL=https://<your-synheart-api-host> \
   --dart-define=SYNHEART_ORG_ID=your-org-id
 ```
 
