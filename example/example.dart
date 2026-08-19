@@ -1,4 +1,5 @@
 // ignore_for_file: avoid_print
+import 'package:flutter/foundation.dart';
 import 'package:synheart_core/synheart_core.dart';
 
 /// Minimal Synheart Core usage — the smallest thing that produces HSI.
@@ -34,6 +35,23 @@ Future<void> main() async {
           deviceId: 'dev_stable_identifier',
           platform: 'flutter',
           userId: 'usr_stable_identifier',
+        ),
+        deviceAuthConfig: DeviceAuthConfig(
+          authBaseUrl: 'https://api.synheart.io',
+          // A debug build, an emulator, or a de-Googled ROM produces no Play
+          // Integrity / App Attest material, so the runtime skips registration
+          // and stays local-only. This asks the server to admit it anyway,
+          // sending `format:"none"` with an empty blob — nothing fake is sent.
+          //
+          // Gate it on kDebugMode. Hard-coding `true` ships a store build that
+          // asks to skip attestation on every launch.
+          //
+          // The flag alone does nothing: development mode must also be enabled
+          // for this app id server-side, and it must be a DEVELOPMENT app id.
+          // A device admitted this way is recorded `unattested` — it still
+          // signs every request with a hardware key, it just carries no
+          // provenance claim. Check with `Synheart.coreDeviceAuthStatus()`.
+          allowUnattestedDevRegistration: kDebugMode,
         ),
       ),
     );

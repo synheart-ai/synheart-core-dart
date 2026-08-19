@@ -167,6 +167,30 @@ class _SetupScreenState extends State<SetupScreen> {
                   c.attestationStatus?['device_id']?.toString() ?? '—',
                   selectable: true,
                 ),
+                // Shown separately from `status` on purpose. A device admitted
+                // through development mode registers successfully and signs
+                // every request with a real hardware key, but is recorded
+                // `unattested` — it carries no provenance claim. Collapsing
+                // that into "registered" is exactly the confusion worth
+                // avoiding.
+                KeyValueRow('attestation', c.attestationClaim),
+                if (c.allowsUnattestedDevRegistration)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Debug build: allowUnattestedDevRegistration is ON, so a '
+                      'device that cannot produce Play Integrity / App Attest '
+                      'material still asks the server to admit it, carrying '
+                      'format:"none" and an empty blob — nothing fake is sent.\n\n'
+                      'The flag alone does nothing: development mode must also '
+                      'be enabled for this app id server-side, and it must be a '
+                      'development app id, never a production one. Release '
+                      'builds disable this automatically.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,

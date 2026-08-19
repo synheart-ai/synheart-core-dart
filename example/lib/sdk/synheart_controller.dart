@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:synheart_core/synheart_core.dart';
@@ -223,7 +224,30 @@ class SynheartController extends ChangeNotifier {
       // example is local-only. Granting cloud-upload consent is what actually
       // triggers registration. See SETUP.md.
       deviceAuthConfig: attestationConfigured
-          ? DeviceAuthConfig(authBaseUrl: authBaseUrl, packageName: packageName)
+          ? DeviceAuthConfig(
+              authBaseUrl: authBaseUrl,
+              packageName: packageName,
+              // A debug build, an emulator, or a de-Googled ROM cannot produce
+              // a Play Integrity token, so the runtime skips registration and
+              // stays local-only:
+              //
+              //   WARN device auth: no attestation material - device cannot
+              //   attest; skipping registration (local-only)
+              //
+              // This stops the SDK giving up client-side: it sends the
+              // registration carrying `format:"none"` and an empty blob, and
+              // the server decides. Nothing fake is transmitted.
+              //
+              // It is NOT a bypass, and the flag alone does nothing. Server-side
+              // development mode must also be on for this app id, and it must be
+              // a DEVELOPMENT app id — never enable that on a production one. A
+              // device admitted this way is recorded `unattested`: it still holds
+              // a hardware key and signs every request, it just carries no
+              // provenance claim.
+              //
+              // Gated on kDebugMode so a store build can never ship it enabled.
+              allowUnattestedDevRegistration: kDebugMode,
+            )
           : null,
       cloudConfig: uploadConfigured
           ? CloudConfig(
@@ -542,6 +566,23 @@ class SynheartController extends ChangeNotifier {
 
   /// True once this process has completed a registration.
   bool get attestationRegistered => Synheart.deviceAuthUsedCoreRuntime;
+
+  /// Whether this build asks the server to admit a device that produced no
+  /// attestation material. True only in debug — see [buildConfig].
+  bool get allowsUnattestedDevRegistration => kDebugMode;
+
+  /// The provenance claim on the registered device: `attested`, `unattested`,
+  /// or `unknown`.
+  ///
+  /// Worth surfacing rather than collapsing into "registered": a device
+  /// admitted through development mode signs every request with a real
+  /// hardware key and can ingest normally, but carries no provenance claim.
+  /// Treating it as equivalent to an attested device is the mistake this
+  /// distinction exists to prevent.
+  String get attestationClaim {
+    final raw = attestationStatus?['attestation'];
+    return raw is String && raw.isNotEmpty ? raw : 'unknown';
+  }
 
   /// Force a registration attempt without waiting for a consent change.
   /// Returns false when device auth is not configured.
