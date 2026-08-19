@@ -2210,9 +2210,51 @@ class Synheart {
   /// ```
   static Future<bool> hasConsent(String consentType) async {
     if (_coreRuntime != null) {
-      return _coreRuntime!.hasConsent(consentType);
+      return _coreRuntime!.hasConsent(_runtimeConsentKey(consentType));
     }
-    return shared._hasConsent(consentType);
+    return shared._hasConsent(_dartConsentKey(consentType));
+  }
+
+  /// The two consent vocabularies, and the translation between them.
+  ///
+  /// The native runtime keys consent in snake_case (`cloud_upload`); the Dart
+  /// API and `ConsentSnapshot` use camelCase (`cloudUpload`). Every other call
+  /// site converts before crossing the boundary — `grantConsent` sends
+  /// `cloud_upload`, `consentEffectiveState` reads `cloud_upload` back.
+  ///
+  /// [hasConsent] did not, and passed the caller's spelling through unchanged.
+  /// Neither spelling then worked in both places: `hasConsent('cloudUpload')`
+  /// asked the runtime about a key it does not define, and
+  /// `hasConsent('cloud_upload')` missed every case in the Dart fallback's
+  /// switch. Both returned false regardless of what the user had granted — so a
+  /// caller gating on cloud upload saw consent as absent while the effective
+  /// state reported it granted.
+  ///
+  /// Translating here rather than at the call sites keeps both spellings
+  /// working for hosts that already pass one or the other.
+  static const Map<String, String> _consentKeyCamelToSnake = {
+    'biosignals': 'biosignals',
+    'behavior': 'behavior',
+    'phoneContext': 'phone_context',
+    'cloudUpload': 'cloud_upload',
+    'vendorSync': 'vendor_sync',
+    'research': 'research',
+    'syni': 'syni',
+  };
+
+  /// Accept either spelling, return the snake_case key the runtime defines.
+  /// Unknown values pass through so a newer consent type still reaches the
+  /// runtime rather than being silently rewritten.
+  static String _runtimeConsentKey(String consentType) =>
+      _consentKeyCamelToSnake[consentType] ?? consentType;
+
+  /// Accept either spelling, return the camelCase key the Dart fallback's
+  /// switch matches on.
+  static String _dartConsentKey(String consentType) {
+    for (final entry in _consentKeyCamelToSnake.entries) {
+      if (entry.value == consentType) return entry.key;
+    }
+    return consentType;
   }
 
   /// Override consent cloud endpoint routing for the active runtime.
