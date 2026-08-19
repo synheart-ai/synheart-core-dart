@@ -31,23 +31,53 @@ class SynheartController extends ChangeNotifier {
   //
   // This example is LOCAL-ONLY by default: no CloudConfig, no
   // DeviceAuthConfig. Everything it demonstrates runs offline on any device
-  // with no credentials. See SETUP.md to opt into cloud upload.
+  // with no credentials.
+  //
+  // Values come from a dart-defines file rather than a wall of --dart-define
+  // flags, matching how the other Synheart apps are built:
+  //
+  //   flutter run --dart-define-from-file=env/defines.dev.json
+  //
+  // `env/defines.example.json` is the checked-in template; a populated file is
+  // gitignored, because it carries real organization identifiers. See SETUP.md.
 
-  /// Application identifier, reported on session records and ingest rows.
-  /// Override with `--dart-define=SYNHEART_APP_ID=...`.
+  /// Application identifier, reported on session records and ingest rows, and
+  /// the id the platform resolves an ingest scope from.
+  ///
+  /// Defaults to the bundle id so a credential-free local run still has a
+  /// non-empty value — `SynheartConfig.validate()` rejects an empty one.
   static const String appId = String.fromEnvironment(
     'SYNHEART_APP_ID',
     defaultValue: 'ai.synheart.core.example',
   );
 
   /// Auth service origin. This alone enables device attestation.
-  ///   --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai
   static const String authBaseUrl = String.fromEnvironment('SYNHEART_AUTH_URL');
 
   /// Organization id, required only for HSI upload — cloud ingest stays
   /// disabled without one. Independent of attestation.
-  ///   --dart-define=SYNHEART_ORG_ID=org_...
   static const String orgId = String.fromEnvironment('SYNHEART_ORG_ID');
+
+  /// Platform package name, sent with the attestation request.
+  ///
+  /// Distinct from [appId] and NOT interchangeable: Play Integrity and App
+  /// Attest verify the real installed package (`ai.synheart.core.example`),
+  /// while [appId] is a platform-issued `app_…` identifier once credentials
+  /// are supplied. Passing the latter as the package name fails attestation.
+  static const String packageName = String.fromEnvironment(
+    'SYNHEART_PACKAGE_NAME',
+    defaultValue: 'ai.synheart.core.example',
+  );
+
+  /// Tenant and project identifiers, read so a credentials file can be dropped
+  /// in whole and the Setup screen can show what was supplied.
+  ///
+  /// The Core SDK does NOT consume either one. `buildRuntimeConfigMap` sends
+  /// `app_id` and `org_id` and nothing else, and `CloudConfig` has no field for
+  /// them — they are scoped to platform APIs that this SDK does not call.
+  /// Setting them changes no behavior here.
+  static const String tenantId = String.fromEnvironment('SYNHEART_TENANT_ID');
+  static const String projectId = String.fromEnvironment('SYNHEART_PROJECT_ID');
 
   /// Attestation is possible. Every registration trigger in the SDK keys off
   /// `DeviceAuthConfig`; none of them consults the cloud config.
@@ -193,7 +223,7 @@ class SynheartController extends ChangeNotifier {
       // example is local-only. Granting cloud-upload consent is what actually
       // triggers registration. See SETUP.md.
       deviceAuthConfig: attestationConfigured
-          ? DeviceAuthConfig(authBaseUrl: authBaseUrl, packageName: appId)
+          ? DeviceAuthConfig(authBaseUrl: authBaseUrl, packageName: packageName)
           : null,
       cloudConfig: uploadConfigured
           ? CloudConfig(
@@ -304,7 +334,7 @@ class SynheartController extends ChangeNotifier {
   // ── 3. Session + HSI ───────────────────────────────────────────────────
 
   /// Start collecting. HSI windows begin arriving on [latestState] once the
-  /// runtime has enough signal to close a window (~10s of samples).
+  /// runtime closes a window, which it does on a fixed ~60s cadence.
   Future<void> startSession() async {
     if (!_isInitialized || _isSessionRunning) return;
     _sessionError = null;
@@ -314,6 +344,9 @@ class SynheartController extends ChangeNotifier {
       _wearSampleCount = 0;
       _wearDataSampleCount = 0;
       _lastWearSample = null;
+      _behaviorEventCount = 0;
+      _behaviorCounts.clear();
+      _lastBehaviorEvent = null;
 
       // Subscribe BEFORE starting so the first completed window is not missed.
       // onStateUpdate parses each window once and shares it across listeners.
@@ -336,6 +369,18 @@ class SynheartController extends ChangeNotifier {
         notifyListeners();
       });
 
+      // Behavior events as the gesture detector captures them. This is the one
+      // source that needs no sensor and no wearable, so on a phone with neither
+      // it is the only proof the collection path is alive. Counting by type
+      // also shows which gestures the detector actually resolves — a scroll and
+      // a swipe are distinct events, not one "touch".
+      _behaviorSub ??= Synheart.behaviorEventStream.listen((event) {
+        _behaviorEventCount++;
+        _lastBehaviorEvent = event;
+        _behaviorCounts.update(event.type, (n) => n + 1, ifAbsent: () => 1);
+        notifyListeners();
+      });
+
       _session = await Synheart.startSession();
       _isSessionRunning = Synheart.isSessionRunning;
     } catch (e) {
@@ -355,6 +400,8 @@ class SynheartController extends ChangeNotifier {
     _hsiSub = null;
     await _wearSub?.cancel();
     _wearSub = null;
+    await _behaviorSub?.cancel();
+    _behaviorSub = null;
     _session = null;
     _isSessionRunning = Synheart.isSessionRunning;
     notifyListeners();
@@ -402,6 +449,36 @@ class SynheartController extends ChangeNotifier {
       s.hr != null ||
       s.hrvRmssd != null ||
       (s.rrIntervals?.isNotEmpty ?? false);
+
+  // ── Behavior signal ────────────────────────────────────────────────────
+  //
+  // Taps, scrolls and swipes need no sensor, so behavior is the one source
+  // that works on any phone. The SDK forwards each event into the runtime
+  // (`pushBehaviorToRuntime` → `synheart_core_push_behavior`), where it feeds
+  // the DIGITAL modality.
+  //
+  // Worth being precise about, because it is the most common source of "the
+  // SDK looks broken": digital signal does not populate focus, capacity,
+  // arousal or stress. Those are physiology-derived and stay at zero
+  // confidence until heart rate or HRV arrives. Behavior's contribution shows
+  // up as `modalities.digital`, which is why the Session screen renders it.
+
+  int _behaviorEventCount = 0;
+  BehaviorEvent? _lastBehaviorEvent;
+  final Map<BehaviorEventType, int> _behaviorCounts = {};
+  StreamSubscription<BehaviorEvent>? _behaviorSub;
+
+  /// Behavior events captured since the session started.
+  int get behaviorEventCount => _behaviorEventCount;
+
+  BehaviorEvent? get lastBehaviorEvent => _lastBehaviorEvent;
+
+  /// Per-type tallies, most frequent first.
+  List<MapEntry<BehaviorEventType, int>> get behaviorBreakdown {
+    final entries = _behaviorCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries;
+  }
 
   bool get isWearCollecting => Synheart.isWearCollecting;
   bool get isPhoneCollecting => Synheart.isPhoneCollecting;
@@ -526,6 +603,7 @@ class SynheartController extends ChangeNotifier {
   void dispose() {
     _hsiSub?.cancel();
     _wearSub?.cancel();
+    _behaviorSub?.cancel();
     super.dispose();
   }
 }

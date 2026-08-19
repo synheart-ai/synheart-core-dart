@@ -10,9 +10,15 @@ import '../widgets/ui.dart';
 /// `initialize()` configures the SDK; it does not collect. Collection starts
 /// here and stops at [SynheartController.stopSession].
 ///
-/// HSI windows close roughly every 10 seconds, and only when a real biosignal
-/// source is supplying heart rate and HRV. On a bare phone with nothing
-/// attached the Signal sources card says so plainly rather than fabricating
+/// The runtime closes an HSI window about every 60 seconds. It does so on that
+/// cadence whether or not a biosignal arrived, emitting each axis at zero
+/// confidence when it has no basis for one — so a steadily climbing window
+/// count is not evidence that anything is being measured.
+///
+/// What grounds those axes is physiological signal. Behavior and motion are
+/// collected and do reach the runtime, but they feed the digital and kinematic
+/// modalities, which the Live HSI card renders separately. On a bare phone with
+/// nothing attached the screen says all of this plainly rather than fabricating
 /// beats: synthetic samples would flow into the same longitudinal baselines as
 /// real ones and corrupt the reference ranges the runtime builds on device.
 class SessionScreen extends StatelessWidget {
@@ -57,7 +63,7 @@ class SessionScreen extends StatelessWidget {
           SectionCard(
             title: running ? 'Session running' : 'No active session',
             subtitle: running
-                ? 'Windows close about every 10 seconds, given enough signal.'
+                ? 'The runtime closes a window about every 60 seconds.'
                 : 'Start a session to begin collection.',
             children: [
               SizedBox(
@@ -102,8 +108,8 @@ class SessionScreen extends StatelessWidget {
                 Text(
                   running
                       ? 'Waiting for the first window…\n\n'
-                            'If nothing arrives, push some beats below — the '
-                            'runtime needs samples before it can close a window.'
+                            'The runtime closes one about every 60 seconds, so '
+                            'the first can take a minute to appear.'
                       : 'Start a session to receive HSI.',
                   style: Theme.of(context).textTheme.bodySmall,
                 )
@@ -135,7 +141,8 @@ class SessionScreen extends StatelessWidget {
               ),
               _SourceRow(
                 label: 'Behavior',
-                detail: 'Taps, notifications, app switches → runtime',
+                detail:
+                    'Taps, scrolls, swipes, app switches → digital modality',
                 active: c.isBehaviorCollecting,
                 reachesRuntime: true,
               ),
@@ -148,6 +155,36 @@ class SessionScreen extends StatelessWidget {
                 active: c.isPhoneCollecting,
                 reachesRuntime: false,
               ),
+              const Divider(height: 24),
+
+              // Behavior needs no sensor, so on a phone with no wearable this
+              // counter is the only live proof that collection is running.
+              Text(
+                'behavior events',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+              const SizedBox(height: 4),
+              KeyValueRow('captured', '${c.behaviorEventCount}'),
+              if (c.behaviorBreakdown.isNotEmpty)
+                KeyValueRow(
+                  'by type',
+                  c.behaviorBreakdown
+                      .map((e) => '${e.key.name} ${e.value}')
+                      .join(', '),
+                ),
+              if (c.behaviorEventCount == 0 && running)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Scroll or tap anywhere in this app to generate some. '
+                    'Events are captured by the gesture detector that wraps '
+                    'the screen content.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+
               const Divider(height: 24),
               if (!c.hasBiosignalSource) ...[
                 KeyValueRow('samples emitted', '${c.wearSampleCount}'),
@@ -163,10 +200,13 @@ class SessionScreen extends StatelessWidget {
                             'Health permission not yet granted. Watch the '
                             '"carrying data" count, not "samples emitted": the '
                             'latter climbs steadily either way.\n\n'
-                            'The physiological axes (arousal, stress, sleep) '
-                            'stay empty until a real reading arrives. Focus and '
-                            'capacity can still be computed from behavior and '
-                            'motion, which are arriving.'
+                            'All five axes stay at zero confidence until a real '
+                            'reading arrives — including focus and capacity. '
+                            'Behavior and motion are collected and do reach the '
+                            'runtime, but they feed the kinematic and digital '
+                            'modalities rather than these axes. Pair a BLE '
+                            'chest strap or grant health-data access to ground '
+                            'them.'
                       : 'No samples yet. HSI physiology is built from heart '
                             'rate and HRV, so pair a BLE chest strap, grant '
                             'health-data access, or connect a watch companion.',
@@ -207,6 +247,52 @@ class SessionScreen extends StatelessWidget {
 /// A null axis means the engine has not produced a value yet — usually not
 /// enough signal. That is distinct from a parse failure, which
 /// [HSIState.hasParseError] reports separately.
+/// One modality's presence in the current window, with its fidelity tier when
+/// the runtime reported one. Lower tier number = higher fidelity.
+class _ModalityChip extends StatelessWidget {
+  const _ModalityChip({required this.label, required this.present, this.tier});
+
+  final String label;
+  final bool present;
+  final int? tier;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fg = present ? scheme.onSecondaryContainer : scheme.onSurfaceVariant;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: present
+            ? scheme.secondaryContainer
+            : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            present ? Icons.check_circle : Icons.remove_circle_outline,
+            size: 14,
+            color: fg,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            // Pair the tier with the label only when the modality is actually
+            // present. The runtime reports a tier for modalities it did not
+            // observe in the window, and "digital · tier 2" beside an absent
+            // marker reads as a contradiction rather than as two separate
+            // facts.
+            present && tier != null ? '$label · tier $tier' : label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(color: fg),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AxisTable extends StatelessWidget {
   const _AxisTable({required this.state});
 
@@ -214,6 +300,9 @@ class _AxisTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Needed to distinguish "nothing was collected" from "collection ran but
+    // the runtime credited no modality" in the empty-modality copy below.
+    final c = context.watch<SynheartController>();
     final axes = <String, HSIAxisValue?>{
       'focus': state.hsi.focus,
       'capacity': state.hsi.capacity,
@@ -230,6 +319,106 @@ class _AxisTable extends StatelessWidget {
         ],
         for (final entry in axes.entries)
           _AxisRow(name: entry.key, value: entry.value),
+
+        // The digital domain — derived from interaction alone, so these are
+        // the axes that resolve on a phone with no wearable attached. Shown
+        // separately because they are scored differently: interruption
+        // pressure is lower_is_more and interaction mode is bidirectional,
+        // so neither reads like the five above.
+        if (state.hsi.hasDigital) ...[
+          const Divider(height: 20),
+          Text(
+            'digital axes — from interaction, no wearable needed',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+          const SizedBox(height: 8),
+          _AxisRow(name: 'focus quality', value: state.hsi.focusQuality),
+          _AxisRow(
+            name: 'interruption ↓',
+            value: state.hsi.interruptionPressure,
+          ),
+          _AxisRow(name: 'interaction mode', value: state.hsi.interactionMode),
+          const SizedBox(height: 6),
+          Text(
+            'interruption ↓ is lower_is_more: a low score means MORE '
+            'interruption. interaction mode is bidirectional — neither end '
+            'is better.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+
+        const Divider(height: 20),
+
+        // Which modalities the runtime saw in this window, derived from
+        // `meta.provenance.sources[*].signals`.
+        //
+        // This is the answer to "the SDK is collecting but every axis says no
+        // basis". The five axes above are physiology-derived; behavior and
+        // motion land here instead. Without this row a developer on a phone
+        // with no wearable sees five empty axes and reasonably concludes
+        // nothing is working, when digital signal is in fact arriving.
+        Text(
+          'modalities in this window',
+          style: Theme.of(context).textTheme.labelMedium,
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _ModalityChip(
+              label: 'physiological',
+              present: state.modalities.physiological,
+              tier: state.tiers.physiological,
+            ),
+            _ModalityChip(
+              label: 'kinematic',
+              present: state.modalities.kinematic,
+              tier: state.tiers.kinematic,
+            ),
+            _ModalityChip(
+              label: 'digital',
+              present: state.modalities.digital,
+              tier: state.tiers.digital,
+            ),
+          ],
+        ),
+        if (state.modalities.isEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            // Deliberately does not claim nothing was collected. Modality is
+            // derived from `meta.provenance.sources[*].signals`, so a window
+            // can carry behavior events the runtime never lists as a source —
+            // watch the behavior counter below to tell the two apart.
+            c.behaviorEventCount > 0
+                ? 'The runtime listed no source in this window\'s provenance, '
+                      'though ${c.behaviorEventCount} behavior events were '
+                      'captured and pushed.\n\n'
+                      'Digital readings lag by one window: the runtime flushes '
+                      'interaction events for the window that just closed and '
+                      'attaches them to the NEXT emission. Keep the session '
+                      'running and watch the digital axes above.'
+                : 'No modality is present. The runtime closed this window '
+                      'without a source it recognised, so every axis is '
+                      'reported at zero confidence.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ] else if (!state.modalities.physiological) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Signal is arriving, but none of it is physiological. The five '
+            'axes above are derived from heart rate and HRV, so they stay at '
+            'zero confidence until a wearable or BLE strap is connected.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+
         const Divider(height: 20),
         KeyValueRow(
           'timestamp',

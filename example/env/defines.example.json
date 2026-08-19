@@ -1,0 +1,11 @@
+{
+  "SYNHEART_BASE_URL": "https://api.synheart.io",
+  "SYNHEART_AUTH_URL": "https://api.synheart.io",
+
+  "SYNHEART_APP_ID": "app_synheart_…",
+  "SYNHEART_ORG_ID": "org_synheart_…",
+  "SYNHEART_PACKAGE_NAME": "ai.synheart.core.example",
+
+  "SYNHEART_TENANT_ID": "ten_synheart_…",
+  "SYNHEART_PROJECT_ID": "prj_synheart_…"
+}

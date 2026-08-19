@@ -50,24 +50,77 @@ Two fields are non-negotiable:
   like a new person every time and baselines never mature. Passing `userId:` to
   `initialize()` does **not** populate it — set it on the config.
 
-Override the app id at build time if you have one issued at
-platform.synheart.ai:
+## Supplying credentials
+
+Credentials issued at platform.synheart.ai arrive as a small JSON file:
+
+```json
+{ "org_id": "org_…", "tenant_id": "ten_…", "project_id": "prj_…", "app_id": "app_…" }
+```
+
+Copy the template and fill in the values you were issued:
 
 ```bash
-flutter run --dart-define=SYNHEART_APP_ID=your-app-id
+cp env/defines.example.json env/defines.dev.json
 ```
+
+```jsonc
+{
+  "SYNHEART_BASE_URL":     "https://api.synheart.io",  // dev endpoints are .io
+  "SYNHEART_AUTH_URL":     "https://api.synheart.io",
+
+  "SYNHEART_APP_ID":       "app_…",                    // from app_id
+  "SYNHEART_ORG_ID":       "org_…",                    // from org_id
+  "SYNHEART_PACKAGE_NAME": "ai.synheart.core.example"
+}
+```
+
+**Set both URLs.** They are not redundant. `SYNHEART_AUTH_URL` only reaches
+`DeviceAuthConfig`, so on its own it points attestation at dev while consent and
+ingest keep resolving through `ApiEndpoints.defaultBaseUrl` — which ships as
+`https://api.synheart.ai`, production. `SYNHEART_BASE_URL` is what moves that
+default, and every per-service URL falls back to it. Setting one and not the
+other splits a single run across two environments.
+
+Then build with it:
+
+```bash
+flutter run --dart-define-from-file=env/defines.dev.json
+```
+
+`env/*.json` is gitignored apart from the template, so a populated file stays
+on your machine. This mirrors how the other Synheart apps are built.
+
+Two notes on the credential file:
+
+- **`tenant_id` and `project_id` are not used by this SDK.** The runtime config
+  carries `app_id` and `org_id` and nothing else, and `CloudConfig` has no field
+  for either. The template lists them so a credential file can be transcribed
+  whole, but setting them changes no behavior here.
+- **`SYNHEART_APP_ID` and `SYNHEART_PACKAGE_NAME` are different things.**
+  `app_id` is the platform-issued `app_…` identifier that an ingest scope
+  resolves from. The package name is the real installed bundle id, which Play
+  Integrity and App Attest verify against. Passing the `app_…` value as the
+  package name fails attestation.
+
+Both default to `ai.synheart.core.example`, so the app still runs with no
+credentials at all.
 
 ## Enabling device attestation and cloud upload
 
-These are **two independent opt-ins**, and attestation does not need an org id:
+These are **two independent opt-ins**, and attestation does not need an org id.
+With individual flags rather than a defines file:
 
 ```bash
 # Attestation only — enough to exercise device registration.
-flutter run --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai
+flutter run \
+  --dart-define=SYNHEART_BASE_URL=https://api.synheart.io \
+  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.io
 
 # Attestation + HSI upload.
 flutter run \
-  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai \
+  --dart-define=SYNHEART_BASE_URL=https://api.synheart.io \
+  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.io \
   --dart-define=SYNHEART_ORG_ID=your-org-id
 ```
 
@@ -175,8 +228,9 @@ design rather than failing the session.
 
 ## Security notes
 
-- Never commit credentials. Pass them with `--dart-define` or a
-  `--dart-define-from-file` JSON.
+- Never commit credentials. Put them in `env/defines.dev.json`, which is
+  gitignored, and pass it with `--dart-define-from-file`. Only
+  `env/defines.example.json` — placeholders — is checked in.
 - `allowUnsignedCapabilities: true` is development-only. It disables the
   capability lattice; production drives it from a verified consent token.
 - The Runtime tab's **Wipe local data** clears the runtime SQLite store, the SRM

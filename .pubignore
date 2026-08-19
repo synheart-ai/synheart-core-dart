@@ -68,3 +68,8 @@ build/
 *.log
 *.tmp
 .DS_Store
+
+# Example dart-defines. The template documents the shape and is worth
+# publishing; a populated dev file carries real org/app identifiers and is not.
+example/env/*.json
+!example/env/defines.example.json

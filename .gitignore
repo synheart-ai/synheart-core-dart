@@ -77,3 +77,7 @@ example/synheart/vendor/
 env/*.local.json
 
 .cursor/
+# Example app dart-defines. Real org/app identifiers stay local; only the
+# placeholder template is checked in.
+example/env/*.json
+!example/env/defines.example.json

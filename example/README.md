@@ -7,9 +7,55 @@ top-to-bottom rather than being scattered across screens.
 **It runs with no credentials.** No `CloudConfig`, no `DeviceAuthConfig` —
 collection, HSI computation, consent, and local storage all work offline.
 
-Cloud upload and device attestation are opt-in via two dart-defines; the Setup
-tab then shows attestation progress live. Note that registration is triggered by
-**cloud-upload consent**, not by `initialize()`. See [SETUP.md](SETUP.md).
+Cloud upload and device attestation are opt-in, and independent of each other.
+The Setup tab shows attestation progress live. Note that registration is
+triggered by **cloud-upload consent**, not by `initialize()`.
+See [SETUP.md](SETUP.md).
+
+## Running it
+
+**Local-only — no credentials, works on any device:**
+
+```bash
+flutter run
+```
+
+**With credentials.** Copy the template, fill in the ids you were issued at
+platform.synheart.ai, and run against it:
+
+```bash
+cp env/defines.example.json env/defines.dev.json
+# edit env/defines.dev.json
+flutter run --dart-define-from-file=env/defines.dev.json
+```
+
+`env/*.json` is gitignored apart from the template, so a populated file stays on
+your machine.
+
+**Or pass the same values inline**, if you would rather not keep a file:
+
+```bash
+flutter run \
+  --dart-define=SYNHEART_BASE_URL=https://api.synheart.io \
+  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.io \
+  --dart-define=SYNHEART_APP_ID=app_… \
+  --dart-define=SYNHEART_ORG_ID=org_… \
+  --dart-define=SYNHEART_PACKAGE_NAME=ai.synheart.core.example
+```
+
+**Attestation only**, without enabling upload — an org id is not required:
+
+```bash
+flutter run \
+  --dart-define=SYNHEART_BASE_URL=https://api.synheart.io \
+  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.io
+```
+
+Dev endpoints are `.io`. Set **both** URLs: `SYNHEART_AUTH_URL` only reaches
+`DeviceAuthConfig`, while consent and ingest resolve through
+`SYNHEART_BASE_URL`, which otherwise defaults to `https://api.synheart.ai`
+(production). Setting one and not the other splits a run across two
+environments.
 
 ## Prerequisites
 
@@ -44,9 +90,13 @@ silently links a different project's runtime. Keep it when copying this Podfile.
 
 HealthKit is **not** enabled here — that capability needs a paid Apple developer
 account. Without it the wear module cannot start, so heart rate and HRV are
-unavailable and the physiological HSI axes stay empty. Behavior and phone
-context still feed the runtime, and the Session screen reports exactly which
-sources are live.
+unavailable.
+
+All five HSI axes then stay at zero confidence, including focus and capacity —
+they are physiology-derived. Behavior still reaches the runtime and shows up as
+the digital modality, which the Session screen renders separately; phone context
+is collected but has no runtime wiring at all. The Session screen labels each
+source with whether it actually feeds the runtime.
 
 ### Android
 
