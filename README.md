@@ -688,7 +688,7 @@ final config = SynheartConfig(
   appId: 'com.example.my_app',
   subjectId: 'user-123',
   deviceAuthConfig: const DeviceAuthConfig(
-    authBaseUrl: 'https://<your-synheart-api-host>',
+    authBaseUrl: 'https://api.synheart.ai',
     packageName: 'com.example.my_app',
   ),
   cloudConfig: CloudConfig(
@@ -771,10 +771,10 @@ holds a hardware key and signs every request, but carries no provenance claim.
 
 ### Endpoint configuration
 
-The SDK ships **no built-in origin**. `SYNHEART_BASE_URL` is empty unless you
-set it, and with nothing configured the native runtime applies its own
-default. Set it explicitly for any build that targets a specific
-environment:
+The platform origin is `https://api.synheart.ai`, but the SDK does **not** bake
+it in: `SYNHEART_BASE_URL` is empty unless you set it, and with nothing
+configured the native runtime applies its own default. Set it explicitly — the
+checked-in `env/synheart.endpoints.example.json` already names it:
 
 ```bash
 flutter run \
@@ -870,7 +870,7 @@ SynheartConfig(
   subjectId: 'user-123',
   sync: const SyncConfig(
     enabled: true,
-    baseUrl: 'https://<your-synheart-api-host>',
+    baseUrl: 'https://api.synheart.ai',
   ),
 );
 ```

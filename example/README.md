@@ -36,8 +36,8 @@ your machine.
 
 ```bash
 flutter run \
-  --dart-define=SYNHEART_BASE_URL=https://<your-synheart-api-host> \
-  --dart-define=SYNHEART_AUTH_URL=https://<your-synheart-api-host> \
+  --dart-define=SYNHEART_BASE_URL=https://api.synheart.ai \
+  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai \
   --dart-define=SYNHEART_APP_ID=app_… \
   --dart-define=SYNHEART_ORG_ID=org_… \
   --dart-define=SYNHEART_PACKAGE_NAME=ai.synheart.core.example
@@ -47,8 +47,8 @@ flutter run \
 
 ```bash
 flutter run \
-  --dart-define=SYNHEART_BASE_URL=https://<your-synheart-api-host> \
-  --dart-define=SYNHEART_AUTH_URL=https://<your-synheart-api-host>
+  --dart-define=SYNHEART_BASE_URL=https://api.synheart.ai \
+  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai
 ```
 
 Dev endpoints are `.io`. Set **both** URLs: `SYNHEART_AUTH_URL` only reaches

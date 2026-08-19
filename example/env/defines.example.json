@@ -1,6 +1,6 @@
 {
-  "SYNHEART_BASE_URL": "https://<your-synheart-api-host>",
-  "SYNHEART_AUTH_URL": "https://<your-synheart-api-host>",
+  "SYNHEART_BASE_URL": "https://api.synheart.ai",
+  "SYNHEART_AUTH_URL": "https://api.synheart.ai",
 
   "SYNHEART_APP_ID": "app_…",
   "SYNHEART_ORG_ID": "org_…",

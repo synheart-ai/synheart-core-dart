@@ -449,7 +449,7 @@ seconds, so the SDK deliberately does not await it.
 
 ```dart
 deviceAuthConfig: DeviceAuthConfig(
-  authBaseUrl: 'https://<your-synheart-api-host>',
+  authBaseUrl: 'https://api.synheart.ai',
   packageName: 'com.example.my_app',   // the BUNDLE id — see 1.4
 ),
 ```

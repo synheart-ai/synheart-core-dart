@@ -77,8 +77,8 @@ cp env/defines.example.json env/defines.dev.json
 
 ```jsonc
 {
-  "SYNHEART_BASE_URL":     "https://<your-synheart-api-host>",
-  "SYNHEART_AUTH_URL":     "https://<your-synheart-api-host>",
+  "SYNHEART_BASE_URL":     "https://api.synheart.ai",
+  "SYNHEART_AUTH_URL":     "https://api.synheart.ai",
 
   "SYNHEART_APP_ID":       "app_…",                    // from app_id
   "SYNHEART_ORG_ID":       "org_…",                    // from org_id
@@ -127,13 +127,13 @@ With individual flags rather than a defines file:
 ```bash
 # Attestation only — enough to exercise device registration.
 flutter run \
-  --dart-define=SYNHEART_BASE_URL=https://<your-synheart-api-host> \
-  --dart-define=SYNHEART_AUTH_URL=https://<your-synheart-api-host>
+  --dart-define=SYNHEART_BASE_URL=https://api.synheart.ai \
+  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai
 
 # Attestation + HSI upload.
 flutter run \
-  --dart-define=SYNHEART_BASE_URL=https://<your-synheart-api-host> \
-  --dart-define=SYNHEART_AUTH_URL=https://<your-synheart-api-host> \
+  --dart-define=SYNHEART_BASE_URL=https://api.synheart.ai \
+  --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai \
   --dart-define=SYNHEART_ORG_ID=your-org-id
 ```
 
