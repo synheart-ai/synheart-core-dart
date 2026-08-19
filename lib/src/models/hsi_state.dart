@@ -29,13 +29,51 @@ class HSIAxes {
   /// `axes.affective[]` in HSI 1.3 only — null on the legacy/1.2 path.
   final HSIAxisValue? stress;
 
+  // ── Digital axes (`axes.digital[]`, HSI 1.3) ──────────────────────────
+  //
+  // Derived from interaction events — taps, scrolls, swipes, app switches,
+  // notifications — by the runtime's interaction adapter. They need no
+  // wearable and no biosignal, which makes them the only axes that resolve on
+  // a phone with nothing attached.
+  //
+  // These were parsed by nothing before: `_parseAxesV13` read `cognitive`,
+  // `affective` and `physiological` and dropped the `digital` domain on the
+  // floor, so behavior data reached the runtime, produced readings, and then
+  // vanished at the SDK boundary. A host with no wearable saw five empty axes
+  // and no way to tell that anything had been computed at all.
+  //
+  // Note the one-window lag: the runtime flushes interaction events for the
+  // window that just closed and attaches the result to the NEXT emission, so
+  // the first window of a session carries none of them.
+
+  /// Sustained-attention quality over the window. Higher is more focused.
+  final HSIAxisValue? focusQuality;
+
+  /// Interruption load — notifications and app switching against the user's
+  /// own baseline. `direction: lower_is_more`, so a LOW score means MORE
+  /// pressure; do not render it as if higher were better.
+  final HSIAxisValue? interruptionPressure;
+
+  /// Where the interaction sits between passive consumption and active input.
+  /// `direction: bidirectional` — neither end is "good".
+  final HSIAxisValue? interactionMode;
+
   const HSIAxes({
     this.focus,
     this.arousal,
     this.capacity,
     this.sleep,
     this.stress,
+    this.focusQuality,
+    this.interruptionPressure,
+    this.interactionMode,
   });
+
+  /// True when at least one digital reading resolved.
+  bool get hasDigital =>
+      focusQuality != null ||
+      interruptionPressure != null ||
+      interactionMode != null;
 
   /// Pre-1.3 (legacy) parse: each axis is a flat object `{value, confidence}`
   /// at the top of the `hsi` map. Used for the in-process runtime contract
@@ -100,6 +138,14 @@ HSIAxes _parseAxesV13(Object? axes) {
         _findAxisReading(axes['physiological'], 'sleep_score') ??
         _findAxisReading(axes['physiological'], 'sleep'),
     stress: _findAxisReading(axes['affective'], 'stress'),
+    // The digital domain. Produced from interaction events alone, so these
+    // resolve on hardware that can supply no biosignal at all.
+    focusQuality: _findAxisReading(axes['digital'], 'focus_quality'),
+    interruptionPressure: _findAxisReading(
+      axes['digital'],
+      'interruption_pressure',
+    ),
+    interactionMode: _findAxisReading(axes['digital'], 'interaction_mode'),
   );
 }
 
