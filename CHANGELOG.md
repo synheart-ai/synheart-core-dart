@@ -33,11 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SyncNativeError.reason`, `retryAfterMs` and `detail`, with
   `isUnsupported` / `isMisconfigured` / `isPolicyRefusal`. `reason` now appears
   in `toString()`.
-- `docs/INTEGRATION.md` — ordered walkthrough from platform prerequisites to
+- `doc/INTEGRATION.md` — ordered walkthrough from platform prerequisites to
   first upload.
 
 ### Fixed
 
+- `startSession()` reported success when the native runtime failed to open a
+  session. A null native result fell through to the Dart-only path, minting a
+  `core_<millis>` handle — so the host saw a session id and a `collecting`
+  state for a session the runtime never opened, with no HSI and no error. It now
+  throws; the Dart-only path is reached only when no native runtime is present.
 - `flushIfEligible` reported "cloudUpload consent not granted" whenever
   `hasConsent` returned false. Once cloud is configured the runtime denies every
   consent type until a consent token is issued, so the message blamed a consent

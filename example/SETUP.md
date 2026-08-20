@@ -5,7 +5,7 @@ device. This guide covers that baseline and how to opt into cloud upload.
 
 For the platform side — creating the organization, tenant, app, app policy and
 consent profile that cloud upload needs — see
-[docs/INTEGRATION.md](../docs/INTEGRATION.md#1-platform-prerequisites). Cloud
+[doc/INTEGRATION.md](../doc/INTEGRATION.md#1-platform-prerequisites). Cloud
 upload does not work without a consent profile for the app id, and that failure
 is easy to misread as a consent problem.
 

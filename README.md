@@ -15,7 +15,7 @@ installed native Synheart Runtime.
 > Synheart Core is intended for wellness and research use. It is not a medical
 > device and must not be used to diagnose, treat, cure, or prevent disease.
 
-**New here?** [docs/INTEGRATION.md](docs/INTEGRATION.md) is the ordered
+**New here?** [doc/INTEGRATION.md](doc/INTEGRATION.md) is the ordered
 walkthrough — platform prerequisites, install, consent, collection, upload, and
 attestation, with a troubleshooting table keyed on the log lines you will
 actually see. This README is the reference.
