@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory;
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:path_provider/path_provider.dart';
@@ -1659,34 +1659,11 @@ class Synheart {
   ///
   /// [durationSec] if set, the session will end automatically after that many
   /// seconds (Session SDK boundary). If null, session runs until [stopSession].
-  /// Reject a native session that did not open, instead of degrading silently.
   ///
-  /// [startSession] used to treat a null native result as "no runtime" and fall
-  /// through to the Dart-only path, minting a `core_<millis>` handle. The host
-  /// then saw a session id and a `collecting` state for a session the runtime
-  /// never opened: no native windowing, no HSI, no stored artifacts, and no
-  /// error to explain any of it.
-  ///
-  /// The Dart-only path is for hosts with NO native runtime. Reaching it with a
-  /// runtime loaded means a real failure, so it must surface.
-  ///
-  /// Exposed for testing because the alternative — reaching this state through
-  /// [startSession] — needs a `CoreRuntimeBridge` holding a live native handle,
-  /// which a unit test cannot construct.
-  @visibleForTesting
-  static void assertNativeSessionStarted(Map<String, dynamic>? result) {
-    if (result != null) return;
-    throw StateError(
-      'The native session failed to start.\n\n'
-      'The runtime is loaded but returned no session, so nothing would be '
-      'collected. This is not the local-only path — that applies only when no '
-      'native runtime is present.\n\n'
-      'Most often the runtime already holds an open session: call stopSession() '
-      'before starting another. Check runtimeDiagnostics() for symbol or '
-      'configuration problems.',
-    );
-  }
-
+  /// Throws a [StateError] when the native runtime is loaded but opens no
+  /// session. The Dart-only path below is for hosts with NO native runtime;
+  /// falling through to it with a runtime present would mint a session id for a
+  /// session that does not exist.
   static Future<SessionHandle?> startSession({int? durationSec}) async {
     if (_coreRuntime != null) {
       // Same precondition the Dart fallback path enforces. Without it the
@@ -1745,8 +1722,19 @@ class Synheart {
         return shared._currentSessionHandle;
       }
 
-      // The runtime is loaded but refused to open a session.
-      assertNativeSessionStarted(result);
+      // The runtime is loaded but refused to open a session. Falling through to
+      // the Dart-only path below would mint a `core_<millis>` handle and report
+      // `collecting` for a session the runtime never opened — no native
+      // windowing, no HSI, no stored artifacts, and no error to explain it.
+      throw StateError(
+        'The native session failed to start.\n\n'
+        'The runtime is loaded but returned no session, so nothing would be '
+        'collected. This is not the local-only path — that applies only when no '
+        'native runtime is present.\n\n'
+        'Most often the runtime already holds an open session: call stopSession() '
+        'before starting another. Check runtimeDiagnostics() for symbol or '
+        'configuration problems.',
+      );
     }
     await shared._startDataCollection(durationSec: durationSec);
     return shared._currentSessionHandle;
