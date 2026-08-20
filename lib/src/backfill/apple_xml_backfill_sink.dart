@@ -55,7 +55,8 @@ sealed class BackfillSinkError implements Exception {
 class BackfillRuntimeUnavailable extends BackfillSinkError {
   const BackfillRuntimeUnavailable()
     : super(
-        'runtime backfill symbols not present (need native runtime 5.4.0+)',
+        'runtime backfill symbols not present — update the native runtime '
+        'with `synheart install runtime`',
       );
 }
 

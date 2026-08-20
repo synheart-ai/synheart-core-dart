@@ -31,25 +31,15 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
-
   # Synheart Core SDK (local path dependency)
   synheart_core:
     path: ../
 
-  # Permission handler for runtime permissions
-  permission_handler: ^11.3.1
-
   # State management
   provider: ^6.1.1
 
-  # Persist runtime mode preference (batch vs realtime)
+  # Persists the demo subjectId / deviceId across restarts
   shared_preferences: ^2.2.2
-
-  # Synheart behavior SDK (for behavior metrics)
-  synheart_behavior: ^0.4.0
 
 dev_dependencies:
   flutter_test:

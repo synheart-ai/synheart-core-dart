@@ -39,10 +39,25 @@ class DeviceAuthConfig {
   /// Optional; leave empty if not applicable.
   final String packageName;
 
+  /// **Development only.** Register the device even when the platform produces
+  /// no attestation material (Play Integrity / App Attest unavailable — an
+  /// emulator, a de-Googled ROM, a sideloaded debug build).
+  ///
+  /// With this `false` (the default), such a device skips registration and runs
+  /// local-only. With it `true`, the runtime submits the registration with
+  /// `attestation.format = "none"` and an empty blob, and the **server** decides.
+  ///
+  /// This is **not** a security bypass. It only stops the client giving up
+  /// early. Acceptance still requires development mode on this app's record in
+  /// the Synheart dashboard; with that off, registration is refused server-side.
+  /// Never enable it on a production app id — use a separate development app id.
+  final bool allowUnattestedDevRegistration;
+
   const DeviceAuthConfig({
     required this.authBaseUrl,
     this.capabilityBaseUrl,
     this.packageName = '',
+    this.allowUnattestedDevRegistration = false,
   });
 
   String get resolvedCapabilityBaseUrl => capabilityBaseUrl ?? authBaseUrl;
@@ -133,10 +148,21 @@ class SynheartConfig {
   /// fetching, and device-signed request authentication.
   final DeviceAuthConfig? deviceAuthConfig;
 
-  /// Server-signed capability token for feature gating
+  /// Server-signed capability token for feature gating.
+  @Deprecated(
+    'Bundle-shipped capability tokens were removed from the native runtime as '
+    'a security fix; capability gating is fail-closed and driven by a verified '
+    'consent JWT. This field is no longer forwarded to the runtime. Use '
+    'deviceAuthConfig instead. Will be removed in 0.12.0.',
+  )
   final CapabilityToken? capabilityToken;
 
-  /// HMAC secret for verifying the capability token signature
+  /// HMAC secret for verifying the capability token signature.
+  @Deprecated(
+    'A signing secret must never ship inside an app bundle — it is readable by '
+    'anyone who downloads the app. The native runtime no longer accepts one. '
+    'Use deviceAuthConfig instead. Will be removed in 0.12.0.',
+  )
   final String? capabilitySecret;
 
   /// When true, allows SDK to run with default capabilities and no signed token (debug only)
@@ -171,7 +197,17 @@ class SynheartConfig {
     this.cloudConfig,
     this.consentConfig,
     this.deviceAuthConfig,
+    // ignore: deprecated_member_use_from_same_package
+    @Deprecated(
+      'Not forwarded to the runtime; use deviceAuthConfig. '
+      'Will be removed in 0.12.0.',
+    )
     this.capabilityToken,
+    // ignore: deprecated_member_use_from_same_package
+    @Deprecated(
+      'A signing secret must never ship in an app bundle; use '
+      'deviceAuthConfig. Will be removed in 0.12.0.',
+    )
     this.capabilitySecret,
     this.allowUnsignedCapabilities = false,
     this.batchIngestOnStop = false,
@@ -184,6 +220,11 @@ class SynheartConfig {
   }
 
   /// Validate config and throw [SynheartError] on violations.
+  ///
+  /// Called by [Synheart.initialize] before any native work happens, so a
+  /// misconfiguration fails fast with an actionable message rather than
+  /// surfacing later as an unexplained empty `org_id` on ingest rows or a
+  /// device registration bound to the wrong subject.
   void validate() {
     if (mode == SynheartMode.research && !privacy.allowResearch) {
       throw SynheartError.researchNotAllowed;
@@ -191,19 +232,36 @@ class SynheartConfig {
     if (appId.isEmpty) {
       throw const SynheartError(
         'ERR_NOT_CONFIGURED',
-        'appId must not be empty',
+        'SynheartConfig.appId is empty. Set it to your application '
+            'identifier — the reverse-DNS bundle/package id is a good default '
+            '(e.g. appId: "com.example.my_app"), or the app id issued at '
+            'platform.synheart.ai if you have one. It identifies your app on '
+            'every session record and ingest row.\n'
+            '  await Synheart.initialize(\n'
+            '    config: SynheartConfig(appId: ..., subjectId: ...),\n'
+            '  );',
       );
     }
     if (subjectId.isEmpty) {
       throw const SynheartError(
         'ERR_NOT_CONFIGURED',
-        'subjectId must not be empty',
+        'SynheartConfig.subjectId is empty. Set it to a stable identifier for '
+            'the signed-in or pseudonymous user — it must survive app '
+            'restarts, or the runtime treats every launch as a new person and '
+            'baselines never mature. Passing `userId:` to initialize() does '
+            'NOT populate it; set it on the config.\n'
+            '  await Synheart.initialize(\n'
+            '    config: SynheartConfig(appId: ..., subjectId: ...),\n'
+            '  );',
       );
     }
     if (subjectId.contains('|')) {
-      throw const SynheartError(
+      throw SynheartError(
         'ERR_INVALID_MODE',
-        'subjectId must not contain pipe character',
+        'SynheartConfig.subjectId must not contain the "|" character '
+            '(got: "$subjectId"). The pipe is the field separator in the '
+            'runtime\'s subject-scoped storage keys, so it would corrupt the '
+            'key namespace. Strip or replace it before passing the value in.',
       );
     }
   }
@@ -303,7 +361,14 @@ class CloudConfig {
   /// Instance ID (UUID for this SDK instance)
   final String instanceId;
 
-  /// API Key for X-API-Key header (nullable when authProvider is used)
+  /// API key for the `X-API-Key` header.
+  @Deprecated(
+    'An API key must never ship inside an app bundle — it is readable by '
+    'anyone who downloads the app. The native runtime removed bundle-secret '
+    'config (cloud.api_key) as a security fix and this value is not forwarded. '
+    'Requests are signed with the hardware-backed device identity instead; see '
+    'DeviceAuthConfig. Will be removed in 0.12.0.',
+  )
   final String? apiKey;
 
   /// Organization ID (optional) - for metadata.org_id
@@ -328,6 +393,11 @@ class CloudConfig {
     this.authProvider,
     required this.subjectId,
     required this.instanceId,
+    // ignore: deprecated_member_use_from_same_package
+    @Deprecated(
+      'An API key must never ship in an app bundle; requests are '
+      'signed with the device identity. Will be removed in 0.12.0.',
+    )
     this.apiKey,
     this.orgId,
     this.baseUrl = ApiEndpoints.defaultCloudBaseUrl,
@@ -348,7 +418,13 @@ class ConsentConfig {
   /// App ID for consent service
   final String? appId;
 
-  /// App API key for consent service authentication
+  /// App API key for consent service authentication.
+  @Deprecated(
+    'An API key must never ship inside an app bundle. The native runtime '
+    'removed bundle-secret config (app_api_key) as a security fix and this '
+    'value is not forwarded; consent calls are signed with the device '
+    'identity. Will be removed in 0.12.0.',
+  )
   final String? appApiKey;
 
   /// Device ID (UUID for this device, auto-generated if not provided)
@@ -366,6 +442,11 @@ class ConsentConfig {
   ConsentConfig({
     String? consentServiceUrl,
     this.appId,
+    // ignore: deprecated_member_use_from_same_package
+    @Deprecated(
+      'An API key must never ship in an app bundle; consent calls '
+      'are signed with the device identity. Will be removed in 0.12.0.',
+    )
     this.appApiKey,
     this.deviceId,
     String? platform,

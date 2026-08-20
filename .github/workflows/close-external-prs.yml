@@ -40,34 +40,97 @@ jobs:
             // Runtime check against the org membership API. The default
             // GITHUB_TOKEN cannot see private memberships, so this needs a
             // PAT (classic, scope: read:org) stored as ORG_READ_TOKEN.
+            //
+            // Three outcomes, and the distinction matters:
+            //
+            //   member   — 204. Skip.
+            //   external — 404. A fact about the author. Close.
+            //   unknown  — anything else (missing or invalid token, a token
+            //              that cannot see this membership, a server or
+            //              network error). These describe the check, not the
+            //              author.
+            //
+            // Unknown fails OPEN: leave the PR alone and ask for manual
+            // triage. Closing on an inconclusive check would reject
+            // legitimate PRs — including from private org members, who arrive
+            // as association=CONTRIBUTOR, the very case this API call exists
+            // to resolve — and the workflow also runs on `reopened`, so the
+            // author could not recover the PR themselves.
             const orgReadToken = process.env.ORG_READ_TOKEN;
-            if (orgReadToken) {
-              // github-script@v7 bundles its dependencies, so
-              // require("@actions/github") is not resolvable from the user
-              // script — call the membership REST API directly with fetch
-              // (a global in the Actions Node runtime).
-              const resp = await fetch(
-                `https://api.github.com/orgs/${context.repo.owner}/members/${login}`,
-                {
-                  headers: {
-                    authorization: `Bearer ${orgReadToken}`,
-                    accept: "application/vnd.github+json",
-                    "user-agent": "close-external-prs",
-                  },
-                },
-              );
-              if (resp.status === 204) {
-                core.info(`Skipping: @${login} is an org member of ${context.repo.owner} (verified via ORG_READ_TOKEN)`);
-                return;
-              } else if (resp.status === 404) {
-                core.info(`@${login} is not a member of ${context.repo.owner}`);
-              } else if (resp.status === 302) {
-                core.warning(`ORG_READ_TOKEN cannot view membership for @${login} (302). Treating as external.`);
-              } else {
-                core.warning(`Membership check for @${login} errored: HTTP ${resp.status}. Treating as external.`);
-              }
+            let membership = "unknown";
+            let unknownReason = "";
+
+            if (!orgReadToken) {
+              unknownReason = "ORG_READ_TOKEN secret is not set";
+              core.warning(`${unknownReason}; cannot verify private org membership. Add a classic PAT with read:org scope.`);
             } else {
-              core.warning("ORG_READ_TOKEN secret is not set; private org members will be misclassified as external. Add a PAT with read:org scope.");
+              try {
+                // github-script@v7 bundles its dependencies, so
+                // require("@actions/github") is not resolvable from the user
+                // script — call the membership REST API directly with fetch
+                // (a global in the Actions Node runtime).
+                const resp = await fetch(
+                  `https://api.github.com/orgs/${context.repo.owner}/members/${login}`,
+                  {
+                    headers: {
+                      authorization: `Bearer ${orgReadToken}`,
+                      accept: "application/vnd.github+json",
+                      "user-agent": "close-external-prs",
+                    },
+                  },
+                );
+                if (resp.status === 204) {
+                  membership = "member";
+                } else if (resp.status === 404) {
+                  membership = "external";
+                } else if (resp.status === 401) {
+                  unknownReason = "ORG_READ_TOKEN is invalid or expired (HTTP 401)";
+                } else if (resp.status === 302) {
+                  unknownReason = `ORG_READ_TOKEN cannot view membership for @${login} (HTTP 302)`;
+                } else {
+                  unknownReason = `membership check returned HTTP ${resp.status}`;
+                }
+              } catch (err) {
+                unknownReason = `membership check threw: ${err}`;
+              }
+            }
+
+            if (membership === "member") {
+              core.info(`Skipping: @${login} is an org member of ${context.repo.owner} (verified via ORG_READ_TOKEN)`);
+              return;
+            }
+
+            if (membership === "unknown") {
+              core.warning(
+                `Cannot determine whether @${login} is a member of ${context.repo.owner}: ${unknownReason}. ` +
+                `Leaving PR #${pr.number} open for manual triage.`,
+              );
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: [
+                  "**Automated membership check could not run**, so this PR has been left open for a maintainer to triage.",
+                  "",
+                  "Reason: `" + unknownReason + "`",
+                  "",
+                  "This is a problem with the check itself, not a judgement about this pull request.",
+                  "A maintainer will take a look.",
+                ].join("\n"),
+              });
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  labels: ["needs-triage"],
+                });
+              } catch (err) {
+                // The label may not exist; the comment is the signal that
+                // matters.
+                core.info(`Could not add needs-triage label: ${err}`);
+              }
+              return;
             }
 
             core.info(`Closing PR #${pr.number} from external author @${login} (association=${association})`);

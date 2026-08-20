@@ -554,8 +554,6 @@ typedef _VersionC = Pointer<Utf8> Function();
 typedef _VersionDart = Pointer<Utf8> Function();
 typedef _Int64ReturnC = Int64 Function(Pointer<Void> h);
 typedef _Int64ReturnDart = int Function(Pointer<Void> h);
-typedef _DoubleReturnC = Double Function(Pointer<Void> h);
-typedef _DoubleReturnDart = double Function(Pointer<Void> h);
 
 // ── Multi-source priority resolver ──────────────────────────────────
 // Process-global (no handle), JSON in/out for resolve.
@@ -626,6 +624,80 @@ class SynheartCoreFFI {
   final SynheartSdkFfi sdkFfi;
 
   static SynheartCoreFFI? _instance;
+
+  /// Optional `synheart_core_*` symbols the loaded library does not export,
+  /// recorded the first time each is probed.
+  ///
+  /// Bindings resolve lazily, so a name lands here when the feature behind it is
+  /// first used. Surfaced through
+  /// `Synheart.runtimeDiagnostics()['missingSymbols']`; a non-empty set means
+  /// the vendored runtime predates this SDK release and those features return
+  /// `null` / `-1` / `const []` rather than working.
+  static final Set<String> _missingSymbols = <String>{};
+
+  /// Unmodifiable view of [_missingSymbols].
+  static Set<String> get missingSymbols =>
+      Set<String>.unmodifiable(_missingSymbols);
+
+  /// Every optional symbol probed so far, resolved or not.
+  static final Set<String> _probedSymbols = <String>{};
+
+  /// How many optional symbols have been probed. Zero means nothing has been
+  /// checked yet — which is NOT the same as "everything is fine", and is why
+  /// [probeOptionalSymbols] exists.
+  static int get probedSymbolCount => _probedSymbols.length;
+
+  /// Force-resolve every optional symbol so [missingSymbols] reflects a real
+  /// audit rather than whatever happened to be used.
+  ///
+  /// Without this, a host that never touches a given feature never learns its
+  /// symbol is absent, and an empty [missingSymbols] looks healthy while
+  /// nothing has been checked. Intended for diagnostics surfaces rather than
+  /// the hot path; idempotent, since the lookups cache.
+  void probeOptionalSymbols() {
+    // Referencing each field forces its initializer to run.
+    coreLastError;
+    recordStudyConsent;
+    baselineHydrateLocal;
+    baselineExportOffline;
+    baselineImportOffline;
+    labReenqueueSession;
+    labEnsureMetadata;
+    labMarkMetadataDirty;
+    labCurrentMetadataId;
+    version;
+    prioritySetProvider;
+    prioritySetMetricOverride;
+    priorityEffectiveRank;
+    priorityResolve;
+    resilienceComputeV1;
+    backfillOpen;
+    backfillInsertBatch;
+    backfillFinalize;
+  }
+
+  /// Wrap an OPTIONAL symbol lookup so a miss is recorded and logged once
+  /// rather than silently swallowed — a runtime that predates this SDK release
+  /// would otherwise disable whole feature areas with nothing in the logs.
+  ///
+  /// [lookup] must perform the `_lib.lookupFunction<NativeT, DartT>(symbol)`
+  /// call itself: dart:ffi requires the native type to be concrete at the call
+  /// site, so it cannot be passed through a type variable.
+  static T? _optional<T extends Function>(String symbol, T Function() lookup) {
+    _probedSymbols.add(symbol);
+    try {
+      return lookup();
+    } catch (_) {
+      if (_missingSymbols.add(symbol)) {
+        SynheartLogger.log(
+          '[Synheart] native symbol "$symbol" not found in the loaded runtime '
+          '— the feature it backs is disabled. Update the vendored runtime '
+          'with `synheart install runtime` if you expect it to be available.',
+        );
+      }
+      return null;
+    }
+  }
 
   /// Load the native library. Returns null if not found.
   ///
@@ -780,16 +852,13 @@ class SynheartCoreFFI {
 
   /// Returns null when the symbol isn't exported (older runtime build).
   /// Caller MUST free the returned pointer via [coreFreeString].
-  late final coreLastError = () {
-    try {
-      return _lib
-          .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
-            'synheart_core_last_error',
-          );
-    } catch (_) {
-      return null;
-    }
-  }();
+  late final coreLastError = _optional(
+    'synheart_core_last_error',
+    () =>
+        _lib.lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+          'synheart_core_last_error',
+        ),
+  );
 
   late final startSession = _lib
       .lookupFunction<_StartSessionC, _StartSessionDart>(
@@ -933,15 +1002,12 @@ class SynheartCoreFFI {
   // the symbol is absent, so guard it and let the high-level API degrade to a
   // no-op (returns null) instead of crashing at load.
   late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)?
-  recordStudyConsent = () {
-    try {
-      return _lib.lookupFunction<_RecordStudyConsentC, _RecordStudyConsentDart>(
-        'synheart_core_record_study_consent',
-      );
-    } catch (_) {
-      return null;
-    }
-  }();
+  recordStudyConsent = _optional(
+    'synheart_core_record_study_consent',
+    () => _lib.lookupFunction<_RecordStudyConsentC, _RecordStudyConsentDart>(
+      'synheart_core_record_study_consent',
+    ),
+  );
   late final enrolStudy = _lib.lookupFunction<_EnrolStudyC, _EnrolStudyDart>(
     'synheart_core_enrol_study',
   );
@@ -1042,31 +1108,26 @@ class SynheartCoreFFI {
   ///
   /// Cross-device baseline transport rides the existing sync engine;
   /// there's no separate cloud-baseline FFI surface here.
-  late final Pointer<Utf8> Function(Pointer<Void>)? baselineHydrateLocal = () {
-    try {
-      return _lib
-          .lookupFunction<_BaselineHydrateLocalC, _BaselineHydrateLocalDart>(
-            'synheart_core_baseline_hydrate_local',
-          );
-    } catch (_) {
-      return null;
-    }
-  }();
+  late final Pointer<Utf8> Function(Pointer<Void>)? baselineHydrateLocal =
+      _optional(
+        'synheart_core_baseline_hydrate_local',
+        () => _lib
+            .lookupFunction<_BaselineHydrateLocalC, _BaselineHydrateLocalDart>(
+              'synheart_core_baseline_hydrate_local',
+            ),
+      );
 
   /// Encrypt every cached baseline envelope into an offline-export
   /// blob keyed by passphrase. Optional symbol — null on older
   /// runtime binaries without the offline export FFI.
   late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)?
-  baselineExportOffline = () {
-    try {
-      return _lib
-          .lookupFunction<_BaselineExportOfflineC, _BaselineExportOfflineDart>(
-            'synheart_core_baseline_export_offline',
-          );
-    } catch (_) {
-      return null;
-    }
-  }();
+  baselineExportOffline = _optional(
+    'synheart_core_baseline_export_offline',
+    () => _lib
+        .lookupFunction<_BaselineExportOfflineC, _BaselineExportOfflineDart>(
+          'synheart_core_baseline_export_offline',
+        ),
+  );
 
   /// Decrypt a `.srm.synheart` blob and import its envelopes.
   /// Optional symbol — null on older runtime binaries.
@@ -1075,16 +1136,13 @@ class SynheartCoreFFI {
     Pointer<Utf8>,
     Pointer<Utf8>,
   )?
-  baselineImportOffline = () {
-    try {
-      return _lib
-          .lookupFunction<_BaselineImportOfflineC, _BaselineImportOfflineDart>(
-            'synheart_core_baseline_import_offline',
-          );
-    } catch (_) {
-      return null;
-    }
-  }();
+  baselineImportOffline = _optional(
+    'synheart_core_baseline_import_offline',
+    () => _lib
+        .lookupFunction<_BaselineImportOfflineC, _BaselineImportOfflineDart>(
+          'synheart_core_baseline_import_offline',
+        ),
+  );
 
   late final setRetentionDays = _lib
       .lookupFunction<_RetentionC, _RetentionDart>(
@@ -1425,15 +1483,12 @@ class SynheartCoreFFI {
   // export the symbol don't break the bridge — caller checks for null
   // before invoking.
   late final int Function(Pointer<Void>, Pointer<Utf8>)? labReenqueueSession =
-      () {
-        try {
-          return _lib.lookupFunction<_LabReenqueueC, _LabReenqueueDart>(
-            'synheart_core_reenqueue_lab_session',
-          );
-        } catch (_) {
-          return null;
-        }
-      }();
+      _optional(
+        'synheart_core_reenqueue_lab_session',
+        () => _lib.lookupFunction<_LabReenqueueC, _LabReenqueueDart>(
+          'synheart_core_reenqueue_lab_session',
+        ),
+      );
   // Lab metadata. Optional: older runtimes may not export these, in which case
   // the lookup throws and the field stays null.
   late final Pointer<Utf8> Function(
@@ -1444,109 +1499,82 @@ class SynheartCoreFFI {
     Pointer<Utf8>,
     Pointer<Utf8>,
   )?
-  labEnsureMetadata = () {
-    try {
-      return _lib.lookupFunction<_LabEnsureMetadataC, _LabEnsureMetadataDart>(
-        'synheart_core_lab_ensure_metadata',
-      );
-    } catch (_) {
-      return null;
-    }
-  }();
+  labEnsureMetadata = _optional(
+    'synheart_core_lab_ensure_metadata',
+    () => _lib.lookupFunction<_LabEnsureMetadataC, _LabEnsureMetadataDart>(
+      'synheart_core_lab_ensure_metadata',
+    ),
+  );
   late final int Function(Pointer<Void>, Pointer<Utf8>)? labMarkMetadataDirty =
-      () {
-        try {
-          return _lib.lookupFunction<
-            _LabMarkMetadataDirtyC,
-            _LabMarkMetadataDirtyDart
-          >('synheart_core_lab_mark_metadata_dirty');
-        } catch (_) {
-          return null;
-        }
-      }();
-  late final Pointer<Utf8> Function(Pointer<Void>)? labCurrentMetadataId = () {
-    try {
-      return _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
-        'synheart_core_lab_current_metadata_id',
+      _optional(
+        'synheart_core_lab_mark_metadata_dirty',
+        () => _lib
+            .lookupFunction<_LabMarkMetadataDirtyC, _LabMarkMetadataDirtyDart>(
+              'synheart_core_lab_mark_metadata_dirty',
+            ),
       );
-    } catch (_) {
-      return null;
-    }
-  }();
+  late final Pointer<Utf8> Function(Pointer<Void>)? labCurrentMetadataId =
+      _optional(
+        'synheart_core_lab_current_metadata_id',
+        () => _lib.lookupFunction<_JsonReturnC, _JsonReturnDart>(
+          'synheart_core_lab_current_metadata_id',
+        ),
+      );
 
   // Version / frame diagnostics
-  late final Pointer<Utf8> Function()? version = () {
-    try {
-      return _lib.lookupFunction<_VersionC, _VersionDart>(
-        'synheart_core_version',
-      );
-    } catch (_) {
-      return null;
-    }
-  }();
+  late final Pointer<Utf8> Function()? version = _optional(
+    'synheart_core_version',
+    () => _lib.lookupFunction<_VersionC, _VersionDart>('synheart_core_version'),
+  );
   late final frameCount = _lib.lookupFunction<_Int64ReturnC, _Int64ReturnDart>(
     'synheart_core_frame_count',
   );
-  late final double Function(Pointer<Void>)? lastQuality = () {
-    try {
-      return _lib.lookupFunction<_DoubleReturnC, _DoubleReturnDart>(
-        'synheart_core_last_quality',
-      );
-    } catch (_) {
-      return null;
-    }
-  }();
+  // NOTE: there is deliberately no `lastQuality` binding. The runtime exports
+  // `synheart_core_edge_last_quality` (edge/watch variant only) and has never
+  // exported a non-edge `synheart_core_last_quality`, so the lookup always
+  // fell into its `catch (_) => null` and every caller read a hardcoded 0.0.
+  // Removed in 0.10.2 along with the `runtimeDiagnostics()['lastQuality']`
+  // key. Re-add both together if the symbol is ever exported non-edge.
 
   // ── Multi-source priority resolver ────────────────────────────────
   // All four symbols are nullable because they ship in the native runtime
-  // 5.4.0+; older runtimes return null and the high-level Dart API
+  // in newer runtimes only; older ones resolve to null and the Dart API
   // falls back to a pure-Dart in-memory store.
 
-  late final int Function(Pointer<Utf8>, int)? prioritySetProvider = () {
-    try {
-      return _lib
-          .lookupFunction<_PrioritySetProviderC, _PrioritySetProviderDart>(
-            'synheart_core_priority_set_provider',
-          );
-    } catch (_) {
-      return null;
-    }
-  }();
+  late final int Function(Pointer<Utf8>, int)? prioritySetProvider = _optional(
+    'synheart_core_priority_set_provider',
+    () => _lib.lookupFunction<_PrioritySetProviderC, _PrioritySetProviderDart>(
+      'synheart_core_priority_set_provider',
+    ),
+  );
 
   late final int Function(Pointer<Utf8>, Pointer<Utf8>, int, int)?
-  prioritySetMetricOverride = () {
-    try {
-      return _lib.lookupFunction<
-        _PrioritySetMetricOverrideC,
-        _PrioritySetMetricOverrideDart
-      >('synheart_core_priority_set_metric_override');
-    } catch (_) {
-      return null;
-    }
-  }();
+  prioritySetMetricOverride = _optional(
+    'synheart_core_priority_set_metric_override',
+    () =>
+        _lib.lookupFunction<
+          _PrioritySetMetricOverrideC,
+          _PrioritySetMetricOverrideDart
+        >('synheart_core_priority_set_metric_override'),
+  );
 
   late final int Function(Pointer<Utf8>, Pointer<Utf8>)? priorityEffectiveRank =
-      () {
-        try {
-          return _lib.lookupFunction<
-            _PriorityEffectiveRankC,
-            _PriorityEffectiveRankDart
-          >('synheart_core_priority_effective_rank');
-        } catch (_) {
-          return null;
-        }
-      }();
+      _optional(
+        'synheart_core_priority_effective_rank',
+        () =>
+            _lib.lookupFunction<
+              _PriorityEffectiveRankC,
+              _PriorityEffectiveRankDart
+            >('synheart_core_priority_effective_rank'),
+      );
 
   late final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>)?
-  priorityResolve = () {
-    try {
-      return _lib.lookupFunction<_PriorityResolveC, _PriorityResolveDart>(
-        'synheart_core_priority_resolve',
-      );
-    } catch (_) {
-      return null;
-    }
-  }();
+  priorityResolve = _optional(
+    'synheart_core_priority_resolve',
+    () => _lib.lookupFunction<_PriorityResolveC, _PriorityResolveDart>(
+      'synheart_core_priority_resolve',
+    ),
+  );
 
   // ── HRV-CV resilience score ───────────────────────────────────────
   // Stateless. Nullable for graceful version fallback.
@@ -1556,48 +1584,37 @@ class SynheartCoreFFI {
     Pointer<Utf8>,
     Pointer<Utf8>,
   )?
-  resilienceComputeV1 = () {
-    try {
-      return _lib.lookupFunction<_ResilienceComputeC, _ResilienceComputeDart>(
-        'synheart_core_resilience_compute_v1',
-      );
-    } catch (_) {
-      return null;
-    }
-  }();
+  resilienceComputeV1 = _optional(
+    'synheart_core_resilience_compute_v1',
+    () => _lib.lookupFunction<_ResilienceComputeC, _ResilienceComputeDart>(
+      'synheart_core_resilience_compute_v1',
+    ),
+  );
 
   // ── Apple Health XML backfill ─────────────────────────────────────
   // Same nullable pattern.
 
-  late final int Function(Pointer<Utf8>, Pointer<Utf8>)? backfillOpen = () {
-    try {
-      return _lib.lookupFunction<_BackfillOpenC, _BackfillOpenDart>(
+  late final int Function(Pointer<Utf8>, Pointer<Utf8>)? backfillOpen =
+      _optional(
         'synheart_core_backfill_open',
+        () => _lib.lookupFunction<_BackfillOpenC, _BackfillOpenDart>(
+          'synheart_core_backfill_open',
+        ),
       );
-    } catch (_) {
-      return null;
-    }
-  }();
 
   late final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>)?
-  backfillInsertBatch = () {
-    try {
-      return _lib
-          .lookupFunction<_BackfillInsertBatchC, _BackfillInsertBatchDart>(
-            'synheart_core_backfill_insert_batch',
-          );
-    } catch (_) {
-      return null;
-    }
-  }();
+  backfillInsertBatch = _optional(
+    'synheart_core_backfill_insert_batch',
+    () => _lib.lookupFunction<_BackfillInsertBatchC, _BackfillInsertBatchDart>(
+      'synheart_core_backfill_insert_batch',
+    ),
+  );
 
-  late final Pointer<Utf8> Function(Pointer<Utf8>)? backfillFinalize = () {
-    try {
-      return _lib.lookupFunction<_BackfillFinalizeC, _BackfillFinalizeDart>(
+  late final Pointer<Utf8> Function(Pointer<Utf8>)? backfillFinalize =
+      _optional(
         'synheart_core_backfill_finalize',
+        () => _lib.lookupFunction<_BackfillFinalizeC, _BackfillFinalizeDart>(
+          'synheart_core_backfill_finalize',
+        ),
       );
-    } catch (_) {
-      return null;
-    }
-  }();
 }

@@ -158,9 +158,12 @@ void main() {
       }
     });
 
-    test('ResilienceUnavailable suggests an upgrade path', () {
+    test('ResilienceUnavailable suggests an actionable upgrade path', () {
+      // Was asserting the literal '5.4.0', a stale version string. Assert the
+      // remedy instead so the test survives version-scheme changes.
       const e = ResilienceUnavailable();
-      expect(e.message, contains('5.4.0'));
+      expect(e.message, contains('synheart install runtime'));
+      expect(e.message, isNot(contains('5.4.0')));
     });
   });
 }

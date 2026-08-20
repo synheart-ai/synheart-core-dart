@@ -5,6 +5,11 @@ on:
         tags:
             - "v[0-9]+.[0-9]+.[0-9]+*"
 
+# Least privilege by default. `verify` only reads the repo; `publish` declares
+# its own wider block below (id-token: write, for OIDC) which overrides this.
+permissions:
+    contents: read
+
 jobs:
     # Gate the pub.dev publish on the same checks CI runs on main. Previously
     # `publish` fired independently of CI, so a tag whose tests failed (e.g. the
@@ -47,6 +52,44 @@ jobs:
 
             - name: Publish dry-run
               run: dart pub publish --dry-run
+
+            # `.pubignore` replaces `.gitignore` for publishing, so paths the
+            # repo only excludes via `.gitignore` — the CLI-installed native
+            # runtime among them — can reach the archive. A clean CI checkout
+            # has no such artifacts, so this guard exists to fail a publish run
+            # from any environment where they are present.
+            - name: Check archive size and contents
+              run: |
+                set -euo pipefail
+                MAX_KB=5120   # 5 MB; the package is a ~600 KB Dart wrapper.
+
+                OUT="$(dart pub publish --dry-run 2>&1)"
+
+                if grep -qiE 'xcframework|\.dSYM|SynheartCoreRuntime|jniLibs|\.so$' <<<"$OUT"; then
+                  echo "::error::Native runtime artifacts are in the publish archive."
+                  echo "The native runtime is proprietary and CLI-provisioned; it must not ship on pub.dev."
+                  echo "Add the offending paths to .pubignore (NOT .gitignore — pub ignores .gitignore when .pubignore exists)."
+                  grep -iE 'xcframework|\.dSYM|SynheartCoreRuntime|jniLibs|\.so$' <<<"$OUT" || true
+                  exit 1
+                fi
+
+                SIZE_LINE="$(grep -i 'Total compressed archive size' <<<"$OUT" || true)"
+                echo "$SIZE_LINE"
+                SIZE_KB="$(sed -E 's/.*size: ([0-9.]+) ?([KMG]?B).*/\1 \2/' <<<"$SIZE_LINE" \
+                  | awk '{ if ($2=="MB") print $1*1024; else if ($2=="GB") print $1*1024*1024; else if ($2=="KB") print $1; else print $1/1024 }')"
+
+                if [ -z "$SIZE_KB" ]; then
+                  echo "::error::Could not parse the archive size from the dry-run output."
+                  exit 1
+                fi
+
+                echo "Archive size: ${SIZE_KB} KB (limit ${MAX_KB} KB)"
+                if awk "BEGIN { exit !($SIZE_KB > $MAX_KB) }"; then
+                  echo "::error::Publish archive is ${SIZE_KB} KB, over the ${MAX_KB} KB limit."
+                  echo "Something large slipped past .pubignore. Inspect: dart pub publish --dry-run"
+                  exit 1
+                fi
+              shell: bash
 
     publish:
         needs: verify

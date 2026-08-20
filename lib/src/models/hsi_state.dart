@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../core/logger.dart';
+
 /// A single HSI axis reading with value and confidence.
 class HSIAxisValue {
   final double value;
@@ -27,13 +29,51 @@ class HSIAxes {
   /// `axes.affective[]` in HSI 1.3 only — null on the legacy/1.2 path.
   final HSIAxisValue? stress;
 
+  // ── Digital axes (`axes.digital[]`, HSI 1.3) ──────────────────────────
+  //
+  // Derived from interaction events — taps, scrolls, swipes, app switches,
+  // notifications — by the runtime's interaction adapter. They need no
+  // wearable and no biosignal, which makes them the only axes that resolve on
+  // a phone with nothing attached.
+  //
+  // These were parsed by nothing before: `_parseAxesV13` read `cognitive`,
+  // `affective` and `physiological` and dropped the `digital` domain on the
+  // floor, so behavior data reached the runtime, produced readings, and then
+  // vanished at the SDK boundary. A host with no wearable saw five empty axes
+  // and no way to tell that anything had been computed at all.
+  //
+  // Note the one-window lag: the runtime flushes interaction events for the
+  // window that just closed and attaches the result to the NEXT emission, so
+  // the first window of a session carries none of them.
+
+  /// Sustained-attention quality over the window. Higher is more focused.
+  final HSIAxisValue? focusQuality;
+
+  /// Interruption load — notifications and app switching against the user's
+  /// own baseline. `direction: lower_is_more`, so a LOW score means MORE
+  /// pressure; do not render it as if higher were better.
+  final HSIAxisValue? interruptionPressure;
+
+  /// Where the interaction sits between passive consumption and active input.
+  /// `direction: bidirectional` — neither end is "good".
+  final HSIAxisValue? interactionMode;
+
   const HSIAxes({
     this.focus,
     this.arousal,
     this.capacity,
     this.sleep,
     this.stress,
+    this.focusQuality,
+    this.interruptionPressure,
+    this.interactionMode,
   });
+
+  /// True when at least one digital reading resolved.
+  bool get hasDigital =>
+      focusQuality != null ||
+      interruptionPressure != null ||
+      interactionMode != null;
 
   /// Pre-1.3 (legacy) parse: each axis is a flat object `{value, confidence}`
   /// at the top of the `hsi` map. Used for the in-process runtime contract
@@ -98,6 +138,14 @@ HSIAxes _parseAxesV13(Object? axes) {
         _findAxisReading(axes['physiological'], 'sleep_score') ??
         _findAxisReading(axes['physiological'], 'sleep'),
     stress: _findAxisReading(axes['affective'], 'stress'),
+    // The digital domain. Produced from interaction events alone, so these
+    // resolve on hardware that can supply no biosignal at all.
+    focusQuality: _findAxisReading(axes['digital'], 'focus_quality'),
+    interruptionPressure: _findAxisReading(
+      axes['digital'],
+      'interruption_pressure',
+    ),
+    interactionMode: _findAxisReading(axes['digital'], 'interaction_mode'),
   );
 }
 
@@ -255,6 +303,20 @@ class HSIState {
   final Tiers tiers;
   final String rawJson;
 
+  /// Non-null when [fromJson] could not parse [rawJson] and fell back to empty
+  /// axes.
+  ///
+  /// Without this, a malformed payload, a schema drift, or an HSI version the
+  /// parser doesn't understand produced a state byte-identical to a legitimate
+  /// window whose axes the engine hasn't populated yet — so a developer had no
+  /// way to tell "no data" from "parse failed". Check [hasParseError] before
+  /// concluding the engine is simply still warming up. [rawJson] is retained
+  /// either way, so the offending payload is always available.
+  final String? parseError;
+
+  /// True when this state is a parse-failure fallback rather than real output.
+  bool get hasParseError => parseError != null;
+
   const HSIState({
     required this.subjectId,
     required this.timestampMs,
@@ -262,6 +324,7 @@ class HSIState {
     required this.rawJson,
     this.modalities = const Modalities(),
     this.tiers = const Tiers(),
+    this.parseError,
   });
 
   /// Parse an HSI JSON string from the runtime into a typed [HSIState].
@@ -296,12 +359,18 @@ class HSIState {
         tiers: _deriveTiers(map),
         rawJson: json,
       );
-    } catch (_) {
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] HSIState.fromJson failed: $e — returning empty axes. '
+        'Inspect HSIState.rawJson for the payload.',
+        error: e,
+      );
       return HSIState(
         subjectId: subjectId,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
         hsi: const HSIAxes(),
         rawJson: json,
+        parseError: e.toString(),
       );
     }
   }

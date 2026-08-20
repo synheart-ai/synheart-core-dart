@@ -1,41 +1,143 @@
 // ignore_for_file: avoid_print
+import 'package:flutter/foundation.dart';
 import 'package:synheart_core/synheart_core.dart';
 
-/// Simple example demonstrating minimal Synheart Core SDK usage.
+/// Platform origin, supplied at build time — never hard-coded.
 ///
-/// The absolute minimum to get HSI data flowing.
-/// For a full-featured example, see the Flutter app in example/lib/main.dart.
+///   flutter run --dart-define-from-file=env/defines.dev.json
+///
+/// Empty by default so a checked-out copy targets no environment until one is
+/// named. Baking a URL in here would silently point every fork at whatever
+/// host happened to be written down when the file was authored.
+const String authBaseUrl = String.fromEnvironment('SYNHEART_AUTH_URL');
+
+/// Minimal Synheart Core usage — the smallest thing that produces HSI.
+///
+/// This is the snippet pub.dev shows on the package page. The runnable Flutter
+/// app lives in `example/lib/`, which walks the same lifecycle across four
+/// screens: setup, consent, session, diagnostics.
+///
+/// Local-only: no cloud credentials, nothing leaves the device.
 Future<void> main() async {
-  // Initialize with wearable data collection
-  await Synheart.initialize(
-    userId: 'user_123',
-    config: SynheartConfig(
-      allowUnsignedCapabilities: true,
-      wearConfig: WearConfig(),
-    ),
-  );
+  // 1. Configure and load the native runtime.
+  //
+  //    `appId` and `subjectId` are both REQUIRED — validate() rejects an empty
+  //    value before any native work happens. `subjectId` must be STABLE across
+  //    restarts: the runtime scopes storage, baselines, and device identity to
+  //    it, so a value that changes per launch looks like a new person every
+  //    time and baselines never mature. Use your own account id.
+  //
+  //    Note that passing `userId:` to initialize() does NOT populate
+  //    `config.subjectId`; set it on the config.
+  try {
+    await Synheart.initialize(
+      config: SynheartConfig(
+        appId: 'com.example.my_app',
+        subjectId: 'usr_stable_identifier',
+        // Development only. Production gates capabilities on a verified
+        // consent token instead.
+        allowUnsignedCapabilities: true,
+        // Declaring a module config activates that feature.
+        wearConfig: const WearConfig(),
+        // Required for the runtime consent-form flow below.
+        consentConfig: ConsentConfig(
+          deviceId: 'dev_stable_identifier',
+          platform: 'flutter',
+          userId: 'usr_stable_identifier',
+        ),
+        // Omitted entirely when no origin was supplied: this snippet stays
+        // local-only unless a build names an environment.
+        deviceAuthConfig: authBaseUrl.isEmpty
+            ? null
+            : DeviceAuthConfig(
+                authBaseUrl: authBaseUrl,
+                // A debug build, an emulator, or a de-Googled ROM produces no
+                // Play Integrity / App Attest material, so the runtime skips
+                // registration and stays local-only. This asks the server to
+                // admit it anyway, sending `format:"none"` with an empty blob —
+                // nothing fake is sent.
+                //
+                // Gate it on kDebugMode. Hard-coding `true` ships a store build
+                // that asks to skip attestation on every launch.
+                //
+                // The flag alone does nothing: development mode must also be
+                // enabled for this app id server-side, and it must be a
+                // DEVELOPMENT app id. A device admitted this way is recorded
+                // `unattested` — it still signs every request with a hardware
+                // key, it just carries no provenance claim. Check with
+                // `Synheart.coreDeviceAuthStatus()`.
+                allowUnattestedDevRegistration: kDebugMode,
+              ),
+      ),
+    );
+  } on SynheartError catch (e) {
+    // The message names the offending field and how to fix it.
+    print('Configuration rejected — ${e.code}: ${e.message}');
+    return;
+  }
 
-  // Grant consent for biosignal collection
-  await Synheart.grantConsent(
-    biosignals: true,
-    behavior: false,
-    phoneContext: false,
-    cloudUpload: false,
-  );
+  // 2. Consent, via the runtime's editable-form flow.
+  //
+  //    The runtime persists the choice offline-first and, when cloud is
+  //    enabled, reconciles it against the cloud default profile. Read the form,
+  //    edit it, submit it.
+  final form = Synheart.consentGetEditableFormTyped();
+  if (form != null) {
+    await Synheart.consentSubmitFormTyped(
+      form: form.copyWith(biosignals: true, allowCloud: false),
+    );
+  }
 
-  // Subscribe to HSI updates (raw HSI JSON from the Synheart Runtime)
-  Synheart.onHSIUpdate.listen((hsiJson) {
-    print('HSI JSON: $hsiJson');
+  // The runtime may grant less than was asked for. Gate features on the
+  // EFFECTIVE state, never on the submitted form.
+  final effective = Synheart.consentEffectiveStateTyped();
+  if (effective?.biosignals != true) {
+    print('Biosignals not granted — HSI would be dropped. Stopping.');
+    await Synheart.dispose();
+    return;
+  }
+
+  // 3. Subscribe before starting, so the first completed window is not missed.
+  final subscription = Synheart.onStateUpdate.listen((state) {
+    if (state.hasParseError) {
+      print('HSI parse failed: ${state.parseError}');
+      return;
+    }
+    print('focus=${state.hsi.focus?.value} stress=${state.hsi.stress?.value}');
   });
 
-  // Start session — data collection begins
+  // 4. Collection starts here — initialize() alone collects nothing.
   await Synheart.startSession();
-  print('Session started');
 
-  // Run for 30 seconds
-  await Future.delayed(Duration(seconds: 30));
+  // Signal comes from the modules the config activated — the wear module reads
+  // HealthKit / Health Connect / a paired strap and pushes into the runtime
+  // itself. Observe what arrives:
+  final samples = Synheart.wearSampleStream.listen((sample) {
+    print('hr=${sample.hr} rmssd=${sample.hrvRmssd}');
+  });
 
-  // Clean up
+  // If you own a source the SDK does not adapt, push ITS REAL READINGS. Never
+  // placeholder values: pushed samples feed the runtime's longitudinal
+  // baselines, so fabricated beats corrupt the user's actual reference ranges.
+  //
+  // When one sensor notification carries several RR intervals, prefer
+  // pushRrBatch over looping pushRr — the runtime reconstructs a distinct
+  // timestamp per beat instead of collapsing them onto the shared arrival
+  // time, so no beat is lost to HRV.
+  //
+  //   myStrap.onPacket.listen((packet) {
+  //     Synheart.pushRrBatch(
+  //       packet.arrivalMs,
+  //       packet.rrIntervalsMs,
+  //       provider: 'ble_hrm',
+  //     );
+  //   });
+
+  await Future<void>.delayed(const Duration(seconds: 30));
+
+  // 5. Clean shutdown.
   await Synheart.stopSession();
+  await subscription.cancel();
+  await samples.cancel();
   await Synheart.dispose();
 }

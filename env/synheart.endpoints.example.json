@@ -1,5 +1,5 @@
 {
-  "SYNHEART_BASE_URL": "https://api.your-platform.example",
+  "SYNHEART_BASE_URL": "https://api.synheart.ai",
   "SYNHEART_AUTH_BASE_URL": "",
   "SYNHEART_CONSENT_BASE_URL": "",
   "SYNHEART_INGEST_BASE_URL": ""

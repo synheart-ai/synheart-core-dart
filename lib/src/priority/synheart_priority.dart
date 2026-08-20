@@ -3,7 +3,7 @@
 // High-level Dart API for the multi-source priority resolver.
 //
 // When the runtime exposes the priority-resolver FFI symbols (native runtime
-// 5.4.0+), all calls route through them. When older runtimes are loaded,
+// in newer builds), all calls route through them. When older runtimes load,
 // or in unit tests with no native library, calls fall back to a pure-Dart
 // in-memory store so consumer apps can still develop against the API.
 

@@ -49,9 +49,14 @@ void main() {
       }
     });
 
-    test('runtime-unavailable carries explanatory message', () {
+    test('runtime-unavailable names the fix, not a version number', () {
+      // Previously asserted the literal '5.4.0'. That version string was
+      // already stale — the runtime versions as 0.x — so the assertion pinned
+      // misinformation. What matters is that the message tells the developer
+      // what to do about it.
       const e = BackfillRuntimeUnavailable();
-      expect(e.message, contains('5.4.0'));
+      expect(e.message, contains('synheart install runtime'));
+      expect(e.message, isNot(contains('5.4.0')));
     });
 
     test('errors are sealed — only the four known variants exist', () {

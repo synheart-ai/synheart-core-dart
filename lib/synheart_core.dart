@@ -40,13 +40,15 @@ export 'src/config/synheart_errors.dart';
 export 'src/sync/sync_readiness.dart';
 
 // Artifacts (Tier A)
-export 'src/artifacts/artifact_header.dart';
-export 'src/artifacts/hsi_window.dart';
+//
 // Note: the legacy 4-axis BaselineSnapshotArtifact (previously at
 // `src/artifacts/baseline_snapshot.dart`) was never deployed. The
 // replacement is the typed envelope below.
+//
+// The native runtime owns Tier-A artifact production; the SDK exposes only the
+// header and session-summary types.
+export 'src/artifacts/artifact_header.dart';
 export 'src/artifacts/session_summary.dart';
-export 'src/artifacts/tombstone.dart';
 
 // Baseline-snapshot typed envelope. Typed builders + per-kind
 // extractors, no `Map<String, dynamic>` round-tripping. The
@@ -196,7 +198,6 @@ export 'src/modules/session/watch_session_module.dart';
 
 // Device Auth
 export 'src/modules/cloud/device_auth_provider.dart';
-export 'src/modules/capabilities/capability_token_fetcher.dart';
 
 // Device Auth (re-exported from synheart_auth, hiding name collisions)
 export 'package:synheart_auth/synheart_auth.dart' hide NetworkError;
@@ -208,12 +209,14 @@ export 'package:synheart_session/synheart_session.dart';
 export 'package:synheart_wear/src/adapters/ble_hrm_models.dart';
 export 'package:synheart_wear/src/adapters/ble_hrm_bridge.dart';
 
-// Multi-source priority resolver (native runtime 5.4.0+).
+// Multi-source priority resolver. Requires the native priority symbols;
+// falls back to an in-memory Dart store when the loaded runtime lacks them
+// (check `runtimeDiagnostics()['missingSymbols']`).
 // In-memory fallback when the runtime doesn't expose the symbols.
 export 'src/priority/priority_metric.dart';
 export 'src/priority/synheart_priority.dart';
 
-// Apple Health XML backfill sink (native runtime 5.4.0+).
+// Apple Health XML backfill sink. Requires the native backfill symbols.
 // Bridges the synheart-wear orchestrator's `AppleXmlIngestSink` to the
 // runtime's backfill SQLite ingest.
 export 'src/backfill/apple_xml_backfill_sink.dart';
@@ -230,7 +233,7 @@ export 'src/backfill/apple_health_runtime_sink.dart';
 // closes the gap that Android users had no historical-import gesture.
 export 'src/backfill/health_connect_runtime_sink.dart';
 
-// HRV-CV resilience score (native runtime 5.4.0+).
+// HRV-CV resilience score. Requires the native resilience symbol.
 // Stateless multi-day score derived from sleep-window-filtered HRV.
 export 'src/resilience/synheart_resilience.dart';
 export 'src/resilience/resilience_data.dart';

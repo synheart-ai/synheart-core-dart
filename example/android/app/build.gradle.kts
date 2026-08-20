@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "ai.synheart.wear.watch"
+    namespace = "ai.synheart.core.example"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "ai.synheart.wear.watch"
+        applicationId = "ai.synheart.core.example"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 28

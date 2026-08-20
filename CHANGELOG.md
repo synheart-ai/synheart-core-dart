@@ -7,6 +7,229 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — BREAKING
+
+- The SDK no longer carries a built-in API host. `ApiEndpoints.defaultBaseUrl`
+  was `https://api.synheart.ai`; it now defaults to empty and comes from
+  `SYNHEART_BASE_URL`. Publishing a company host inside every copy of the
+  package made it the destination for any build that forgot to name one,
+  including forks and self-hosted deployments.
+
+  **Action:** set `SYNHEART_BASE_URL` (dart-define, or
+  `--dart-define-from-file`) on any build that talks to the cloud. Apps that
+  already set it are unaffected.
+
+  With nothing configured, `api_base_url` is now **omitted** from the runtime
+  config rather than sent empty, and the native runtime applies its own
+  default. `apiBaseUrlConfigured(config)` reports whether an explicit origin was
+  supplied.
+
+### Added
+
+- `HSIAxes.focusQuality`, `interruptionPressure`, `interactionMode` and
+  `hasDigital`, parsed from `axes.digital[]`. These are derived from interaction
+  rather than physiology, so they resolve on hardware with no biosignal source.
+  Previously the whole domain was discarded at the parse boundary.
+- `SyncNativeError.reason`, `retryAfterMs` and `detail`, with
+  `isUnsupported` / `isMisconfigured` / `isPolicyRefusal`. `reason` now appears
+  in `toString()`.
+- `doc/INTEGRATION.md` — ordered walkthrough from platform prerequisites to
+  first upload.
+
+### Fixed
+
+- `startSession()` reported success when the native runtime failed to open a
+  session. A null native result fell through to the Dart-only path, minting a
+  `core_<millis>` handle — so the host saw a session id and a `collecting`
+  state for a session the runtime never opened, with no HSI and no error. It now
+  throws a `StateError`; the Dart-only path is reached only when no native
+  runtime is present.
+- `flushIfEligible` reported "cloudUpload consent not granted" whenever
+  `hasConsent` returned false. Once cloud is configured the runtime denies every
+  consent type until a consent token is issued, so the message blamed a consent
+  screen that was already correct. It now names the real cause.
+- `hasConsent` accepts either consent-key spelling; the Dart fallback path only
+  understood camelCase.
+- The Syni cloud origin resolved through a hard-coded literal instead of
+  `ApiEndpoints`, overriding `SYNHEART_BASE_URL` for that one caller.
+
+## [0.11.0] - 2026-08-14
+
+Hardening release from a full-repo review. No new features.
+
+Released as a MINOR, not a patch: this removes and changes public API, and
+`^0.10.1` would have resolved a patch automatically into apps that use it.
+
+**Headline:** the SDK could not initialise at all without cloud credentials.
+`initialize()` returned a null native runtime — no HSI, no consent store, no
+storage — and then logged "Initialization complete". Local-only operation, a
+documented configuration, has never worked in this line until now.
+
+### Fixed
+
+- **Local-only initialization was completely broken.** `_configure` hardcoded
+  `ingest: {enabled: true, ...}`, so a host with no `CloudConfig` failed inside
+  `synheart_core_new` with `ERR_NOT_CONFIGURED: cloud connector org_id must not
+  be empty when HSI ingest is enabled`. The handle came back null and the SDK
+  continued as if nothing were wrong. `device_auth.enabled` was hardcoded the
+  same way, making the runtime reject crypto-callback registration with a
+  misleading ERROR for every local-only host. Both are now gated on being
+  configured. Hosts that supply a `CloudConfig` with an `orgId`, or a
+  `DeviceAuthConfig`, are unaffected — the gates evaluate to the previous
+  values.
+- **A dev build with no dart-defines silently talked to production.**
+  `SyncConfig.baseUrl` defaults to `ApiEndpoints.defaultAuthBaseUrl`, a const
+  alias for the `SYNHEART_AUTH_BASE_URL` define, which is empty unless set. The
+  empty value made the runtime fall back to its own hardcoded production URL.
+  `api_base_url` is now resolved explicitly through `resolvedAuthBaseUrl`. Same
+  endpoint, no longer by accident.
+- **Packaging: the published archive was 70 MB and contained the proprietary
+  native runtime.** `.pubignore` replaces `.gitignore` for publishing, so the
+  `.gitignore` rules covering `ios/SynheartCoreRuntime.xcframework` (a symlink
+  the podspec creates into the consumer app — pub follows it) and
+  `example/synheart/vendor/` did not apply. The archive carried both framework
+  slices plus their dSYM DWARF blobs. Now ~610 KB, with a CI check that fails
+  the publish job if native artifacts or an oversized archive reappear.
+- **`flushUploads` blocked the UI isolate.** The native call performs its HTTP
+  round-trip under `block_on`; it now runs on a background isolate like every
+  other network-touching FFI call in the bridge.
+- **A failed `initialize()` could never be retried.** The init completer was
+  left in place after an error, so every subsequent call received the same
+  failed future — a transient cause was permanent short of `dispose()`.
+- **HSI reached only the `onHsi` callback, never `onHSIUpdate` /
+  `onStateUpdate`,** for hosts pushing through `pushWearHr` /
+  `pushVendorHrv`. Both producers now share one consent-gated delivery path.
+  (The long-standing claim that the native callback "doesn't fire on iOS" no
+  longer holds against runtime 0.19.2 — verified on device — which is why that
+  path needs the duplicate suppression below.)
+- **Duplicate HSI delivery.** `ingest_batch_json` BOTH broadcasts on the
+  runtime's `state_tx` — which drives `setHsiCallback` — and returns the same
+  payload to Dart. With both producers wired to one delivery path, every window
+  completed by a per-event push arrived twice: double `onHSIUpdate` /
+  `onStateUpdate`, double session-buffer entries, double downstream counters.
+  Now suppressed by `HsiDeliveryDeduper` on `meta.ids.hsi_id`
+  (RFC-IDENTITY-0001), the same key the runtime's own ingest connector dedupes
+  on. It keeps a bounded set of recent ids rather than a single last-id slot,
+  because the producers do not always interleave as `A, A` — the sync return
+  and the async callback can be separated by a background-tick window, giving
+  `A, B, A`. A payload without an id is delivered rather than dropped: losing a
+  window is worse than repeating one.
+- **A session could start with nothing able to collect.** The runtime path of
+  `startSession()` performed none of the checks the Dart fallback path did.
+  `startSession()` now requires at least one enabled feature whose matching
+  consent is granted — both halves of a pair. Consent alone is not enough:
+  enabling only `wearConfig` while granting only `behavior` leaves wear
+  permitted-but-not-enabled and behavior enabled-but-not-permitted, so nothing
+  collects. Cloud upload, vendor sync, research and syni never qualify; they
+  govern what happens to data once gathered.
+- **Session buffers grew without bound.** `getSessionHsiWindows()` and
+  `getSessionWearSamples()` retained every entry for the session's life (24h by
+  default) and cleared only on the next `startSession()`. Both are now capped
+  ring buffers — see `maxSessionHsiWindows` / `maxSessionWearSamples`.
+- **`isSessionRunning` ignored the runtime.** It returned the Dart module flag;
+  the runtime's own `is_running` was never read anywhere in the SDK. A session
+  ending natively left hosts reporting "collecting" indefinitely. It now
+  prefers the runtime, falling back to the Dart flag when the bridge is absent.
+- **Configuration errors named a field but not a fix.** `validate()` threw bare
+  assertions like "appId must not be empty". The messages now say what to set,
+  what a good value looks like, and why — including that passing `userId:` to
+  `initialize()` does **not** populate `config.subjectId`, which is the most
+  common way to hit the error. Failures are also logged before the throw, since
+  hosts commonly catch and render a short toast that discards the detail.
+- **One failing module killed the whole session, and orphaned a native one.**
+  `ModuleManager.startAll()` awaited `module.start()` unguarded, so the first
+  throw ended the loop and every later module was skipped —
+  `initializeAll()` and `stopAll()` were already per-module resilient.
+  Modules start wear-first, so on an iOS build without the HealthKit
+  entitlement *nothing* started rather than everything-but-biosignals.
+  Separately, `startSession()` opened the native session before starting
+  modules, so a throw escaped leaving a session the host did not know about;
+  the next call then got `SessionActive`, returned null, and fell through to
+  the Dart-only path with a `core_<ts>` handle for a session the runtime never
+  opened. `startAll()` is now resilient and reports `moduleId -> error`, and
+  `startSession()` rolls the native session back on failure.
+- `runtimeDiagnostics()['lastQuality']` always reported `0.0`; it read a native
+  symbol the runtime has never exported outside the edge variant. Removed.
+
+### Added
+
+- **`runtimeDiagnostics()['missingSymbols']`** — optional native symbols the
+  loaded runtime does not export. ~20 lookups previously failed silently, so a
+  runtime one release behind disabled recovery scores, readiness, breathing,
+  backfill, priority resolution, data deletion, research enrolment, sync-space
+  management and cloud HSI fetch with nothing in the logs. Each miss now logs
+  once, naming the symbol.
+- **`runtimeDiagnostics(probeAll: true)`** and `probedSymbols`. Optional
+  bindings resolve lazily, so a diagnostics screen reading `missingSymbols`
+  before anything used those features reports an empty list and looks healthy
+  while having checked nothing. `probeAll` forces a full audit. Note the list
+  covers only the guarded bindings: most lab ABI calls are bound eagerly and
+  throw on first access when absent — check `isLabAvailable` before using them.
+- `HSIState.parseError` / `hasParseError` — a parse failure previously returned
+  empty axes, indistinguishable from a window the engine had not populated.
+- `buildRuntimeConfigMap` (internal) — one source of truth for the JSON handed
+  to `synheart_core_new`, replacing three drifting copies, and unit-testable
+  without a native runtime.
+
+### Changed
+
+- **BREAKING (direct `CoreRuntimeBridge` users only):**
+  `CoreRuntimeBridge.flushUploads()` returns `Future<Map<String, dynamic>?>`.
+  Add `await`. `Synheart.ingestion` callers are unaffected.
+- `Synheart.deleteCloudData()` now throws `UnsupportedError`. It never deleted
+  anything — it logged twice and returned — so a host could have wired it to a
+  "delete my cloud data" control and shipped a promise the SDK did not keep.
+  Use `requestDataDeletion()` and `wipeLocalData()`.
+- `getSyncStatus()` reflects real engine/config state instead of a hardcoded
+  `false`.
+- `WearModule(useSynheartWear: false)` now yields no sources instead of a mock.
+- Error messages and doc comments no longer cite "native runtime 5.4.0+"; that
+  scheme does not match the runtime's actual `0.x` versioning. They name the
+  remedy (`synheart install runtime`) instead.
+
+### Deprecated
+
+The native runtime removed bundle-secret configuration as a security fix, and
+these were never forwarded to it. All are scheduled for removal in 0.12.0.
+
+- `SynheartConfig.capabilityToken`, `SynheartConfig.capabilitySecret`
+- `CloudConfig.apiKey`, `ConsentConfig.appApiKey`
+- `Synheart.deleteCloudData()`, `Synheart.getSyncStatus()`
+- `Synheart.runtimeBaselineSummary` (duplicate of `runtimeBaselinesJson`)
+- `WearModule(useSynheartWear:)`
+
+### Removed
+
+- **`MockWearSourceHandler`.** It synthesised heart rate, HRV, RR intervals and
+  sleep stages from `Random()`. Those samples were indistinguishable from real
+  ones downstream and fed the runtime's longitudinal baselines, so a host
+  passing `useSynheartWear: false` silently corrupted the user's on-device
+  reference ranges with invented numbers. `WearModule(sources:)` already
+  accepts an injected handler, which is the supported way to supply a fake.
+- `HsiWindowArtifact`, `TombstoneArtifact`, `CapabilityTokenFetcher` — no
+  producers, consumers, or implementations.
+- `ios/Runner/` (host-app scaffolding in a plugin package) and
+  `ios/synheart_ffi_symbols.txt` (an ld64 keep-list referenced by nothing and
+  68 symbols stale — obsolete since the runtime became a dynamic framework).
+- A no-op `loadCapabilityToken('{}', secret)` call that could never load a
+  capability.
+
+### Example app
+
+Rebuilt as a lean reference: 6,555 lines across 17 files and three competing
+entry points, down to ~1,600 across 8.
+
+- Consent now uses the canonical runtime editable-form flow
+  (`consentGetEditableFormTyped` → `consentSubmitFormTyped` →
+  `consentEffectiveStateTyped`). The old app drove the legacy Dart-side helpers
+  that `SDK_CONSENT_FLOW.md` §7-G lists as superseded.
+- No longer reaches into `package:synheart_core/src/`.
+- Local-only by default — runs with no credentials.
+- Never fabricates biosignals, and distinguishes sources that feed the runtime
+  (wear, behavior) from ones that only collect locally (phone context).
+- `example.dart`, the snippet pub.dev renders, previously omitted the required
+  `appId`/`subjectId` and could not run.
+
 ## [0.10.1] - 2026-07-31
 
 ### Added

@@ -1,5 +1,27 @@
 platform :ios, '16.0'
 
+# Tell the Synheart pods where this application root is.
+#
+# REQUIRED, not an optimisation. The synheart_core and syni podspecs symlink
+# their vendored xcframework from <app>/synheart/vendor/... at `pod install`
+# time. Without this they fall back to walking up from the pod's own source
+# directory, which resolves differently per dependency kind and gets it wrong
+# in both directions:
+#
+#   syni           → ~/.pub-cache/hosted/pub.dev/syni-x.y.z/
+#                    Walking up climbs into pub-cache and never reaches an app
+#                    root, so `pod install` fails outright with
+#                    "could not locate <app>/synheart/vendor/syni-runtime/".
+#
+#   synheart_core  → the plugin checkout (a path dependency here)
+#                    Walking up can reach a DIFFERENT project that happens to
+#                    have a synheart/vendor/runtime/ios directory, and links
+#                    that runtime instead of this app's — silently building
+#                    against a binary this app's synheart.lock does not pin.
+#
+# Setting it explicitly makes both deterministic.
+ENV['SYNHEART_APP_ROOT'] = File.expand_path('..', __dir__)
+
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 

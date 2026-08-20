@@ -89,7 +89,7 @@ class AppleHealthRuntimeSink implements AppleXmlIngestSink {
   final AppleHealthDailyAggregator _aggregator = AppleHealthDailyAggregator();
 
   /// Whether the underlying runtime exposes the backfill FFI symbols.
-  /// False on builds that don't have native runtime ≥ 5.4.0.
+  /// False when the loaded native runtime lacks the backfill symbols.
   bool get isAvailable => _backfill.isAvailable;
 
   /// Resolve a durable filesystem path for the backfill SQLite DB.

@@ -7,7 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:path_provider/path_provider.dart';
 import 'package:rxdart/rxdart.dart';
+import 'config/api_endpoints.dart';
+import 'config/runtime_config_map.dart';
 import 'config/synheart_config.dart';
+import 'core/bounded_buffer.dart';
+import 'core/hsi_delivery_deduper.dart';
 import 'core/logger.dart';
 import 'modules/base/module_manager.dart';
 import 'modules/base/synheart_module.dart';
@@ -37,10 +41,12 @@ import 'config/synheart_mode.dart';
 import 'models/session_handle.dart';
 import 'models/hsi_state.dart';
 import 'models/metric_event.dart';
+import 'config/synheart_errors.dart';
 import 'config/synheart_feature.dart';
 import 'config/activation_manager.dart';
 import 'modules/cloud/device_auth_provider.dart';
 import 'core_runtime/core_runtime_bridge.dart';
+import 'core_runtime/ffi_bindings.dart' show SynheartCoreFFI;
 import 'core_runtime/platform_native_sdk_crypto_callbacks.dart';
 import 'sync/sync_readiness.dart';
 
@@ -199,9 +205,25 @@ class Synheart {
 
   // (HSI subscription fields removed — HSI is now delivered via setHsiCallback)
 
-  // Session data buffers — accumulate during session, persist after stop
-  List<String> _sessionHsiBuffer = [];
-  List<WearSample> _sessionWearBuffer = [];
+  // Session data buffers — accumulate during a session, readable after stop.
+  // Bounded ring buffers; oldest entries are evicted at the cap.
+  final BoundedBuffer<String> _sessionHsiBuffer = BoundedBuffer<String>(
+    maxSessionHsiWindows,
+  );
+  final BoundedBuffer<WearSample> _sessionWearBuffer =
+      BoundedBuffer<WearSample>(maxSessionWearSamples);
+
+  /// Maximum HSI windows retained by [getSessionHsiWindows].
+  ///
+  /// At the runtime's ~10s window cadence this is a little over 5 hours of
+  /// history, well beyond any documented use of the buffer. The durable record
+  /// lives in the runtime's storage and is read via [getHSIWindows]; this
+  /// buffer only serves recent in-memory history.
+  static const int maxSessionHsiWindows = 2000;
+
+  /// Maximum raw wear samples retained by [getSessionWearSamples].
+  static const int maxSessionWearSamples = 5000;
+
   StreamSubscription? _sessionHsiSubscription;
   StreamSubscription? _sessionWearSubscription;
 
@@ -247,23 +269,45 @@ class Synheart {
 
   // --- Typed state subscription ---
 
+  /// Most recently parsed [HSIState], keyed by the raw JSON it came from.
+  ///
+  /// `.map` on a broadcast stream runs once per subscriber, and
+  /// [currentHSIState] is a getter that a widget may read every frame. Parsing
+  /// each window once and sharing the immutable result avoids both costs.
+  static String? _cachedHsiRaw;
+  static HSIState? _cachedHsiState;
+
+  /// Suppresses windows delivered by both producers. See
+  /// [HsiDeliveryDeduper] for why two paths exist and how identity is decided.
+  static final HsiDeliveryDeduper _hsiDeduper = HsiDeliveryDeduper();
+
+  static HSIState _parseHsiCached(String json) {
+    final cached = _cachedHsiState;
+    if (cached != null && identical(_cachedHsiRaw, json)) return cached;
+    final parsed = HSIState.fromJson(
+      json,
+      subjectId: shared._config?.subjectId ?? shared._userId ?? '',
+    );
+    _cachedHsiRaw = json;
+    _cachedHsiState = parsed;
+    return parsed;
+  }
+
   /// Stream of typed [HSIState] updates.
   ///
   /// Wraps raw JSON from [onHSIUpdate] into typed objects with axis accessors.
-  static Stream<HSIState> get onStateUpdate => shared._hsvStream.stream.map(
-    (json) => HSIState.fromJson(
-      json,
-      subjectId: shared._config?.subjectId ?? shared._userId ?? '',
-    ),
-  );
+  /// [HSIState] is immutable, so all subscribers safely share one parse of
+  /// each window.
+  static Stream<HSIState> get onStateUpdate =>
+      shared._hsvStream.stream.map(_parseHsiCached);
 
   /// Get the current HSI state as a typed object.
+  ///
+  /// Cheap to call repeatedly — repeated reads of the same window reuse the
+  /// parse performed for the first one.
   static HSIState? get currentHSIState {
     if (!shared._hsvStream.hasValue) return null;
-    return HSIState.fromJson(
-      shared._hsvStream.value,
-      subjectId: shared._config?.subjectId ?? shared._userId ?? '',
-    );
+    return _parseHsiCached(shared._hsvStream.value);
   }
 
   // --- Metrics API ---
@@ -280,12 +324,17 @@ class Synheart {
   }
 
   /// Record multiple metric events for the current session.
+  ///
+  /// NOTE: despite the plural name there is no batched native path — this
+  /// forwards one `record_metric` FFI call per event. It exists as a
+  /// convenience over looping [recordMetric] yourself, not as a throughput
+  /// optimisation. Prefer keeping [events] to sane sizes until the runtime
+  /// exposes a batch entry point.
   static Future<void> recordMetrics(List<MetricEvent> events) async {
-    if (_coreRuntime != null) {
-      for (final event in events) {
-        _coreRuntime!.recordMetric(event.toJson());
-      }
-      return;
+    final runtime = _coreRuntime;
+    if (runtime == null) return;
+    for (final event in events) {
+      runtime.recordMetric(event.toJson());
     }
   }
 
@@ -779,8 +828,25 @@ class Synheart {
   }
 
   /// Get current sync status.
+  ///
+  /// Reports whether the sync engine is enabled, read from the native
+  /// sync-status snapshot and falling back to the configured value. Until
+  /// 0.10.2 this returned a hardcoded `SyncStatus(enabled: false)` regardless
+  /// of configuration or runtime state.
+  ///
+  /// [syncStatusSnapshot] and [syncReadinessSnapshot] carry the full picture
+  /// (active space, device list, why sync is not ready); prefer them for
+  /// anything beyond a boolean.
+  @Deprecated(
+    'Returns only a single boolean. Use syncReadinessSnapshot() for the '
+    'primary readiness state, or syncStatusSnapshot() for engine detail. '
+    'Will be removed in 0.12.0.',
+  )
   static Future<SyncStatus> getSyncStatus() async {
-    return const SyncStatus(enabled: false);
+    final snapshot = _coreRuntime?.syncStatus();
+    final nativeEnabled = snapshot?['enabled'];
+    if (nativeEnabled is bool) return SyncStatus(enabled: nativeEnabled);
+    return SyncStatus(enabled: shared._config?.sync.enabled ?? false);
   }
 
   // Activation API
@@ -875,12 +941,11 @@ class Synheart {
   }) {
     if (_coreRuntime != null) return;
     try {
-      final orgId = shared._config?.cloudConfig?.orgId ?? '';
-      if (orgId.isEmpty) {
+      final cfg = shared._config;
+      if (cfg?.cloudConfig != null && (cfg?.cloudConfig?.orgId ?? '').isEmpty) {
         SynheartLogger.log(
-          '[Synheart] ⚠️ ensureRuntimeBridge: cloudConfig.orgId is empty — '
-          'ingest rows will be tagged with empty org_id. '
-          'Set CloudConfig.orgId in SynheartConfig before initialize().',
+          '[Synheart] ⚠️ ensureRuntimeBridge: CloudConfig is set but orgId is '
+          'empty — cloud ingest stays disabled. Set CloudConfig.orgId.',
         );
       }
       final cachedDataDir = _resolvedDataDir;
@@ -891,29 +956,16 @@ class Synheart {
           'Call Synheart.configure() before ensureRuntimeBridge().',
         );
       }
+      // Same map as [_configure], with the caller-supplied identifiers layered
+      // on top of the stored config.
       _coreRuntime = CoreRuntimeBridge.create({
+        ...buildRuntimeConfigMap(
+          cfg ?? SynheartConfig.defaults(),
+          dataDir: cachedDataDir,
+        ),
         'app_id': appId,
-        'org_id': orgId,
         'subject_id': subjectId,
-        'mode': shared._config?.mode.name ?? 'personal',
-        'device_id': shared._config?.deviceId ?? '',
-        'app_version': shared._config?.appVersion ?? '0.0.0',
-        'platform': 'flutter',
-        if (cachedDataDir != null) 'data_dir': cachedDataDir,
-        'storage': {'enabled': shared._config?.storage.enabled ?? true},
-        'ingest': {'enabled': true, 'hsi': true, 'lab': true},
-        'device_auth': {
-          'enabled': true,
-          'auth_base_url': shared._config?.deviceAuthConfig?.authBaseUrl ?? '',
-          'package_name': shared._config?.deviceAuthConfig?.packageName ?? '',
-        },
-        'sync': {
-          'enabled': shared._config?.sync.enabled ?? false,
-          'base_url': shared._config?.sync.baseUrl ?? '',
-        },
-        'privacy': {
-          'allow_research': shared._config?.privacy.allowResearch ?? false,
-        },
+        'client_id': subjectId,
       });
       if (_coreRuntime != null) {
         SynheartLogger.log(
@@ -962,7 +1014,17 @@ class Synheart {
     void Function(String line)? runtimeLogForwarder,
   }) async {
     if (config != null) {
-      config.validate();
+      try {
+        config.validate();
+      } on SynheartError catch (e) {
+        // Log before rethrowing, so the actionable detail reaches the log even
+        // when the host renders only a short error message.
+        SynheartLogger.log(
+          '[Synheart] Configuration rejected (${e.code}):\n${e.message}',
+          error: e,
+        );
+        rethrow;
+      }
     }
     return shared._configure(
       appKey: config?.appId ?? 'default',
@@ -1111,8 +1173,18 @@ class Synheart {
   static void _syncSubjectFromNative() {
     final native = _coreRuntime?.runtimeSubjectId();
     if (native != null && native.isNotEmpty) {
+      if (native != _nativeSubjectIdOverride) _invalidateHsiCache();
       _nativeSubjectIdOverride = native;
     }
+  }
+
+  /// Drop the memoized [HSIState]. A cached parse carries the subjectId it was
+  /// built with, so anything that can change the subject — or tear the
+  /// instance down — must clear it.
+  static void _invalidateHsiCache() {
+    _cachedHsiRaw = null;
+    _cachedHsiState = null;
+    _hsiDeduper.reset();
   }
 
   /// Rebind the runtime subject id when the signed-in identity changes, then
@@ -1177,41 +1249,15 @@ class Synheart {
     // logs synchronously which crashes the async NativeCallable.listener
     // trampoline if it's already registered.
     try {
-      final orgId = resolvedCfg.cloudConfig?.orgId ?? '';
-      if (orgId.isEmpty) {
+      if (resolvedCfg.cloudConfig != null &&
+          (resolvedCfg.cloudConfig?.orgId ?? '').isEmpty) {
         SynheartLogger.log(
-          '[Synheart] ⚠️ configure: cloudConfig.orgId is empty — '
-          'ingest rows will be tagged with empty org_id. '
-          'Set CloudConfig.orgId in SynheartConfig before initialize().',
+          '[Synheart] ⚠️ configure: CloudConfig is set but orgId is empty — '
+          'cloud ingest stays disabled. Set CloudConfig.orgId.',
         );
       }
       final dataDir = await _resolveDataDir();
-      final coreJson = <String, dynamic>{
-        'app_id': resolvedCfg.appId,
-        'org_id': orgId,
-        'subject_id': resolvedCfg.subjectId,
-        'client_id': resolvedCfg.subjectId,
-        'api_base_url': resolvedCfg.sync.baseUrl,
-        'mode': resolvedCfg.mode.name,
-        'device_id': resolvedCfg.deviceId.isNotEmpty
-            ? resolvedCfg.deviceId
-            : '',
-        'app_version': resolvedCfg.appVersion,
-        'platform': resolvedCfg.platform,
-        'data_dir': dataDir,
-        'storage': {'enabled': resolvedCfg.storage.enabled},
-        'ingest': {'enabled': true, 'hsi': true, 'lab': true},
-        'device_auth': {
-          'enabled': true,
-          'auth_base_url': resolvedCfg.deviceAuthConfig?.authBaseUrl ?? '',
-          'package_name': resolvedCfg.deviceAuthConfig?.packageName ?? '',
-        },
-        'sync': {
-          'enabled': resolvedCfg.sync.enabled,
-          'base_url': resolvedCfg.sync.baseUrl,
-        },
-        'privacy': {'allow_research': resolvedCfg.privacy.allowResearch},
-      };
+      final coreJson = buildRuntimeConfigMap(resolvedCfg, dataDir: dataDir);
       _coreRuntime = CoreRuntimeBridge.create(coreJson);
       // Now safe to register the logging callback — coreNew has returned.
       final logRc = CoreRuntimeBridge.initRuntimeLogging(
@@ -1248,7 +1294,14 @@ class Synheart {
         // Success path (storageRc == 0) is intentionally silent — bootstrap
         // chatter. Surface only if attachment failed.
 
-        if (_coreRuntime!.deviceAuthTemporarilyDisabledForSubjectCompat) {
+        if (resolvedCfg.deviceAuthConfig == null) {
+          // Device auth is disabled in the runtime config (see the `device_auth`
+          // gate above), so attaching crypto callbacks would fail with
+          // `ERR_NOT_CONFIGURED: device_auth not enabled` and log a runtime
+          // ERROR that reads like a real fault. Local-only hosts are a
+          // supported configuration; stay quiet.
+        } else if (_coreRuntime!
+            .deviceAuthTemporarilyDisabledForSubjectCompat) {
           SynheartLogger.log(
             '[Synheart] Device-auth callbacks skipped: subject_id compatibility guard active.',
           );
@@ -1443,31 +1496,9 @@ class Synheart {
 
       // Wire HSI callback from core runtime → _hsvStream
       if (_coreRuntime != null) {
-        _coreRuntime!.setHsiCallback((hsiJson) {
-          // Consent gating is already enforced by the native runtime before
-          // HSI reaches state_tx. The Dart `_consentModule.current()`
-          // snapshot has been observed to return stale defaults (biosignals
-          // reads `false` even after `consentSubmitFormTyped` wrote the
-          // consent store on the native side) — causing this filter to drop
-          // 100% of HSI windows during an earlier validation run.
-          // Cross-check with the effective-state snapshot so we don't block
-          // on a Dart-side cache that's out of sync with the runtime.
-          final local = _consentModule?.current();
-          final effective = _coreRuntime?.consentEffectiveState();
-          final biosignalsEffective =
-              effective?['biosignals'] == true ||
-              effective?['research'] == true;
-          final biosignalsLocal = local?.biosignals == true;
-          if (!biosignalsEffective && !biosignalsLocal) {
-            return;
-          }
-          _hsvStream.add(hsiJson);
-          // Surface motion-state on BehaviorModule
-          // for consumers that want a posture/motion read alongside HSV
-          // delivery. Cheap parse — bails out fast when no motion_state
-          // axis is present in the snapshot.
-          _behaviorModule?.ingestHsi(hsiJson);
-        });
+        // Consent gate + fan-out live in [_deliverHsiWindow], shared with the
+        // per-event push path so both producers behave identically.
+        _coreRuntime!.setHsiCallback(_deliverHsiWindow);
       }
 
       _activationManager = ActivationManager();
@@ -1479,8 +1510,14 @@ class Synheart {
       // resolves _deviceAuthProvider at call time (device auth registers
       // later, during consent / auto-heal) and builds an X-Synheart-Proof
       // bound to the exact request URL.
+      // Resolve through ApiEndpoints rather than repeating a literal origin.
+      // A hard-coded host here silently overrides SYNHEART_BASE_URL for this
+      // one caller, so a build pointed at another environment would still send
+      // Syni traffic to whichever host happened to be written down.
       final syniCloudOrigin =
-          (resolvedConfig.cloudConfig?.baseUrl ?? 'https://api.synheart.ai')
+          (resolvedConfig.cloudConfig?.baseUrl.isNotEmpty == true
+                  ? resolvedConfig.cloudConfig!.baseUrl
+                  : ApiEndpoints.resolvedCloudBaseUrl)
               .replaceAll(RegExp(r'/+$'), '');
       // SDK-side default for hosts that don't wire their own
       // SyniCloudConfig. Lazily produce X-Synheart-Proof headers via
@@ -1580,7 +1617,26 @@ class Synheart {
         }
       }
     } catch (e, stack) {
-      _initCompleter?.completeError(e, stack);
+      final completer = _initCompleter;
+      // Only treat this as a failed *initialization* when configuration had
+      // not already completed. Everything after `_isConfigured = true` above
+      // (pending-consent replay, cold-start device-auth heal) runs inside this
+      // same try — a throw there is a post-init hiccup, not a setup failure,
+      // and must not reset `_isConfigured` or re-complete a settled completer.
+      if (completer != null && !completer.isCompleted) {
+        // Clear the completer before completing it, so a later `initialize()`
+        // re-runs configuration instead of receiving this same errored future.
+        // A transient failure must not be permanent.
+        _initCompleter = null;
+        _isConfigured = false;
+        completer.completeError(e, stack);
+        // The caller that started this attempt receives the error via the
+        // `rethrow` below, not through this future. When no *concurrent*
+        // caller is awaiting it, the completed-with-error future would
+        // otherwise surface as an unhandled async error and, in a host that
+        // treats those as fatal, take the app down on a recoverable failure.
+        completer.future.ignore();
+      }
       SynheartLogger.log(
         '[Synheart] Initialization failed: $e',
         error: e,
@@ -1603,8 +1659,33 @@ class Synheart {
   ///
   /// [durationSec] if set, the session will end automatically after that many
   /// seconds (Session SDK boundary). If null, session runs until [stopSession].
+  ///
+  /// Throws a [StateError] when the native runtime is loaded but opens no
+  /// session. The Dart-only path below is for hosts with NO native runtime;
+  /// falling through to it with a runtime present would mint a session id for a
+  /// session that does not exist.
   static Future<SessionHandle?> startSession({int? durationSec}) async {
     if (_coreRuntime != null) {
+      // Same precondition the Dart fallback path enforces. Without it the
+      // runtime path would happily open a session with no collection consent —
+      // the modules then have nothing they are permitted to gather, so the
+      // session runs, reports `collecting`, and produces nothing.
+      //
+      // Note this deliberately checks COLLECTION consent. Granting only
+      // cloud-upload, vendor-sync, research, or syni does not make any sensor
+      // available, so those must not satisfy it.
+      if (!shared._hasAtLeastOneCollectionConsent()) {
+        throw StateError(
+          'Cannot start a session: no enabled feature has matching consent.\n\n'
+          'A session needs BOTH sides of a pair — the feature enabled in '
+          'SynheartConfig (wearConfig / behaviorConfig / phoneConfig) AND its '
+          'consent granted (biosignals / behavior / phoneContext). Enabling '
+          'wear while granting only behavior satisfies neither, so nothing '
+          'would collect.\n\n'
+          'Cloud upload, vendor sync, research, and syni are not collection '
+          'consents — they govern what happens to data once gathered.',
+        );
+      }
       await shared._prepareRuntimeAuthForSessionStart();
       final result = _coreRuntime!.startSession();
       if (result != null) {
@@ -1613,11 +1694,47 @@ class Synheart {
           startedAtMs: result['started_at_ms'] as int,
           mode: shared._config?.mode ?? SynheartMode.personal,
         );
-        await shared._startRuntimeLinkedCollection();
+        // The native session now exists. Anything that throws past this point
+        // must tear it down, or the runtime keeps a session the host does not
+        // know about — and the next startSession() is refused as already
+        // active, falling through to the Dart-only path below with a handle
+        // for a session the runtime never opened.
+        try {
+          await shared._startRuntimeLinkedCollection();
+        } catch (e, st) {
+          SynheartLogger.log(
+            '[Synheart] startSession: collection failed to start — rolling '
+            'back the native session so it is not orphaned: $e',
+            error: e,
+            stackTrace: st,
+          );
+          try {
+            _coreRuntime!.stopSession();
+          } catch (_) {
+            // Best effort; the original failure is the one worth reporting.
+          }
+          shared._currentSessionHandle = null;
+          shared._isRunning = false;
+          rethrow;
+        }
         shared._isRunning = true;
 
         return shared._currentSessionHandle;
       }
+
+      // The runtime is loaded but refused to open a session. Falling through to
+      // the Dart-only path below would mint a `core_<millis>` handle and report
+      // `collecting` for a session the runtime never opened — no native
+      // windowing, no HSI, no stored artifacts, and no error to explain it.
+      throw StateError(
+        'The native session failed to start.\n\n'
+        'The runtime is loaded but returned no session, so nothing would be '
+        'collected. This is not the local-only path — that applies only when no '
+        'native runtime is present.\n\n'
+        'Most often the runtime already holds an open session: call stopSession() '
+        'before starting another. Check runtimeDiagnostics() for symbol or '
+        'configuration problems.',
+      );
     }
     await shared._startDataCollection(durationSec: durationSec);
     return shared._currentSessionHandle;
@@ -1654,7 +1771,21 @@ class Synheart {
   }
 
   /// Whether the main data-collection session is currently running.
-  static bool get isSessionRunning => shared._isRunning;
+  ///
+  /// Reads the native runtime, which is authoritative — the Dart module flag
+  /// tracks whether collection was started, a related but different thing, and
+  /// would keep reporting a running session after a runtime-side teardown.
+  /// Falls back to the Dart flag when the native bridge is absent.
+  static bool get isSessionRunning {
+    final runtime = _coreRuntime;
+    if (runtime == null) return shared._isRunning;
+    try {
+      return runtime.isRunning;
+    } catch (_) {
+      // Older runtimes may not export `is_running`; the Dart flag still holds.
+      return shared._isRunning;
+    }
+  }
 
   /// Stop the current session — halts module streaming and clears ephemeral buffers.
   ///
@@ -1682,12 +1813,12 @@ class Synheart {
   /// Returns a snapshot of all HSI JSON windows accumulated during the current
   /// (or most recent) session. The list is cleared when [startSession] is called.
   static List<String> getSessionHsiWindows() =>
-      List.unmodifiable(shared._sessionHsiBuffer);
+      shared._sessionHsiBuffer.snapshot();
 
   /// Returns a snapshot of all raw wear samples accumulated during the current
   /// (or most recent) session. The list is cleared when [startSession] is called.
   static List<WearSample> getSessionWearSamples() =>
-      List.unmodifiable(shared._sessionWearBuffer);
+      shared._sessionWearBuffer.snapshot();
 
   /// Start wear data collection
   ///
@@ -2097,7 +2228,30 @@ class Synheart {
   /// Bridge-first ingestion facade for queue + upload orchestration.
   static SynheartIngestion get ingestion => SynheartIngestion.instance;
 
-  /// Check if user has granted a specific consent
+  /// Whether a consent type is currently ENFORCEABLE — which is not the same
+  /// question as whether the user granted it.
+  ///
+  /// Once a cloud consent client is configured, the runtime returns false for
+  /// every consent type until the consent service has issued a token, whatever
+  /// the user chose:
+  ///
+  /// ```rust
+  /// if cloud_configured && self.consent_status() != ConsentStatus::Granted {
+  ///     return false;
+  /// }
+  /// ```
+  ///
+  /// So a local-only app sees the user's choice here, while a cloud-configured
+  /// app sees the user's choice AND cloud confirmation. A false result does not
+  /// mean the user declined.
+  ///
+  /// To read what the user actually chose, use [consentEffectiveStateTyped].
+  /// Use this when the answer gates an action that must not proceed without
+  /// cloud-side confirmation, such as an upload.
+  ///
+  /// Accepts either spelling of a consent type (`cloudUpload` or
+  /// `cloud_upload`); the Dart fallback path only understands camelCase, so the
+  /// name is normalised before dispatch.
   ///
   /// Example:
   /// ```dart
@@ -2105,9 +2259,51 @@ class Synheart {
   /// ```
   static Future<bool> hasConsent(String consentType) async {
     if (_coreRuntime != null) {
-      return _coreRuntime!.hasConsent(consentType);
+      return _coreRuntime!.hasConsent(_runtimeConsentKey(consentType));
     }
-    return shared._hasConsent(consentType);
+    return shared._hasConsent(_dartConsentKey(consentType));
+  }
+
+  /// The two consent vocabularies, and the translation between them.
+  ///
+  /// The native runtime keys consent in snake_case (`cloud_upload`); the Dart
+  /// API and `ConsentSnapshot` use camelCase (`cloudUpload`). Every other call
+  /// site converts before crossing the boundary — `grantConsent` sends
+  /// `cloud_upload`, `consentEffectiveState` reads `cloud_upload` back.
+  ///
+  /// [hasConsent] did not, and passed the caller's spelling through unchanged.
+  /// Neither spelling then worked in both places: `hasConsent('cloudUpload')`
+  /// asked the runtime about a key it does not define, and
+  /// `hasConsent('cloud_upload')` missed every case in the Dart fallback's
+  /// switch. Both returned false regardless of what the user had granted — so a
+  /// caller gating on cloud upload saw consent as absent while the effective
+  /// state reported it granted.
+  ///
+  /// Translating here rather than at the call sites keeps both spellings
+  /// working for hosts that already pass one or the other.
+  static const Map<String, String> _consentKeyCamelToSnake = {
+    'biosignals': 'biosignals',
+    'behavior': 'behavior',
+    'phoneContext': 'phone_context',
+    'cloudUpload': 'cloud_upload',
+    'vendorSync': 'vendor_sync',
+    'research': 'research',
+    'syni': 'syni',
+  };
+
+  /// Accept either spelling, return the snake_case key the runtime defines.
+  /// Unknown values pass through so a newer consent type still reaches the
+  /// runtime rather than being silently rewritten.
+  static String _runtimeConsentKey(String consentType) =>
+      _consentKeyCamelToSnake[consentType] ?? consentType;
+
+  /// Accept either spelling, return the camelCase key the Dart fallback's
+  /// switch matches on.
+  static String _dartConsentKey(String consentType) {
+    for (final entry in _consentKeyCamelToSnake.entries) {
+      if (entry.value == consentType) return entry.key;
+    }
+    return consentType;
   }
 
   /// Override consent cloud endpoint routing for the active runtime.
@@ -2921,10 +3117,51 @@ class Synheart {
   static int epochDayFor(DateTime t) =>
       t.toUtc().millisecondsSinceEpoch ~/ 86_400_000;
 
+  /// Consent-gate a completed HSI window and fan it out to [_hsvStream] and
+  /// the behavior module.
+  ///
+  /// Shared by both HSI producers: the native `setHsiCallback` (Android) and
+  /// [_ingestSingleEvent] (the per-event push path, and the only producer that
+  /// fires on iOS, where the native callback doesn't). Before this was
+  /// factored out, only the native callback fed the stream — so on iOS the
+  /// documented `onHSIUpdate` / `onStateUpdate` surface stayed silent for
+  /// hosts driving the SDK through `pushWearHr` / `pushVendorHrv`, and the
+  /// session buffer behind `getSessionHsiWindows()` stayed empty with it.
+  ///
+  /// Consent gating is already enforced by the native runtime before HSI
+  /// reaches `state_tx`. The Dart `_consentModule.current()` snapshot has been
+  /// observed returning stale defaults (biosignals reading `false` even after
+  /// `consentSubmitFormTyped` wrote the consent store natively) — which once
+  /// dropped 100% of HSI windows during a validation run. Cross-check the
+  /// effective-state snapshot so a stale Dart-side cache can't block delivery.
+  void _deliverHsiWindow(String hsiJson) {
+    // A window completed by a per-event push reaches Dart twice — once via the
+    // native callback, once as the ingest return value. See
+    // [HsiDeliveryDeduper].
+    if (!_hsiDeduper.shouldDeliver(hsiJson)) return;
+
+    final local = _consentModule?.current();
+    final effective = _coreRuntime?.consentEffectiveState();
+    final biosignalsEffective =
+        effective?['biosignals'] == true || effective?['research'] == true;
+    final biosignalsLocal = local?.biosignals == true;
+    if (!biosignalsEffective && !biosignalsLocal) return;
+
+    if (!_hsvStream.isClosed) _hsvStream.add(hsiJson);
+    // Surface motion-state on BehaviorModule for consumers that want a
+    // posture/motion read alongside HSI delivery. Cheap parse — bails out fast
+    // when no motion_state axis is present in the snapshot.
+    _behaviorModule?.ingestHsi(hsiJson);
+  }
+
   /// Serialize a single sensor event and hand it to `ingestBatch`. Used
   /// by the provider-tagged `push*` APIs so each sample keeps its source
   /// attribution (which the raw `pushHr`/`pushRr` FFI signatures can't
-  /// carry). Invokes [onHsi] if the batch returned a completed window.
+  /// carry).
+  ///
+  /// When the batch completes a window, the result is delivered through
+  /// [_deliverHsiWindow] (so `onHSIUpdate` / `onStateUpdate` / the session
+  /// buffer all see it) and then to the legacy [onHsi] callback.
   static void _ingestSingleEvent(Map<String, dynamic> event) {
     final runtime = _coreRuntime;
     if (runtime == null) return;
@@ -2932,6 +3169,7 @@ class Synheart {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final hsi = runtime.ingestBatch(batchJson, nowMs);
     if (hsi != null) {
+      shared._deliverHsiWindow(hsi);
       onHsi?.call(hsi);
     }
   }
@@ -2955,16 +3193,17 @@ class Synheart {
 
   /// Baseline summary from the native synheart-engine.
   ///
-  /// Returns a JSON string like `{"total":14,"ready":0,"warming":5,"empty":9}`
-  /// or `null` if the native runtime is not linked.
-  static String? get runtimeBaselineSummary {
-    return _coreRuntime?.baselinesJson();
-  }
+  /// Identical to [runtimeBaselinesJson] — both read the same native
+  /// `baselines_json`.
+  @Deprecated(
+    'Duplicate of runtimeBaselinesJson — both return the same native payload. '
+    'Use runtimeBaselinesJson. Will be removed in 0.12.0.',
+  )
+  static String? get runtimeBaselineSummary => runtimeBaselinesJson;
 
-  /// All native runtime baselines as JSON, or `null`.
-  static String? get runtimeBaselinesJson {
-    return _coreRuntime?.baselinesJson();
-  }
+  /// All native runtime baselines as JSON, or `null` when the native runtime
+  /// is not linked.
+  static String? get runtimeBaselinesJson => _coreRuntime?.baselinesJson();
 
   /// Export the native runtime SRM snapshot as JSON for cross-session persistence.
   static String? exportRuntimeSRMSnapshot() {
@@ -3135,8 +3374,11 @@ class Synheart {
   void _wireSessionBuffers() {
     _sessionHsiSubscription?.cancel();
     _sessionWearSubscription?.cancel();
-    _sessionHsiBuffer = [];
-    _sessionWearBuffer = [];
+    _sessionHsiBuffer.clear();
+    _sessionWearBuffer.clear();
+    // A new session starts a fresh dedup window; a leftover id from the
+    // previous session must not suppress this session's first window.
+    _hsiDeduper.reset();
     // HSI session buffer is filled via the setHsiCallback wired in configure().
     // The _hsvStream already receives consent-gated HSI; listen to it for session buffering.
     _sessionHsiSubscription = _hsvStream.stream.listen((hsiJson) {
@@ -3172,9 +3414,8 @@ class Synheart {
   void _logRuntimeSummary() {
     if (_coreRuntime == null) return;
     final fc = _coreRuntime!.frameCount();
-    final q = _coreRuntime!.lastQuality();
     SynheartLogger.log(
-      '[Runtime] Session end: frameCount=$fc lastQuality=$q'
+      '[Runtime] Session end: frameCount=$fc'
       '${fc == 0 ? " (no HSI produced — no window completed)" : ""}',
     );
   }
@@ -4733,29 +4974,34 @@ class Synheart {
     SynheartLogger.log('[Synheart] Module data deleted: $moduleName');
   }
 
-  /// Delete cloud data
+  /// Delete cloud data.
   ///
-  /// Clears the upload queue and notifies cloud service to delete user data.
-  /// Note: This requires an API call to the cloud service.
+  /// **This never deleted anything.** The implementation logged
+  /// "Deleting cloud data.." followed by "Cloud data deletion requested" and
+  /// returned — no queue was cleared and no request was sent. Because it was
+  /// public, documented, and resolved successfully, a host could reasonably
+  /// have wired it to a "Delete my cloud data" control and shipped a privacy
+  /// promise the SDK did not keep.
   ///
-  /// Example:
-  /// ```dart
-  /// await Synheart.deleteCloudData();
-  /// ```
+  /// Use [requestDataDeletion] instead: it drives the real GDPR Article 17
+  /// chain through the runtime, returns a [DataDeletionRequest] with a
+  /// pollable `requestId`, and publishes progress on [onDataDeletionUpdate].
+  /// Pair it with [wipeLocalData] for the full "delete my account" flow.
+  ///
+  /// Throws [UnsupportedError] rather than silently succeeding, so any
+  /// existing caller fails loudly at the point of the false promise.
+  @Deprecated(
+    'Never deleted anything — it only logged. Use requestDataDeletion() for '
+    'cloud-side erasure and wipeLocalData() for on-device data. Will be '
+    'removed in 0.12.0.',
+  )
   static Future<void> deleteCloudData() async {
-    return shared._deleteCloudData();
-  }
-
-  Future<void> _deleteCloudData() async {
-    if (!_isConfigured) {
-      throw StateError(
-        'Synheart must be initialized before deleting cloud data',
-      );
-    }
-
-    SynheartLogger.log('[Synheart] Deleting cloud data..');
-
-    SynheartLogger.log('[Synheart] Cloud data deletion requested');
+    throw UnsupportedError(
+      'Synheart.deleteCloudData() was a no-op and has been disabled. Use '
+      'Synheart.requestDataDeletion() to request cloud-side erasure (poll it '
+      'with dataDeletionStatus() or subscribe to onDataDeletionUpdate), and '
+      'Synheart.wipeLocalData() to clear on-device data.',
+    );
   }
 
   /// Revoke consent (clears token and notifies cloud)
@@ -4785,16 +5031,41 @@ class Synheart {
     await _consentModule!.denyConsent();
   }
 
-  /// Runtime diagnostics — returns availability, version, frame count, and last quality.
+  /// Runtime diagnostics — availability, native version, frame count, and any
+  /// optional native symbols the loaded runtime failed to export.
   ///
-  /// Useful for debugging and runtime verification screens.
-  /// Returns a map with keys: `isAvailable`, `version`, `frameCount`, `lastQuality`.
-  static Map<String, dynamic> runtimeDiagnostics() {
+  /// Useful for debugging and runtime verification screens. Keys:
+  ///
+  /// - `isAvailable` (`bool`) — the native bridge loaded.
+  /// - `version` (`String?`) — native runtime version.
+  /// - `frameCount` (`int`) — HSI frames produced in the current session.
+  /// - `missingSymbols` (`List<String>`) — optional symbols the loaded library
+  ///   does not export. Non-empty means the vendored runtime predates this SDK
+  ///   release and the features behind those symbols are silently disabled;
+  ///   run `synheart install runtime` to update it.
+  /// - `probedSymbols` (`int`) — how many optional symbols have been checked.
+  ///   Optional bindings resolve lazily, so this is `0` until something uses
+  ///   them and an empty `missingSymbols` alongside `probedSymbols: 0` means
+  ///   "nothing checked", not "all good". Pass `probeAll: true` to force a full
+  ///   audit first.
+  ///
+  /// The `lastQuality` key was removed in 0.10.2 — it read a native symbol
+  /// (`synheart_core_last_quality`) that the runtime has never exported
+  /// outside the edge/watch variant, so it always reported `0.0`.
+  static Map<String, dynamic> runtimeDiagnostics({bool probeAll = false}) {
+    if (probeAll) {
+      // Resolve every optional symbol so `missingSymbols` is a real audit.
+      // Off by default: it costs ~18 lookups and logs a line per miss, which
+      // belongs on a diagnostics screen rather than on every status poll.
+      SynheartCoreFFI.load()?.probeOptionalSymbols();
+    }
     return {
       'isAvailable': _coreRuntime != null,
       'version': CoreRuntimeBridge.version(),
       'frameCount': _coreRuntime?.frameCount() ?? 0,
-      'lastQuality': _coreRuntime?.lastQuality() ?? 0.0,
+      'missingSymbols': SynheartCoreFFI.missingSymbols.toList(growable: false)
+        ..sort(),
+      'probedSymbols': SynheartCoreFFI.probedSymbolCount,
     };
   }
 
@@ -4937,6 +5208,58 @@ class Synheart {
   }
 
   /// True if at least one activated feature has consent (required to start a session).
+  /// True when at least one channel that actually yields sensor data is
+  /// granted, read from the runtime's effective state where available.
+  ///
+  /// Distinct from [ConsentEffectiveState.hasAnyGrant], which also counts
+  /// cloudUpload / vendorSync / research / syni. Those permit what happens to
+  /// data once collected; none of them makes a sensor readable, so a session
+  /// gated on `hasAnyGrant` can start with nothing to collect.
+  bool _hasAtLeastOneCollectionConsent() {
+    final activated = _activationManager?.activatedFeatures() ?? const {};
+    for (final feature in _collectionFeatures) {
+      if (activated.contains(feature) && _hasCollectionConsentFor(feature)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// The features that actually acquire sensor data.
+  ///
+  /// `cloud`, `synsync` and `syni` are deliberately absent: they govern what
+  /// happens to data once collected, so none of them makes a session capable of
+  /// gathering anything.
+  static const List<SynheartFeature> _collectionFeatures = [
+    SynheartFeature.wear,
+    SynheartFeature.behavior,
+    SynheartFeature.phoneContext,
+  ];
+
+  /// Consent for [feature], preferring the runtime's effective state.
+  ///
+  /// Distinct from [_hasConsentForFeature], which reads `_consentModule` only.
+  /// That Dart-side snapshot has been observed returning stale defaults after
+  /// the runtime's consent store was already written — the same problem
+  /// [_deliverHsiWindow] guards against — so a session start gated on it alone
+  /// could reject a user who had in fact granted consent.
+  bool _hasCollectionConsentFor(SynheartFeature feature) {
+    final effective = consentEffectiveStateTyped();
+    if (effective != null) {
+      switch (feature) {
+        case SynheartFeature.wear:
+          return effective.biosignals;
+        case SynheartFeature.behavior:
+          return effective.behavior;
+        case SynheartFeature.phoneContext:
+          return effective.phoneContext;
+        default:
+          return false;
+      }
+    }
+    return _hasConsentForFeature(feature);
+  }
+
   bool _hasAtLeastOneFeatureWithConsent() {
     final activated = _activationManager?.activatedFeatures() ?? {};
     for (final feature in activated) {
@@ -5033,16 +5356,12 @@ class Synheart {
     }
 
     try {
-      if (resolvedConfig.capabilitySecret != null) {
-        _coreRuntime?.loadCapabilityToken(
-          '{}',
-          resolvedConfig.capabilitySecret!,
-        );
-      }
-      _capabilityModule?.loadDefaults();
+      // No bundle-shipped capability token is loaded here: the runtime gates
+      // capabilities fail-closed from a verified consent JWT instead.
+      await _capabilityModule?.loadDefaults();
     } catch (e) {
       SynheartLogger.log(
-        '[Synheart] Capability token fetch failed: $e',
+        '[Synheart] Capability defaults load failed: $e',
         error: e,
       );
       if (resolvedConfig.allowUnsignedCapabilities) {
@@ -5102,14 +5421,18 @@ class Synheart {
     try {
       SynheartLogger.log('[Synheart] Stopping..');
 
-      // Clear HSI callback (core runtime handles cleanup in dispose)
-      _coreRuntime?.clearHsiCallback();
-
       // Remove consent listener (best-effort)
       _consentModule?.removeListener(_onConsentChanged);
 
-      // Stop core modules
+      // Stop the modules FIRST, then unhook the HSI callback. The reverse
+      // order unregistered the dispatch path while the engine was still
+      // producing windows, widening the race documented on
+      // CoreRuntimeBridge._retiredCallables. Stopping first means nothing is
+      // emitting by the time we clear.
       await _moduleManager.stopAll();
+
+      // Clear HSI callback (core runtime handles cleanup in dispose)
+      _coreRuntime?.clearHsiCallback();
 
       _isRunning = false;
       SynheartLogger.log('[Synheart] Stopped');
@@ -5152,8 +5475,8 @@ class Synheart {
       _sessionHsiSubscription = null;
       await _sessionWearSubscription?.cancel();
       _sessionWearSubscription = null;
-      _sessionHsiBuffer = [];
-      _sessionWearBuffer = [];
+      _sessionHsiBuffer.clear();
+      _sessionWearBuffer.clear();
 
       _consentModule = null;
       _capabilityModule = null;
@@ -5171,6 +5494,7 @@ class Synheart {
       _isConfigured = false;
       _isRunning = false;
       _initCompleter = null;
+      _invalidateHsiCache();
       _deviceAuthViaCoreRuntime = false;
       _sdkCryptoCallbacksAttached = false;
 
@@ -5372,6 +5696,39 @@ class SynheartIngestion {
     }
   }
 
+  /// Explain a closed cloud gate in terms of what the caller can act on.
+  ///
+  /// `hasConsent` is not a simple read of the user's choice. Once a cloud
+  /// consent client is configured, the runtime returns false for EVERY consent
+  /// type until the consent service has issued a token, whatever the user
+  /// granted:
+  ///
+  /// ```rust
+  /// if cloud_configured && self.consent_status() != ConsentStatus::Granted {
+  ///     return false;
+  /// }
+  /// ```
+  ///
+  /// Reporting that as "consent not granted" sends developers to re-check a
+  /// consent screen that is already correct. The usual cause is a consent
+  /// service that never issued a token — commonly a `PROFILE_NOT_FOUND` on the
+  /// app id — so this separates "the user said no" from "the user said yes and
+  /// the cloud has not confirmed it".
+  static String _describeClosedCloudGate() {
+    final effective = Synheart._coreRuntime?.consentEffectiveState();
+    final grantedLocally =
+        effective?['cloud_upload'] == true || effective?['cloudUpload'] == true;
+
+    if (!grantedLocally) {
+      return 'cloudUpload consent not granted';
+    }
+    return 'cloudUpload is granted locally, but the runtime is holding the '
+        'cloud gate closed: no consent token has been issued. Every consent '
+        'type reads as denied in this state, regardless of what the user chose. '
+        'Check the consent service for this app id — a missing default consent '
+        'profile (PROFILE_NOT_FOUND) is the usual cause.';
+  }
+
   Future<QueueFlushResult> flushIfEligible({bool requireConsent = true}) async {
     final bridge = Synheart._coreRuntime;
     if (bridge == null) {
@@ -5387,18 +5744,19 @@ class SynheartIngestion {
     }
     if (requireConsent && !await Synheart.hasConsent('cloudUpload')) {
       Synheart._lastUploadAttemptAt = DateTime.now().toUtc();
-      Synheart._lastUploadError = 'cloudUpload consent not granted';
-      return const QueueFlushResult(
+      final why = _describeClosedCloudGate();
+      Synheart._lastUploadError = why;
+      return QueueFlushResult(
         success: false,
         uploaded: 0,
         failed: 0,
         requeued: 0,
-        errorMessage: 'cloudUpload consent not granted',
+        errorMessage: why,
       );
     }
 
     Synheart._lastUploadAttemptAt = DateTime.now().toUtc();
-    final result = bridge.flushUploads();
+    final result = await bridge.flushUploads();
     if (result == null) {
       Synheart._lastUploadError = 'flush_uploads returned null';
       return const QueueFlushResult(

@@ -1,7 +1,34 @@
-# Files to exclude from the published package
+# Files to exclude from the published package.
+#
+# IMPORTANT: when a `.pubignore` exists, pub uses it *instead of* `.gitignore`
+# for this directory. Any path that must stay out of the archive has to be
+# repeated here, even if `.gitignore` already covers it for version control.
+
+# ── Native runtime (proprietary, CLI-provisioned) ──────────────────────
+#
+# The runtime is downloaded per-project by `synheart install runtime` and is not
+# part of this package. `ios/SynheartCoreRuntime.xcframework` is a symlink the
+# podspec's prepare_command creates into the consumer app, and pub follows
+# symlinks — so these rules are what keep several hundred MB of native binaries
+# out of the archive.
+*.xcframework/
+**/*.xcframework/
+ios/SynheartCoreRuntime.xcframework
+synheart/vendor/
+example/synheart/
+**/synheart/vendor/
+*.dSYM/
+**/*.dSYM/
+synheart.lock
+
+# ── Host-app scaffolding that does not belong in a plugin package ──────
+ios/Runner/
 
 # Development files
 .claude/
+# Review/working notes must never reach the published package.
+PR_*.md
+*_REQUIRED_FIXES.md
 __dev__/
 .env*
 !.env.example
@@ -26,6 +53,10 @@ doc/arch.md
 # Build artifacts
 build/
 .dart_tool/
+**/build/
+**/.dart_tool/
+.gradle/
+**/.gradle/
 
 # Test files (if you want to exclude them)
 # test/
@@ -37,3 +68,8 @@ build/
 *.log
 *.tmp
 .DS_Store
+
+# Example dart-defines. The template documents the shape and is worth
+# publishing; a populated dev file carries real org/app identifiers and is not.
+example/env/*.json
+!example/env/defines.example.json

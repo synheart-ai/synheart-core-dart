@@ -15,6 +15,11 @@ installed native Synheart Runtime.
 > Synheart Core is intended for wellness and research use. It is not a medical
 > device and must not be used to diagnose, treat, cure, or prevent disease.
 
+**New here?** [doc/INTEGRATION.md](doc/INTEGRATION.md) is the ordered
+walkthrough — platform prerequisites, install, consent, collection, upload, and
+attestation, with a troubleshooting table keyed on the log lines you will
+actually see. This README is the reference.
+
 ## Contents
 
 - [What the SDK provides](#what-the-sdk-provides)
@@ -26,12 +31,15 @@ installed native Synheart Runtime.
 - [Consent](#consent)
 - [Sessions and collection](#sessions-and-collection)
 - [Reading HSI and raw signals](#reading-hsi-and-raw-signals)
+- [Running without cloud credentials](#running-without-cloud-credentials)
 - [Cloud, authentication, and endpoints](#cloud-authentication-and-endpoints)
 - [Storage and sync](#storage-and-sync)
 - [Advanced workflows](#advanced-workflows)
 - [API map](#api-map)
 - [Errors and diagnostics](#errors-and-diagnostics)
+- [Threading and blocking calls](#threading-and-blocking-calls)
 - [Testing and example app](#testing-and-example-app)
+- [Upgrading](#upgrading)
 
 ## What the SDK provides
 
@@ -97,10 +105,12 @@ Or declare the current package line explicitly:
 
 ```yaml
 dependencies:
-  synheart_core: ^0.10.1
+  synheart_core: ^0.11.0
 ```
 
-Then install the native runtime:
+Then install the native runtimes. The package alone loads no runtime and
+produces no HSI — the native artifacts are proprietary and provisioned by the
+Synheart CLI, not by pub.
 
 ```bash
 # Install the CLI once.
@@ -109,11 +119,25 @@ synheart login
 
 # Run in the Flutter project root.
 synheart install runtime
+synheart install syni     # required on iOS, see below
 ```
 
-The CLI installs the native artifact in the platform project and writes
-`synheart.lock`. Commit `synheart.lock`; CI and other developers can restore the
-pinned artifact with:
+CLI setup in full, including platform notes and alternatives to the install
+script: <https://docs.synheart.ai/setup/install-cli>
+
+`synheart install syni` is not optional on iOS. `synheart_core` depends on the
+`syni` package, whose iOS pod links its own vendored framework and **fails
+`pod install`** when it is absent:
+
+```
+syni: could not locate <app>/synheart/vendor/syni-runtime/SyniRuntime.xcframework
+```
+
+You get that error even if your application never uses Syni.
+
+The CLI installs the native artifacts in the platform project and writes
+`synheart.lock`, which pins each artifact by SHA-256. Commit `synheart.lock`; CI
+and other developers can restore the pinned artifacts with:
 
 ```bash
 synheart sync
@@ -122,17 +146,36 @@ synheart sync
 Typical installed locations:
 
 - iOS: `synheart/vendor/runtime/ios/SynheartCoreRuntime.xcframework/`
+- iOS: `synheart/vendor/syni-runtime/SyniRuntime.xcframework/`
 - Android: `synheart/vendor/runtime/android/jniLibs/<abi>/`
 
-The iOS plugin links ONNX Runtime separately through `onnxruntime-c`. If
-CocoaPods cannot locate the application root (most commonly in a monorepo), set
-it near the top of the host application's `ios/Podfile`:
+### iOS: set `SYNHEART_APP_ROOT`
+
+Add this near the top of your application's `ios/Podfile`:
 
 ```ruby
 ENV['SYNHEART_APP_ROOT'] = File.expand_path('..', __dir__)
 ```
 
-Then rerun `pod install` or rebuild the Flutter application.
+Treat it as required rather than as a monorepo workaround. The Synheart podspecs
+symlink their vendored framework from `<app>/synheart/vendor/...` during `pod
+install`, and without this they fall back to walking up from the pod's own
+source directory — which resolves differently per dependency kind and can fail
+in either direction:
+
+- A pod resolved from pub.dev lives under `~/.pub-cache/...`, so the walk-up
+  climbs into the cache and never reaches an application root. `pod install`
+  fails.
+- A pod resolved from a path or git dependency lives in its own checkout, and
+  the walk-up can reach a *different* project that happens to have a
+  `synheart/vendor/` directory — linking that project's runtime instead of
+  yours, and silently building against a binary your `synheart.lock` does not
+  pin.
+
+Setting the variable makes both deterministic. Then rerun `pod install`.
+
+The iOS plugin also links ONNX Runtime separately through the `onnxruntime-c`
+pod; that is resolved automatically and needs no action.
 
 ## Platform setup
 
@@ -355,6 +398,30 @@ include:
 - `research`
 - `syni`
 
+A feature collects only when its config is declared **and** its consent is
+granted. Declaring `wearConfig` while holding only `behavior` consent collects
+nothing — wear is enabled but not permitted, behavior is permitted but not
+enabled. `startSession()` enforces this rather than starting a session that
+cannot produce data. `cloudUpload`, `vendorSync` and `research` govern what
+happens to data once collected; none of them makes a sensor readable.
+
+### `hasConsent()` reports enforceability, not the user's choice
+
+```dart
+final chose      = Synheart.consentEffectiveStateTyped()?.cloudUpload;
+final actionable = await Synheart.hasConsent('cloudUpload');
+```
+
+Once a cloud consent client is configured, `hasConsent` returns `false` for
+**every** consent type until the consent service has issued a token, whatever
+the user selected. A `false` therefore does not mean the user declined, and the
+usual cause of an unexpected one is a missing default consent profile for the
+app id.
+
+Read `consentEffectiveStateTyped()` for what the user chose. Use `hasConsent()`
+to gate an action that must not proceed without cloud-side confirmation, such
+as an upload.
+
 ### Local consent
 
 Use local consent for offline applications or development:
@@ -508,6 +575,35 @@ Fields may be null when the runtime lacks sufficient input or an older HSI
 payload does not contain that axis. Keep the raw JSON when exact wire-format
 forwarding or schema validation is required.
 
+The runtime closes a window on a fixed cadence of roughly 60 seconds, and does
+so whether or not signal arrived — emitting an axis at `confidence: 0` when it
+has no basis for one. A climbing window count is not evidence that anything is
+being measured; check `confidence` before treating a value as a reading.
+
+#### Digital axes
+
+`focus`, `capacity`, `arousal`, `stress` and `sleep` are physiology-derived and
+stay at zero confidence without heart rate or HRV. The digital axes are derived
+from interaction — taps, scrolls, swipes, app switches, notifications — and
+need no biosignal at all, so they resolve on hardware that has no sensor:
+
+```dart
+if (state.hsi.hasDigital) {
+  print(state.hsi.focusQuality?.value);
+  print(state.hsi.interruptionPressure?.value);
+  print(state.hsi.interactionMode?.value);
+}
+```
+
+Two properties to respect when rendering them: `interruptionPressure` is
+`lower_is_more`, so a low score means *more* interruption pressure, and
+`interactionMode` is `bidirectional`, so neither end is "good". Drawing either
+as a conventional 0→1 quality bar inverts its meaning.
+
+Digital readings lag one window. The runtime flushes a closed window's
+interaction events and attaches the result to the next emission, so the first
+window of a session never carries them.
+
 ### Raw streams and session buffers
 
 ```dart
@@ -542,6 +638,43 @@ await Synheart.recordMetric(
   ),
 );
 ```
+
+## Running without cloud credentials
+
+The SDK is usable with no platform account. Omit `CloudConfig` and
+`DeviceAuthConfig` and everything on-device works: collection, HSI computation,
+consent, local storage, and baselines. Nothing leaves the device, and no
+attestation is attempted.
+
+```dart
+await Synheart.initialize(
+  config: SynheartConfig(
+    appId: 'com.example.my_app',
+    subjectId: 'usr_stable_identifier',
+    allowUnsignedCapabilities: true,       // development only
+    wearConfig: const WearConfig(),
+    // Required for the runtime consent-form flow: consentSubmitFormTyped
+    // needs a non-empty deviceId and platform to stamp on the submission.
+    consentConfig: ConsentConfig(
+      deviceId: 'dev_stable_identifier',
+      platform: 'flutter',
+      userId: 'usr_stable_identifier',
+    ),
+  ),
+);
+```
+
+What is unavailable without cloud credentials: HSI upload, cross-device sync,
+research-study enrolment, and server-issued capability tokens. Consent still
+persists locally — the runtime is offline-first and reconciles with the cloud
+profile only when cloud upload is enabled.
+
+`example/` runs this way, so it needs no setup beyond `synheart install runtime`.
+
+> Versions before 0.10.2 could not initialize in this configuration at all:
+> `initialize()` returned a null native runtime while reporting success. If you
+> are on an earlier version and see no HSI with no cloud config, that is the
+> cause.
 
 ## Cloud, authentication, and endpoints
 
@@ -578,10 +711,70 @@ final authStatus = Synheart.coreDeviceAuthStatus();
 `allowUnsignedCapabilities` is a development escape hatch, not a production
 authentication strategy.
 
+`DeviceAuthConfig.packageName` is the **installed bundle id**, which Play
+Integrity and App Attest verify against. It is not `SynheartConfig.appId`, which
+is the platform-issued application identifier. Passing the latter as the package
+name fails attestation.
+
+Registration is triggered by cloud-upload consent, not by `initialize()`.
+Configuring `DeviceAuthConfig` only makes it possible.
+
+#### Reading a registration failure
+
+Failures carry a `reason` that determines what to do next:
+
+```dart
+try {
+  await Synheart.ensureDeviceAuthRegistered();
+} on SyncNativeException catch (e) {
+  if (e.isUnsupported) {
+    runLocalOnly();                     // and stop asking, across relaunches
+  } else if (e.isMisconfigured) {
+    log.severe('Attestation setup is wrong: ${e.detail}');
+  } else if (e.retryable) {
+    scheduleRetry(Duration(milliseconds: e.retryAfterMs ?? 5000));
+  } else {
+    runLocalOnly();
+  }
+}
+```
+
+`reason` is one of `transient`, `timeout`, `quota`, `unsupported`,
+`misconfigured`, `server_transient`, `policy`, or absent on an older runtime —
+treat absent as not retryable. `detail` is diagnostics only; log it, never
+branch on it.
+
+#### Development builds that cannot attest
+
+An emulator, a de-Googled ROM, or a debug build produces no attestation
+material, so the runtime skips registration and stays local-only. To let those
+builds register:
+
+```dart
+DeviceAuthConfig(
+  authBaseUrl: authBaseUrl,
+  packageName: packageName,
+  allowUnattestedDevRegistration: kDebugMode,
+)
+```
+
+Two switches are required and the flag alone does nothing: it stops the SDK
+giving up client-side, while development mode must also be enabled for that app
+id server-side. With the server switch off the registration is sent and refused
+one round trip later. Nothing fabricated is transmitted — the request carries
+`attestation.format = "none"` with an empty blob.
+
+Gate it on `kDebugMode` so a store build cannot ship it enabled, and use a
+development app id. A device admitted this way is recorded `unattested`: it
+holds a hardware key and signs every request, but carries no provenance claim.
+`Synheart.coreDeviceAuthStatus()` reports the claim alongside the status.
+
 ### Endpoint configuration
 
-The default platform origin is `https://api.synheart.ai`. Override it at
-compile time:
+The platform origin is `https://api.synheart.ai`, but the SDK does **not** bake
+it in: `SYNHEART_BASE_URL` is empty unless you set it, and with nothing
+configured the native runtime applies its own default. Set it explicitly — the
+checked-in `env/synheart.endpoints.example.json` already names it:
 
 ```bash
 flutter run \
@@ -594,6 +787,13 @@ Optional per-service overrides:
 - `SYNHEART_CONSENT_BASE_URL`
 - `SYNHEART_INGEST_BASE_URL`
 
+> Set `SYNHEART_BASE_URL` rather than relying on a per-service override alone.
+> An override moves one service; every other service keeps resolving through
+> `SYNHEART_BASE_URL`, which defaults to the production origin. Overriding auth
+> by itself points device registration at one environment while consent and
+> ingest stay on another, which surfaces as authentication failures with no
+> obvious cause.
+
 Use `env/synheart.endpoints.example.json` with:
 
 ```bash
@@ -604,18 +804,33 @@ Base URLs must be origins. The runtime appends service paths.
 
 ### Upload state
 
-Cloud upload requires `cloudUpload` consent, a cloud configuration, and a valid
-device/consent credential:
+**The runtime uploads on its own.** It subscribes to the engine's HSI
+broadcast, enqueues each closed window into a local queue, and POSTs on
+`CloudConfig.uploadInterval`. No host code is required to move data. The
+enqueue is gated on cloud-upload consent and buffers the windows that arrive
+during the cold-start token race, so the first minute is not lost.
+
+Cloud upload requires `cloudUpload` consent, a cloud configuration, an issued
+consent token, and a registered device — the runtime signs every ingest request
+with the device key.
 
 ```dart
-print(Synheart.uploadQueueLength);
+print(Synheart.uploadQueueLength);   // climbs on its own; drains on the interval
 print(Synheart.lastUploadBatchId);
 print(Synheart.lastUploadAt);
 print(Synheart.lastUploadError);
 
 final ready = await Synheart.ensureCloudConsentReady();
-await Synheart.ingestion.flushIfEligible();
+await Synheart.ingestion.flushIfEligible();   // forces a flush early
 ```
+
+`Synheart.ingestion.enqueueHsiWindows(...)` is a fallback for hosts whose engine
+skips the automatic channel. Calling it per window on top of the automatic
+bridge queues every window twice.
+
+If HSI is produced but nothing uploads, the cause is almost always a closed
+consent gate rather than a missing call — check `lastUploadError`, which names
+it.
 
 ## Storage and sync
 
@@ -902,11 +1117,24 @@ Runtime health:
 
 ```dart
 final diagnostics = Synheart.runtimeDiagnostics();
-print(diagnostics['isAvailable']);
-print(diagnostics['version']);
-print(diagnostics['frameCount']);
-print(diagnostics['lastQuality']);
+print(diagnostics['isAvailable']);    // bool   — native bridge loaded
+print(diagnostics['version']);        // String? — native runtime version
+print(diagnostics['frameCount']);     // int    — HSI frames this session
+print(diagnostics['missingSymbols']); // List<String>
 ```
+
+`missingSymbols` lists optional native symbols the loaded runtime does not
+export. Empty is the healthy state. Anything in it means the vendored runtime
+predates this SDK release, so the features behind those symbols are disabled
+and return `null`, `-1`, or an empty list rather than throwing. Each miss is
+also logged once, naming the symbol. Update the runtime with:
+
+```bash
+synheart install runtime   # or: synheart sync
+```
+
+The list fills lazily — a symbol is probed the first time the feature that
+needs it is used — so check it after exercising the features you depend on.
 
 If `isAvailable` is false, confirm the runtime was installed for the active
 platform, run a clean build, and inspect native linker output:
@@ -917,6 +1145,22 @@ flutter pub get
 synheart sync
 flutter run
 ```
+
+## Threading and blocking calls
+
+The native runtime performs some work synchronously behind the FFI boundary.
+Calls fall into three groups, and mixing them up is the usual cause of jank.
+
+| Call | Behaviour |
+| --- | --- |
+| `syncNow()`, `flushUploads()`, `fetchCloudHsiWindows()`, `requestDataDeletion()`, device registration | Network I/O on a **background isolate**. Returns a `Future`; `await` it and drive a loading state. |
+| `grantConsent()`, `revokeConsentType()`, `consentSubmitFormTyped()` | May perform network I/O. Async; awaited calls are serialized so two consent mutations never race the native handle. |
+| `pushWearHr`, `pushRr`, `pushRrBatch`, `pushAccel`, `pushBehavior`, `tick`, `ingestBatch` | Synchronous, in-process, no I/O. Safe on the UI isolate at sensor rates. |
+| Getters — `runtimeDiagnostics()`, `uploadQueueLength`, `consentEffectiveStateTyped()`, `isSessionRunning` | Synchronous FFI reads. Cheap, but they are FFI calls: do not poll them per frame. |
+
+`onStateUpdate` parses each HSI window once and shares the result across
+subscribers, so multiple listeners cost one parse. `currentHSIState` reuses that
+same parse, making it cheap to read repeatedly.
 
 ## Testing and example app
 
@@ -944,6 +1188,28 @@ flutter run
 
 The example uses unsigned capabilities and placeholder service credentials for
 development. Replace those settings before using it as a production template.
+
+## Upgrading
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list. Breaking and behavioural
+changes in 0.11.0:
+
+- `CoreRuntimeBridge.flushUploads()` now returns a `Future`. Only affects code
+  calling the bridge directly; `Synheart.ingestion` is unchanged.
+- `Synheart.deleteCloudData()` throws `UnsupportedError`. It never deleted
+  anything. Use `requestDataDeletion()` plus `wipeLocalData()`.
+- `runtimeDiagnostics()` no longer returns `lastQuality` (it was always `0.0`);
+  it now returns `missingSymbols` and `probedSymbols`.
+- `Synheart.isSessionRunning` reads the native runtime rather than the Dart
+  module flag, so it reflects a session ended natively.
+- Removed: `MockWearSourceHandler`, `HsiWindowArtifact`, `TombstoneArtifact`,
+  `CapabilityTokenFetcher`.
+- Deprecated, removed in 0.12.0: `SynheartConfig.capabilityToken` /
+  `.capabilitySecret`, `CloudConfig.apiKey`, `ConsentConfig.appApiKey`,
+  `getSyncStatus()`, `runtimeBaselineSummary`, `WearModule(useSynheartWear:)`.
+  The native runtime removed bundle-secret configuration as a security fix;
+  these values were never forwarded to it. Use `deviceAuthConfig` instead, and
+  never ship an API key or signing secret inside an application bundle.
 
 ## Privacy and security
 

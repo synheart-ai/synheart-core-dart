@@ -131,6 +131,34 @@ class CoreRuntimeBridge {
   /// subject re-key tears Core down on auth changes.
   final Set<Future<Object?>> _inflightFfi = <Future<Object?>>{};
 
+  /// Trampolines retired by [clearHsiCallback] / [clearStreamCallback] but not
+  /// yet closed.
+  ///
+  /// Closing a `NativeCallable` at clear time is a use-after-free. The runtime's
+  /// `synheart_core_clear_hsi_callback` only calls `JoinHandle::abort()` on the
+  /// tokio listener task; `abort()` requests cancellation and returns without
+  /// joining, so a worker can still be inside the dispatch path when the FFI
+  /// call returns. Closing the trampoline at that point produces
+  ///
+  ///     runtime_entry.cc: error: Callback invoked after it has been deleted.
+  ///     Fatal signal 6 (SIGABRT) in tid NNN (tokio-rt-worker)
+  ///
+  /// with `synheart_core_set_hsi_callback::{closure}` as the innermost frame
+  /// (observed on Android arm64, runtime v0.19.2, after a session ends and the
+  /// subject re-key re-configures Core).
+  ///
+  /// So we hand the registration back to the runtime immediately but keep the
+  /// trampoline alive, and only close it in [dispose] once `coreFree` has
+  /// dropped the handle — and with it the embedded tokio runtime and its
+  /// workers. After that nothing can reach the pointer.
+  ///
+  /// The cost is a handful of live trampolines per handle (one per
+  /// re-configure, which is rare), all released on dispose. That is a trivial
+  /// amount of memory next to a hard crash.
+  final List<NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>>
+  _retiredCallables =
+      <NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>>[];
+
   /// Runs [body] on a background isolate — a native FFI call that
   /// dereferences the handle by address — and registers the in-flight future
   /// so [dispose] can await it before `coreFree` frees the handle. EVERY
@@ -635,6 +663,16 @@ class CoreRuntimeBridge {
         }
       }
       _ffi.coreFree(_handle);
+
+      // Only now is it safe to free the trampolines. `coreFree` drops the
+      // handle, which drops the embedded tokio runtime and joins its workers,
+      // so no task can be part-way through a callback dispatch any more. Doing
+      // this before `coreFree` is what crashed — see [_retiredCallables].
+      for (final callable in _retiredCallables) {
+        callable.close();
+      }
+      _retiredCallables.clear();
+
       if (_sdkCryptoTable != null) {
         calloc.free(_sdkCryptoTable!);
         _sdkCryptoTable = null;
@@ -660,7 +698,11 @@ class CoreRuntimeBridge {
   }
 
   /// Whether a session is running.
-  bool get isRunning => _ffi.isRunning(_handle) != 0;
+  ///
+  /// Guarded on [_disposed]: `Synheart.isSessionRunning` reads this from UI
+  /// code, so a read racing teardown would otherwise dereference a freed
+  /// handle across the FFI boundary.
+  bool get isRunning => _disposed ? false : _ffi.isRunning(_handle) != 0;
 
   // ── Subject identity ─────────────────────────────────────────────────
 
@@ -1690,8 +1732,33 @@ class CoreRuntimeBridge {
     return ms == 0 ? null : ms;
   }
 
-  Map<String, dynamic>? flushUploads() {
-    return _callJson(() => _ffi.flushUploads(_handle));
+  /// Flush the outbound ingest queue to the cloud.
+  ///
+  /// Runs on a background isolate: the native `flush_uploads` performs its HTTP
+  /// round-trip synchronously, so calling it on the UI isolate blocks the main
+  /// thread for the length of the request — unbounded on a slow or dead
+  /// network.
+  ///
+  /// Returns null when the bridge is disposed, the symbol is unavailable, or
+  /// the native call failed.
+  Future<Map<String, dynamic>?> flushUploads() async {
+    if (_disposed) return null;
+    final handleAddr = _handle.address;
+    return _runFfi(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) return null;
+      final handle = Pointer<Void>.fromAddress(handleAddr);
+      try {
+        final ptr = ffi.flushUploads(handle);
+        if (ptr == nullptr) return null;
+        final raw = ptr.toDartString();
+        ffi.coreFreeString(ptr);
+        final decoded = jsonDecode(raw);
+        return decoded is Map<String, dynamic> ? decoded : null;
+      } catch (_) {
+        return null;
+      }
+    });
   }
 
   Map<String, dynamic>? uploadMetadata() {
@@ -1734,9 +1801,8 @@ class CoreRuntimeBridge {
   /// when the native symbol is absent (older vendored lib).
   ///
   /// The FFI call performs blocking network I/O, so it runs on a background
-  /// isolate (mirroring [sdkRegisterDevice]) — calling it on the UI isolate
-  /// froze the main thread and ANR'd while a request was in flight (e.g. a
-  /// pull-to-refresh keyed on a subject the backend never satisfies).
+  /// isolate (mirroring [sdkRegisterDevice]); on the UI isolate it would block
+  /// the main thread for the length of the request.
   Future<List<Map<String, dynamic>>> fetchCloudHsiWindows({
     required int fromMs,
     required int toMs,
@@ -2033,9 +2099,11 @@ class CoreRuntimeBridge {
   }
 
   /// Unregister the stream callback.
+  ///
+  /// Retires the trampoline rather than closing it — see [_retiredCallables].
   void clearStreamCallback() {
     if (_streamCallable != null) {
-      _streamCallable!.close();
+      _retiredCallables.add(_streamCallable!);
       _streamCallable = null;
     }
   }
@@ -2070,10 +2138,13 @@ class CoreRuntimeBridge {
   }
 
   /// Unregister the HSI callback.
+  ///
+  /// Tells the runtime to stop dispatching, then retires the trampoline rather
+  /// than closing it — see [_retiredCallables].
   void clearHsiCallback() {
     if (_hsiCallable != null) {
       _ffi.clearHsiCallback(_handle);
-      _hsiCallable!.close();
+      _retiredCallables.add(_hsiCallable!);
       _hsiCallable = null;
     }
   }
@@ -2306,9 +2377,6 @@ class CoreRuntimeBridge {
 
   /// Number of HSI frames produced in the current session.
   int frameCount() => _ffi.frameCount(_handle);
-
-  /// Quality value of the last HSI frame, or 0.0 if none.
-  double lastQuality() => _ffi.lastQuality?.call(_handle) ?? 0.0;
 
   // ── Internal helpers ─────────────────────────────────────────────────
 
