@@ -131,6 +131,34 @@ class CoreRuntimeBridge {
   /// subject re-key tears Core down on auth changes.
   final Set<Future<Object?>> _inflightFfi = <Future<Object?>>{};
 
+  /// Trampolines retired by [clearHsiCallback] / [clearStreamCallback] but not
+  /// yet closed.
+  ///
+  /// Closing a `NativeCallable` at clear time is a use-after-free. The runtime's
+  /// `synheart_core_clear_hsi_callback` only calls `JoinHandle::abort()` on the
+  /// tokio listener task; `abort()` requests cancellation and returns without
+  /// joining, so a worker can still be inside the dispatch path when the FFI
+  /// call returns. Closing the trampoline at that point produces
+  ///
+  ///     runtime_entry.cc: error: Callback invoked after it has been deleted.
+  ///     Fatal signal 6 (SIGABRT) in tid NNN (tokio-rt-worker)
+  ///
+  /// with `synheart_core_set_hsi_callback::{closure}` as the innermost frame
+  /// (observed on Android arm64, runtime v0.19.2, after a session ends and the
+  /// subject re-key re-configures Core).
+  ///
+  /// So we hand the registration back to the runtime immediately but keep the
+  /// trampoline alive, and only close it in [dispose] once `coreFree` has
+  /// dropped the handle — and with it the embedded tokio runtime and its
+  /// workers. After that nothing can reach the pointer.
+  ///
+  /// The cost is a handful of live trampolines per handle (one per
+  /// re-configure, which is rare), all released on dispose. That is a trivial
+  /// amount of memory next to a hard crash.
+  final List<NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>>
+  _retiredCallables =
+      <NativeCallable<Void Function(Pointer<Utf8>, Pointer<Void>)>>[];
+
   /// Runs [body] on a background isolate — a native FFI call that
   /// dereferences the handle by address — and registers the in-flight future
   /// so [dispose] can await it before `coreFree` frees the handle. EVERY
@@ -635,6 +663,16 @@ class CoreRuntimeBridge {
         }
       }
       _ffi.coreFree(_handle);
+
+      // Only now is it safe to free the trampolines. `coreFree` drops the
+      // handle, which drops the embedded tokio runtime and joins its workers,
+      // so no task can be part-way through a callback dispatch any more. Doing
+      // this before `coreFree` is what crashed — see [_retiredCallables].
+      for (final callable in _retiredCallables) {
+        callable.close();
+      }
+      _retiredCallables.clear();
+
       if (_sdkCryptoTable != null) {
         calloc.free(_sdkCryptoTable!);
         _sdkCryptoTable = null;
@@ -2061,9 +2099,11 @@ class CoreRuntimeBridge {
   }
 
   /// Unregister the stream callback.
+  ///
+  /// Retires the trampoline rather than closing it — see [_retiredCallables].
   void clearStreamCallback() {
     if (_streamCallable != null) {
-      _streamCallable!.close();
+      _retiredCallables.add(_streamCallable!);
       _streamCallable = null;
     }
   }
@@ -2098,10 +2138,13 @@ class CoreRuntimeBridge {
   }
 
   /// Unregister the HSI callback.
+  ///
+  /// Tells the runtime to stop dispatching, then retires the trampoline rather
+  /// than closing it — see [_retiredCallables].
   void clearHsiCallback() {
     if (_hsiCallable != null) {
       _ffi.clearHsiCallback(_handle);
-      _hsiCallable!.close();
+      _retiredCallables.add(_hsiCallable!);
       _hsiCallable = null;
     }
   }
