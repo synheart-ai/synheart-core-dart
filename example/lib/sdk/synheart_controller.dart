@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:synheart_core/synheart_core.dart';
@@ -42,22 +43,52 @@ class SynheartController extends ChangeNotifier {
   // `env/defines.example.json` is the checked-in template; a populated file is
   // gitignored, because it carries real organization identifiers. See SETUP.md.
 
-  /// Application identifier, reported on session records and ingest rows, and
-  /// the id the platform resolves an ingest scope from.
+  /// Platform-issued application identifier, per platform.
   ///
-  /// Defaults to the bundle id so a credential-free local run still has a
-  /// non-empty value — `SynheartConfig.validate()` rejects an empty one.
-  static const String appId = String.fromEnvironment(
-    'SYNHEART_APP_ID',
-    defaultValue: 'ai.synheart.core.example',
+  /// Android and iOS are separate apps on the platform and carry separate
+  /// `app_…` ids, because attestation is per-store: Play Integrity verifies the
+  /// Android package, App Attest the iOS bundle. One shared id could not be
+  /// bound to both.
+  static const String androidAppId = String.fromEnvironment(
+    'SYNHEART_ANDROID_APP_ID',
   );
+  static const String iosAppId = String.fromEnvironment('SYNHEART_IOS_APP_ID');
 
-  /// Auth service origin. This alone enables device attestation.
+  /// Single-platform fallback, for a build that names one id for both.
+  static const String sharedAppId = String.fromEnvironment('SYNHEART_APP_ID');
+
+  /// The id this build reports, resolved for the running platform.
+  ///
+  /// Resolution order is per-platform id → shared id → bundle id. The bundle id
+  /// last resort keeps a credential-free run working, since
+  /// `SynheartConfig.validate()` rejects an empty `appId`.
+  ///
+  /// Uses [defaultTargetPlatform] rather than `dart:io`'s `Platform`, so this
+  /// stays resolvable in tests and on web.
+  static String get appId {
+    final perPlatform = switch (defaultTargetPlatform) {
+      TargetPlatform.android => androidAppId,
+      TargetPlatform.iOS => iosAppId,
+      _ => '',
+    };
+    if (perPlatform.isNotEmpty) return perPlatform;
+    if (sharedAppId.isNotEmpty) return sharedAppId;
+    return 'ai.synheart.core.example';
+  }
+
   static const String authBaseUrl = String.fromEnvironment('SYNHEART_AUTH_URL');
 
   /// Organization id, required only for HSI upload — cloud ingest stays
   /// disabled without one. Independent of attestation.
-  static const String orgId = String.fromEnvironment('SYNHEART_ORG_ID');
+  ///
+  /// `SYNHEART_CLOUD_ORG_ID` is the name the platform's credential download
+  /// uses; `SYNHEART_ORG_ID` is accepted too so an existing defines file keeps
+  /// working.
+  static const String _cloudOrgId = String.fromEnvironment(
+    'SYNHEART_CLOUD_ORG_ID',
+  );
+  static const String _plainOrgId = String.fromEnvironment('SYNHEART_ORG_ID');
+  static String get orgId => _cloudOrgId.isNotEmpty ? _cloudOrgId : _plainOrgId;
 
   /// Platform package name, sent with the attestation request.
   ///
@@ -77,7 +108,14 @@ class SynheartController extends ChangeNotifier {
   /// `app_id` and `org_id` and nothing else, and `CloudConfig` has no field for
   /// them — they are scoped to platform APIs that this SDK does not call.
   /// Setting them changes no behavior here.
-  static const String tenantId = String.fromEnvironment('SYNHEART_TENANT_ID');
+  static const String _cloudTenantId = String.fromEnvironment(
+    'SYNHEART_CLOUD_TENANT_ID',
+  );
+  static const String _plainTenantId = String.fromEnvironment(
+    'SYNHEART_TENANT_ID',
+  );
+  static String get tenantId =>
+      _cloudTenantId.isNotEmpty ? _cloudTenantId : _plainTenantId;
   static const String projectId = String.fromEnvironment('SYNHEART_PROJECT_ID');
 
   /// Attestation is possible. Every registration trigger in the SDK keys off

@@ -77,14 +77,41 @@ cp env/defines.example.json env/defines.dev.json
 
 ```jsonc
 {
-  "SYNHEART_BASE_URL":     "https://api.synheart.ai",
-  "SYNHEART_AUTH_URL":     "https://api.synheart.ai",
+  "SYNHEART_BASE_URL":       "https://api.synheart.ai",
+  "SYNHEART_AUTH_URL":       "https://api.synheart.ai",
 
-  "SYNHEART_APP_ID":       "app_…",                    // from app_id
-  "SYNHEART_ORG_ID":       "org_…",                    // from org_id
-  "SYNHEART_PACKAGE_NAME": "ai.synheart.core.example"
+  // Android and iOS are SEPARATE platform apps with separate app_… ids.
+  "SYNHEART_ANDROID_APP_ID": "app_…_and_…",
+  "SYNHEART_IOS_APP_ID":     "app_…_ios_…",
+  "SYNHEART_PACKAGE_NAME":   "ai.synheart.core.example",
+
+  "SYNHEART_CLOUD_ORG_ID":    "org_…",
+  "SYNHEART_CLOUD_TENANT_ID": "ten_…"
 }
 ```
+
+**Download one credentials file per platform.** Attestation is per-store — Play
+Integrity verifies the Android package, App Attest the iOS bundle — so a single
+`app_…` id cannot be bound to both. The example resolves the right one from
+`defaultTargetPlatform` at runtime; a build that ships the Android id to iOS
+fails attestation.
+
+Each app id also needs its **own app policy and consent profile** on the
+platform. Provisioning Android does not provision iOS: the unprovisioned side
+reports its consent gate closed while the other uploads fine, which looks like a
+platform-specific SDK bug rather than a missing profile.
+
+`SYNHEART_APP_ID` is still accepted as a single-platform fallback, and
+`SYNHEART_ORG_ID` / `SYNHEART_TENANT_ID` still work alongside the
+`SYNHEART_CLOUD_*` names the platform download uses.
+
+> **No API keys.** If your credential download includes
+> `SYNHEART_ANDROID_API_KEY` or similar, leave it out. `CloudConfig.apiKey` and
+> `ConsentConfig.appApiKey` are deprecated and **not forwarded** — the runtime
+> removed bundle-secret config as a security fix, because a key compiled into a
+> dart-define is readable by anyone who downloads the app. Requests are signed
+> with the hardware-backed device identity instead. A key placed here buys
+> nothing and leaks a live secret into your APK.
 
 **Set both URLs.** They are not redundant. `SYNHEART_AUTH_URL` reaches
 `DeviceAuthConfig` and moves device registration only; consent and ingest
@@ -110,7 +137,7 @@ Two notes on the credential file:
   carries `app_id` and `org_id` and nothing else, and `CloudConfig` has no field
   for either. The template lists them so a credential file can be transcribed
   whole, but setting them changes no behavior here.
-- **`SYNHEART_APP_ID` and `SYNHEART_PACKAGE_NAME` are different things.**
+- **The app id and `SYNHEART_PACKAGE_NAME` are different things.**
   `app_id` is the platform-issued `app_…` identifier that an ingest scope
   resolves from. The package name is the real installed bundle id, which Play
   Integrity and App Attest verify against. Passing the `app_…` value as the

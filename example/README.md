@@ -38,8 +38,9 @@ your machine.
 flutter run \
   --dart-define=SYNHEART_BASE_URL=https://api.synheart.ai \
   --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai \
-  --dart-define=SYNHEART_APP_ID=app_… \
-  --dart-define=SYNHEART_ORG_ID=org_… \
+  --dart-define=SYNHEART_ANDROID_APP_ID=app_…_and_… \
+  --dart-define=SYNHEART_IOS_APP_ID=app_…_ios_… \
+  --dart-define=SYNHEART_CLOUD_ORG_ID=org_… \
   --dart-define=SYNHEART_PACKAGE_NAME=ai.synheart.core.example
 ```
 
@@ -51,7 +52,7 @@ flutter run \
   --dart-define=SYNHEART_AUTH_URL=https://api.synheart.ai
 ```
 
-Dev endpoints are `.io`. Set **both** URLs: `SYNHEART_AUTH_URL` only reaches
+Set **both** URLs: `SYNHEART_AUTH_URL` only reaches
 `DeviceAuthConfig`, while consent and ingest resolve through
 `SYNHEART_BASE_URL`. The SDK carries no built-in origin, so setting only one
 of the two sends registration to one host while consent and ingest fall back
