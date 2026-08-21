@@ -279,6 +279,28 @@ typedef _HsiWindowsDart =
       int l,
     );
 
+// Syni service (device-signed cloud chat + sessions).
+typedef _SyniChatC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> requestJson);
+typedef _SyniChatDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> requestJson);
+typedef _SyniListSessionsC =
+    Pointer<Utf8> Function(Pointer<Void> h, Int32 limit);
+typedef _SyniListSessionsDart =
+    Pointer<Utf8> Function(Pointer<Void> h, int limit);
+typedef _SyniGetSessionC =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> sessionId);
+typedef _SyniGetSessionDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> sessionId);
+typedef _SyniGetSessionMessagesC =
+    Pointer<Utf8> Function(
+      Pointer<Void> h,
+      Pointer<Utf8> sessionId,
+      Int32 limit,
+    );
+typedef _SyniGetSessionMessagesDart =
+    Pointer<Utf8> Function(Pointer<Void> h, Pointer<Utf8> sessionId, int limit);
+
 // Metrics
 typedef _RecordMetricC = Int32 Function(Pointer<Void> h, Pointer<Utf8> json);
 typedef _RecordMetricDart = int Function(Pointer<Void> h, Pointer<Utf8> json);
@@ -674,6 +696,11 @@ class SynheartCoreFFI {
     backfillOpen;
     backfillInsertBatch;
     backfillFinalize;
+    syniChat;
+    syniListSessions;
+    syniGetSession;
+    syniGetSessionMessages;
+    syniCloseSession;
   }
 
   /// Wrap an OPTIONAL symbol lookup so a miss is recorded and logged once
@@ -1058,6 +1085,47 @@ class SynheartCoreFFI {
   late final getHsiWindows = _lib.lookupFunction<_HsiWindowsC, _HsiWindowsDart>(
     'synheart_core_get_hsi_windows',
   );
+
+  // Device-signed Syni service API (runtime >= 0.21.0). Every symbol is
+  // optional so linking an older runtime keeps the rest of Core usable; the
+  // public Syni service client reports a typed unsupported error on access.
+  late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)? syniChat =
+      _optional(
+        'synheart_core_syni_chat',
+        () => _lib.lookupFunction<_SyniChatC, _SyniChatDart>(
+          'synheart_core_syni_chat',
+        ),
+      );
+  late final Pointer<Utf8> Function(Pointer<Void>, int)? syniListSessions =
+      _optional(
+        'synheart_core_syni_list_sessions',
+        () => _lib.lookupFunction<_SyniListSessionsC, _SyniListSessionsDart>(
+          'synheart_core_syni_list_sessions',
+        ),
+      );
+  late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)?
+  syniGetSession = _optional(
+    'synheart_core_syni_get_session',
+    () => _lib.lookupFunction<_SyniGetSessionC, _SyniGetSessionDart>(
+      'synheart_core_syni_get_session',
+    ),
+  );
+  late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>, int)?
+  syniGetSessionMessages = _optional(
+    'synheart_core_syni_get_session_messages',
+    () => _lib
+        .lookupFunction<_SyniGetSessionMessagesC, _SyniGetSessionMessagesDart>(
+          'synheart_core_syni_get_session_messages',
+        ),
+  );
+  late final Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)?
+  syniCloseSession = _optional(
+    'synheart_core_syni_close_session',
+    () => _lib.lookupFunction<_SyniGetSessionC, _SyniGetSessionDart>(
+      'synheart_core_syni_close_session',
+    ),
+  );
+
   late final getStorageUsage = _lib
       .lookupFunction<_JsonReturnC, _JsonReturnDart>(
         'synheart_core_get_storage_usage',

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Device-signed, non-streaming Syni chat and session APIs under
+  `Synheart.syni?.service`: chat, list/get sessions, list messages, and close.
+- Typed Syni service responses/errors, sticky session continuity, serialized
+  chat turns, and delivery-unknown signaling for safe reconciliation. The
+  service requires a native Core runtime that exports the
+  `synheart_core_syni_*` ABI (runtime 0.21.0 or newer); older runtimes remain
+  usable and report the service as unavailable.
+
 ## [0.11.1] - 2026-08-20
 
 ### Fixed

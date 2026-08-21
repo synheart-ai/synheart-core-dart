@@ -32,6 +32,7 @@ actually see. This README is the reference.
 - [Sessions and collection](#sessions-and-collection)
 - [Reading HSI and raw signals](#reading-hsi-and-raw-signals)
 - [Running without cloud credentials](#running-without-cloud-credentials)
+- [Syni chat and sessions](#syni-chat-and-sessions)
 - [Cloud, authentication, and endpoints](#cloud-authentication-and-endpoints)
 - [Storage and sync](#storage-and-sync)
 - [Advanced workflows](#advanced-workflows)
@@ -675,6 +676,35 @@ profile only when cloud upload is enabled.
 > `initialize()` returned a null native runtime while reporting success. If you
 > are on an earlier version and see no HSI with no cloud config, that is the
 > cause.
+
+## Syni chat and sessions
+
+Runtime 0.21.0 adds device-signed, non-streaming Syni service calls. Configure
+`SYNHEART_BASE_URL` and register the device (or provide runtime HMAC
+credentials) before calling them. The SDK keeps the active session id after
+each successful turn, so subsequent calls continue the same conversation until
+`startNewSession()` is called.
+
+```dart
+final syni = Synheart.syni?.service;
+if (syni != null && syni.isAvailable) {
+  final response = await syni.chat(
+    'Help me reflect on today',
+    personaId: 'focus.coach.v1',
+    includeState: true,
+  );
+
+  final sessions = await syni.listSessions(limit: 20);
+  final messages = await syni.getSessionMessages(response.sessionId);
+  await syni.closeSession(response.sessionId);
+}
+```
+
+Chat calls are serialized because sending is non-idempotent and order matters.
+If a timeout produces a `SyniServiceException` with `deliveryUnknown == true`,
+inspect the session messages before presenting a retry; resending immediately
+could duplicate a turn. On an older native runtime `isAvailable` is false and
+the rest of the SDK continues to work.
 
 ## Cloud, authentication, and endpoints
 

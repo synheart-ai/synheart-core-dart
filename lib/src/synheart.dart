@@ -34,6 +34,7 @@ import 'modules/behavior/behavior_code.dart';
 import 'modules/behavior/behavior_events.dart';
 import 'modules/breathing/breathing_module.dart';
 import 'modules/syni/syni_module.dart';
+import 'modules/syni/syni_service_client.dart';
 import 'package:syni/agent.dart' show SyniCloudConfig;
 import 'models/behavior_session_results.dart';
 import 'package:synheart_behavior/synheart_behavior.dart' as sb;
@@ -2773,6 +2774,20 @@ class Synheart {
 
   static SyniModule? _syni;
   static SyniCloudConfig? _syniCloudConfig;
+  static SyniServiceClient? _syniServiceClient;
+  static CoreRuntimeBridge? _syniServiceRuntime;
+
+  static SyniServiceClient? _resolveSyniService() {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    if (!identical(_syniServiceRuntime, runtime)) {
+      _syniServiceRuntime = runtime;
+      _syniServiceClient = SyniServiceClient(
+        CoreRuntimeSyniServiceTransport(runtime),
+      );
+    }
+    return _syniServiceClient;
+  }
 
   /// Inject (or clear) the cloud config used by Syni's hybrid router.
   ///
@@ -2802,6 +2817,10 @@ class Synheart {
   /// `install()` call (which downloads a multi-GB model) functions as the
   /// opt-in moment. Re-enable the consent check once `ConsentForm` grows a
   /// `syni` field and host apps surface it in their consent UI.
+  ///
+  /// The device-signed [SyniModule.service] client is independent of the local
+  /// model install lifecycle. It becomes available whenever the Core runtime
+  /// bridge exposes the Syni service ABI and authentication is configured.
   static SyniModule? get syni {
     // Gate on SDK *initialization*, not session-running state — Syni is
     // usable any time after `initialize()`, independent of whether a
@@ -2809,6 +2828,7 @@ class Synheart {
     if (!shared._isConfigured) return null;
     return _syni ??= SyniModule(
       cloudConfig: _syniCloudConfig,
+      serviceProvider: _resolveSyniService,
       hsiSnapshot: () => Synheart.currentHSIState,
     );
   }
@@ -5456,6 +5476,9 @@ class Synheart {
 
       _coreRuntime?.dispose();
       _coreRuntime = null;
+      _syni = null;
+      _syniServiceClient = null;
+      _syniServiceRuntime = null;
       _clearBaselineCloudHooks();
 
       await _moduleManager.disposeAll();

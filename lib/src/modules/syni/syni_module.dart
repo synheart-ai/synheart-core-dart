@@ -4,6 +4,7 @@ import 'package:syni/agent.dart' as agent;
 
 import '../../models/hsi_state.dart';
 import 'syni_context_builder.dart';
+import 'syni_service_client.dart';
 
 /// Public Syni client, exposed to consumer apps as `Synheart.syni`.
 ///
@@ -23,13 +24,27 @@ class SyniModule {
     agent.SyniAgent? syniAgent,
     agent.SyniCloudConfig? cloudConfig,
     SyniContextBuilder? contextBuilder,
+    SyniServiceClient? service,
+    SyniServiceClient? Function()? serviceProvider,
     HSIState? Function()? hsiSnapshot,
-  }) : _agent = syniAgent ?? agent.SyniAgent(cloudConfig: cloudConfig),
+  }) : assert(service == null || serviceProvider == null),
+       _service = service,
+       _serviceProvider = serviceProvider,
+       _agent = syniAgent ?? agent.SyniAgent(cloudConfig: cloudConfig),
        _contextBuilder =
            contextBuilder ?? SyniContextBuilder(liveState: hsiSnapshot);
 
   final agent.SyniAgent _agent;
   final SyniContextBuilder _contextBuilder;
+
+  final SyniServiceClient? _service;
+  final SyniServiceClient? Function()? _serviceProvider;
+
+  /// Device-signed Syni cloud chat + session API, backed by the same Core
+  /// runtime handle used for ingest. Null while no Core runtime transport is
+  /// available. A provider lets a module created before the runtime bridge
+  /// attach to it later without discarding local Syni installation state.
+  SyniServiceClient? get service => _service ?? _serviceProvider?.call();
 
   /// Whether a cloud client is configured (cloud chat is reachable).
   bool get hasCloud => _agent.hasCloud;
