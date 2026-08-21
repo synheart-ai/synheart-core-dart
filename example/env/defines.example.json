@@ -2,10 +2,10 @@
   "SYNHEART_BASE_URL": "https://api.synheart.ai",
   "SYNHEART_AUTH_URL": "https://api.synheart.ai",
 
-  "SYNHEART_APP_ID": "app_…",
-  "SYNHEART_ORG_ID": "org_…",
+  "SYNHEART_ANDROID_APP_ID": "app_…_and_…",
+  "SYNHEART_IOS_APP_ID": "app_…_ios_…",
   "SYNHEART_PACKAGE_NAME": "ai.synheart.core.example",
 
-  "SYNHEART_TENANT_ID": "ten_…",
-  "SYNHEART_PROJECT_ID": "prj_…"
+  "SYNHEART_CLOUD_ORG_ID": "org_…",
+  "SYNHEART_CLOUD_TENANT_ID": "ten_…"
 }

@@ -113,6 +113,15 @@ on: `org_…`, `ten_…`, `prj_…` and `app_…` differ only by prefix, and a p
 swapped between two environments produces authentication failures that look
 like a broken SDK.
 
+> **Repeat 1.5 through 1.8 per platform.** Android and iOS are separate apps
+> with separate `app_…` ids, so each needs its own **app policy**, its own
+> **consent profile**, and its own development-mode setting. Provisioning one
+> platform does not carry over.
+>
+> The failure this causes is quiet: the provisioned platform uploads happily
+> while the other reports its consent gate closed, which reads like a
+> platform-specific SDK bug rather than a missing profile.
+
 ### 1.7 Create an app policy
 
 Declares what this app is permitted to collect and upload. The runtime
