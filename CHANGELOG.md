@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-08-20
+
+### Fixed
+
+- Android `compileSdk` raised from 34 to 36. The package sat below the
+  compileSdk of the plugins it ships alongside and below Flutter's own default,
+  which made it the odd one out in any consumer's build graph.
+
+  This does **not** change the minimum supported Android version: `minSdk`
+  stays at 24. `compileSdk` is what the module is built against, not what it
+  requires at runtime.
+
+  **If your build fails with `requires libraries and applications that depend on
+  it to compile against version 36 or later`, upgrading this package alone will
+  not fix it.** That check runs per consuming module, and the artifacts naming
+  it are transitive AndroidX dependencies (`androidx.health.connect`,
+  `androidx.browser`, `androidx.core`) pulled in by the sibling plugins. Your
+  app module needs the newer compileSdk:
+
+  ```kotlin
+  // android/app/build.gradle.kts
+  compileSdk = flutter.compileSdkVersion   // 36 on current Flutter
+  ```
+
+## [0.11.0] - 2026-08-14
+
 ### Changed — BREAKING
 
 - The SDK no longer carries a built-in API host. `ApiEndpoints.defaultBaseUrl`
@@ -53,7 +79,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Syni cloud origin resolved through a hard-coded literal instead of
   `ApiEndpoints`, overriding `SYNHEART_BASE_URL` for that one caller.
 
-## [0.11.0] - 2026-08-14
 
 Hardening release from a full-repo review. No new features.
 

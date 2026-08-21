@@ -24,7 +24,16 @@ apply plugin: 'com.android.library'
 
 android {
     namespace 'ai.synheart.core_runtime'
-    compileSdk 34
+    // Track the compileSdk of the plugins this package sits alongside, and of
+    // Flutter's own default. Below theirs, any consumer module that pulls in a
+    // dependency requiring a newer SDK fails AAR metadata validation:
+    //
+    //   Dependency '<artifact>' requires libraries and applications that depend
+    //   on it to compile against version 36 or later of the Android APIs.
+    //
+    // minSdk is deliberately left alone — compileSdk is what you build against,
+    // not what you require at runtime, so raising it drops no devices.
+    compileSdk 36
 
     defaultConfig {
         minSdk 24
