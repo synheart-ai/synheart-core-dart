@@ -1431,6 +1431,128 @@ class CoreRuntimeBridge {
     return _callJson(() => _ffi.getStorageUsage(_handle));
   }
 
+  // ── Syni service (device-signed cloud chat + sessions) ────────────────
+
+  /// Whether the linked runtime exports the complete Syni service ABI.
+  /// Runtime 0.21.0 introduced this surface; older runtimes remain usable for
+  /// every other Core feature and report Syni service as unsupported.
+  bool get isSyniServiceAvailable =>
+      !_disposed &&
+      _ffi.syniChat != null &&
+      _ffi.syniListSessions != null &&
+      _ffi.syniGetSession != null &&
+      _ffi.syniGetSessionMessages != null &&
+      _ffi.syniCloseSession != null;
+
+  Future<Map<String, dynamic>> syniChatJson(String requestJson) =>
+      _runSyniJson(_SyniFfiOperation.chat, value: requestJson);
+
+  Future<Map<String, dynamic>> syniListSessionsJson({int limit = 0}) =>
+      _runSyniJson(_SyniFfiOperation.listSessions, limit: limit);
+
+  Future<Map<String, dynamic>> syniGetSessionJson(String sessionId) =>
+      _runSyniJson(_SyniFfiOperation.getSession, value: sessionId);
+
+  Future<Map<String, dynamic>> syniGetSessionMessagesJson(
+    String sessionId, {
+    int limit = 0,
+  }) => _runSyniJson(
+    _SyniFfiOperation.getSessionMessages,
+    value: sessionId,
+    limit: limit,
+  );
+
+  Future<Map<String, dynamic>> syniCloseSessionJson(String sessionId) =>
+      _runSyniJson(_SyniFfiOperation.closeSession, value: sessionId);
+
+  /// Runs one blocking Syni HTTP call off the UI isolate. The raw handle is
+  /// tracked through [_runFfi], so [dispose] cannot free it while a request is
+  /// in flight. Native request and response strings are released on every
+  /// path, including malformed JSON and server errors.
+  Future<Map<String, dynamic>> _runSyniJson(
+    _SyniFfiOperation operation, {
+    String? value,
+    int limit = 0,
+  }) {
+    if (_disposed) {
+      return Future.value(const {
+        'error': 'ERR_UNAVAILABLE: Synheart Core runtime is disposed',
+      });
+    }
+    if (!isSyniServiceAvailable) {
+      return Future.value(const {
+        'error':
+            'ERR_UNSUPPORTED: linked Synheart Core runtime does not expose '
+            'the Syni service API (requires runtime 0.21.0+)',
+      });
+    }
+
+    final handleAddress = _handle.address;
+    return _runFfi(() {
+      final ffi = SynheartCoreFFI.load();
+      if (ffi == null) {
+        return const <String, dynamic>{
+          'error': 'ERR_UNAVAILABLE: Synheart Core runtime is unavailable',
+        };
+      }
+      final handle = Pointer<Void>.fromAddress(handleAddress);
+      Pointer<Utf8> output = nullptr;
+      Pointer<Utf8>? input;
+      try {
+        switch (operation) {
+          case _SyniFfiOperation.chat:
+            final call = ffi.syniChat;
+            if (call == null) return _syniUnsupportedEnvelope;
+            input = (value ?? '').toNativeUtf8();
+            output = call(handle, input);
+            break;
+          case _SyniFfiOperation.listSessions:
+            final call = ffi.syniListSessions;
+            if (call == null) return _syniUnsupportedEnvelope;
+            output = call(handle, limit);
+            break;
+          case _SyniFfiOperation.getSession:
+            final call = ffi.syniGetSession;
+            if (call == null) return _syniUnsupportedEnvelope;
+            input = (value ?? '').toNativeUtf8();
+            output = call(handle, input);
+            break;
+          case _SyniFfiOperation.getSessionMessages:
+            final call = ffi.syniGetSessionMessages;
+            if (call == null) return _syniUnsupportedEnvelope;
+            input = (value ?? '').toNativeUtf8();
+            output = call(handle, input, limit);
+            break;
+          case _SyniFfiOperation.closeSession:
+            final call = ffi.syniCloseSession;
+            if (call == null) return _syniUnsupportedEnvelope;
+            input = (value ?? '').toNativeUtf8();
+            output = call(handle, input);
+            break;
+        }
+
+        if (output == nullptr) {
+          return const <String, dynamic>{
+            'error': 'ERR_NETWORK: Syni service returned an empty response',
+          };
+        }
+        final raw = output.toDartString();
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+        return <String, dynamic>{
+          'error': 'ERR_NETWORK: Syni service returned non-object JSON',
+        };
+      } catch (error) {
+        return <String, dynamic>{
+          'error': 'ERR_NETWORK: Syni service call failed: $error',
+        };
+      } finally {
+        if (input != null) malloc.free(input);
+        if (output != nullptr) ffi.coreFreeString(output);
+      }
+    });
+  }
+
   // ── Metrics ──────────────────────────────────────────────────────────
 
   bool recordMetric(Map<String, dynamic> event) {
@@ -2414,6 +2536,20 @@ class CoreRuntimeBridge {
     }
   }
 }
+
+enum _SyniFfiOperation {
+  chat,
+  listSessions,
+  getSession,
+  getSessionMessages,
+  closeSession,
+}
+
+const Map<String, dynamic> _syniUnsupportedEnvelope = {
+  'error':
+      'ERR_UNSUPPORTED: linked Synheart Core runtime does not expose the '
+      'Syni service API (requires runtime 0.21.0+)',
+};
 
 /// Result of a [CoreRuntimeBridge.labReenqueueSession] call. Mirrors
 /// the return codes from the underlying

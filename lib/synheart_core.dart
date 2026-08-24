@@ -152,6 +152,8 @@ export 'src/modules/breathing/breathing_guidance_copy.dart';
 // the orchestration types are re-exported from package:syni's agent layer
 // so app code gets the full surface via `package:synheart_core`.
 export 'src/modules/syni/syni_module.dart';
+export 'src/modules/syni/syni_service_client.dart';
+export 'src/modules/syni/syni_service_models.dart';
 export 'package:syni/agent.dart'
     show
         SyniPersona,
