@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-24
+
 ### Added
 
 - Device-signed, non-streaming Syni chat and session APIs under
@@ -704,7 +706,10 @@ breaking change to `processVendorEvent`.
   `synheart_behavior ^0.3.0`, `synheart_auth ^0.1.1`) instead of git
   refs.
 
-[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/synheart-ai/synheart-core-flutter/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.12.0
+[0.11.1]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.11.1
+[0.11.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.11.0
 [0.10.1]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.10.1
 [0.10.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.10.0
 [0.9.0]: https://github.com/synheart-ai/synheart-core-flutter/releases/tag/v0.9.0
