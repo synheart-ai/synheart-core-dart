@@ -191,6 +191,8 @@ class Synheart {
   PhoneModule? _phoneModule;
   BehaviorModule? _behaviorModule;
   DeviceAuthProvider? _deviceAuthProvider;
+  Future<void>? _deviceAuthInitInFlight;
+  bool _deviceAuthInitForcesRegistration = false;
 
   /// True when [sdkRegisterDevice] succeeded for this process (core-runtime auth path).
   static bool _deviceAuthViaCoreRuntime = false;
@@ -5325,6 +5327,39 @@ class Synheart {
   Future<void> _initDeviceAuth(
     SynheartConfig resolvedConfig, {
     bool forceRegistration = false,
+  }) async {
+    final current = _deviceAuthInitInFlight;
+    if (current != null) {
+      if (!forceRegistration || _deviceAuthInitForcesRegistration) {
+        return current;
+      }
+
+      // A repair must not race a normal registration that is already using
+      // the same native runtime handle. Wait for it, then force exactly one
+      // follow-up registration. Other force callers will join that attempt.
+      await current;
+      return _initDeviceAuth(resolvedConfig, forceRegistration: true);
+    }
+
+    _deviceAuthInitForcesRegistration = forceRegistration;
+    final attempt = _initDeviceAuthOnce(
+      resolvedConfig,
+      forceRegistration: forceRegistration,
+    );
+    _deviceAuthInitInFlight = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (identical(_deviceAuthInitInFlight, attempt)) {
+        _deviceAuthInitInFlight = null;
+        _deviceAuthInitForcesRegistration = false;
+      }
+    }
+  }
+
+  Future<void> _initDeviceAuthOnce(
+    SynheartConfig resolvedConfig, {
+    required bool forceRegistration,
   }) async {
     final dac = resolvedConfig.deviceAuthConfig!;
     SynheartLogger.log('[Synheart] Configuring device authentication..');
