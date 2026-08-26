@@ -1123,6 +1123,12 @@ Generate browsable API documentation from the source with:
 dart doc
 ```
 
+Potentially blocking Device Sync operations return `Future` values and must be
+awaited. Their native network/storage work runs on a background isolate and is
+serialized per runtime handle. `syncStatusSnapshot()` and
+`syncReadinessSnapshot()` remain synchronous because they only read local
+runtime state.
+
 ## Errors and diagnostics
 
 Configuration validation throws `SynheartError` with a stable `code`.

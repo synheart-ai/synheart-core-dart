@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — BREAKING
+
+- Potentially blocking Device Sync APIs now return
+  `Future<Map<String, dynamic>?>` and execute their native FFI work on a
+  tracked background isolate:
+  `syncCreateSpace`, `syncGeneratePairing`, `syncJoinSpace`,
+  `syncRecoverSpace`, `syncLeaveSpace`, `syncListDevices`,
+  `syncRevokeDevice`, `syncDeleteSpace`, and `syncClearLocalSpace`. Callers
+  must `await` these methods. Sync operations are serialized per runtime
+  handle so lifecycle mutations, roster reads, and `syncNow` cannot race.
+  Fast local status and readiness snapshots remain synchronous.
+
 ## [0.12.0] - 2026-08-24
 
 ### Added

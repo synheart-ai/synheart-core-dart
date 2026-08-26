@@ -695,26 +695,39 @@ class Synheart {
   /// Create a sync-space on this device and return
   /// `{sync_space_id, recovery_key}`. The recovery_key is the only
   /// way to rejoin if the device is lost — surface it to the user.
-  /// Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncCreateSpace({String? deviceName}) =>
-      _coreRuntime?.syncCreateSpace(deviceName: deviceName);
+  /// Runs off the UI isolate. Null when the runtime bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncCreateSpace({
+    String? deviceName,
+  }) async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncCreateSpace(deviceName: deviceName);
+  }
 
   /// Mint a short-lived pairing token for another device to join the
-  /// current sync-space. Returns `{token, expires_in}`. Null when
-  /// the runtime bridge or sync engine isn't ready.
-  static Map<String, dynamic>? syncGeneratePairing() =>
-      _coreRuntime?.syncGeneratePairing();
+  /// current sync-space. Returns `{token, expires_in}`. Runs off the UI
+  /// isolate. Null when the runtime bridge or sync engine isn't ready.
+  static Future<Map<String, dynamic>?> syncGeneratePairing() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncGeneratePairing();
+  }
 
   /// Join an existing sync-space using a token from
   /// [syncGeneratePairing]. Returns `{sync_space_id, status}` on
-  /// success. Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncJoinSpace({
+  /// success. Runs off the UI isolate. Null when the runtime bridge isn't
+  /// ready.
+  static Future<Map<String, dynamic>?> syncJoinSpace({
     required String pairingToken,
     String? deviceName,
-  }) => _coreRuntime?.syncJoinSpace(
-    pairingToken: pairingToken,
-    deviceName: deviceName,
-  );
+  }) async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncJoinSpace(
+      pairingToken: pairingToken,
+      deviceName: deviceName,
+    );
+  }
 
   /// Snapshot of the sync-engine state.
   static Map<String, dynamic>? syncStatusSnapshot() =>
@@ -764,41 +777,61 @@ class Synheart {
   /// Recover access to a sync-space on a fresh device using the
   /// recovery key issued at creation plus the target space id.
   /// Returns `{sync_space_id, owner_user_id, status}` on success.
-  /// Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncRecoverSpace({
+  /// Runs off the UI isolate. Null when the runtime bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncRecoverSpace({
     required String recoveryKey,
     required String spaceId,
-  }) => _coreRuntime?.syncRecoverSpace(
-    recoveryKey: recoveryKey,
-    spaceId: spaceId,
-  );
+  }) async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncRecoverSpace(recoveryKey: recoveryKey, spaceId: spaceId);
+  }
 
   /// Leave the current sync-space for this device only. Returns
-  /// `{ok: true}` on success. Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncLeaveSpace() =>
-      _coreRuntime?.syncLeaveSpace();
+  /// `{ok: true}` on success. Runs off the UI isolate. Null when the runtime
+  /// bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncLeaveSpace() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncLeaveSpace();
+  }
 
   /// List the devices paired into the current sync-space. Returns
-  /// `{devices: [...]}`. Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncListDevices() =>
-      _coreRuntime?.syncListDevices();
+  /// `{devices: [...]}`. Runs off the UI isolate. Null when the runtime bridge
+  /// isn't ready.
+  static Future<Map<String, dynamic>?> syncListDevices() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncListDevices();
+  }
 
   /// Revoke a specific device from the current sync-space by its
-  /// `device_id`. Returns `{ok: true}` on success. Null when the
-  /// runtime bridge isn't ready.
-  static Map<String, dynamic>? syncRevokeDevice({required String deviceId}) =>
-      _coreRuntime?.syncRevokeDevice(deviceId: deviceId);
+  /// `device_id`. Returns `{ok: true}` on success. Runs off the UI isolate.
+  /// Null when the runtime bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncRevokeDevice({
+    required String deviceId,
+  }) async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncRevokeDevice(deviceId: deviceId);
+  }
 
-  /// Delete the current sync-space entirely. Returns `{ok: true}` on
-  /// success. Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncDeleteSpace() =>
-      _coreRuntime?.syncDeleteSpace();
+  /// Delete the current sync-space entirely. Runs off the UI isolate. Returns
+  /// `{ok: true}` on success or null when the runtime bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncDeleteSpace() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncDeleteSpace();
+  }
 
   /// Clear only local sync-space state ("start over on this device") without
-  /// touching the server. Returns `{ok: true}` on success. Null when the
-  /// runtime bridge isn't ready.
-  static Map<String, dynamic>? syncClearLocalSpace() =>
-      _coreRuntime?.syncClearLocalSpace();
+  /// touching the server. Runs off the UI isolate. Returns `{ok: true}` on
+  /// success or null when the runtime bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncClearLocalSpace() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncClearLocalSpace();
+  }
 
   /// Encode every locally-cached baseline envelope into a
   /// passphrase-encrypted `.srm.synheart` blob the user can share
