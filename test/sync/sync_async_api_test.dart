@@ -25,4 +25,13 @@ void main() {
     expect(status, isNull);
     expect(readiness, isNull);
   });
+
+  test(
+    'v0.24 device identity APIs remain asynchronous and null-safe',
+    () async {
+      expect(await Synheart.ensureDeviceAuthRegisteredOrThrow(), isFalse);
+      expect(await Synheart.reattestDeviceAuth(), isFalse);
+      await expectLater(Synheart.logoutDeviceAuth(), completes);
+    },
+  );
 }

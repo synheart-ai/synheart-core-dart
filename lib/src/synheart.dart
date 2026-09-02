@@ -192,7 +192,6 @@ class Synheart {
   BehaviorModule? _behaviorModule;
   DeviceAuthProvider? _deviceAuthProvider;
   Future<void>? _deviceAuthInitInFlight;
-  bool _deviceAuthInitForcesRegistration = false;
 
   /// True when [sdkRegisterDevice] succeeded for this process (core-runtime auth path).
   static bool _deviceAuthViaCoreRuntime = false;
@@ -649,16 +648,34 @@ class Synheart {
 
   // --- Auth ---
 
-  /// Log out — revoke consent.
+  /// Log out of the installed Core device identity, then clear local SDK data
+  /// and revoke consent.
+  ///
+  /// Hosts must await this before deleting their own account credentials. Core
+  /// v0.24 uses the still-authenticated session for a best-effort remote space
+  /// leave, then removes the local device record and hardware-backed key.
   static Future<void> logout() async {
-    if (_coreRuntime != null) {
-      _coreRuntime!.wipeLocalData();
-    }
+    await logoutDeviceAuth();
+    _coreRuntime?.wipeLocalData();
     Baselines.reset();
     _baselineSnapshots.reset();
     try {
       await shared._consentModule?.revokeConsent();
     } catch (_) {}
+  }
+
+  /// Clear Core's installed device identity and Device Sync membership.
+  ///
+  /// This is idempotent. Older runtimes that do not export the v0.24 logout
+  /// symbol fall back to clearing the Dart request-signing provider; the
+  /// surrounding [logout] still performs the legacy local-data wipe.
+  static Future<void> logoutDeviceAuth() async {
+    final runtime = _coreRuntime;
+    if (runtime != null && runtime.sdkDeviceLogoutAvailable) {
+      await runtime.sdkLogout();
+    }
+    shared._deviceAuthProvider = null;
+    _deviceAuthViaCoreRuntime = false;
   }
 
   // --- Sync API ---
@@ -1114,26 +1131,8 @@ class Synheart {
   /// `false` if device auth is not configured or registration failed.
   /// No-ops if already registered in this process.
   static Future<bool> ensureDeviceAuthRegistered() async {
-    final cfg = shared._config;
-    if (cfg?.deviceAuthConfig == null) return false;
-    if (shared._deviceAuthProvider != null) {
-      // Provider wired — make sure the consent JWT is also ready so the
-      // ingest connector can actually flush. Cheap: ensureCloudConsentReady
-      // short-circuits when the runtime reports granted+fresh.
-      await _maybeEnsureCloudConsentReady();
-      return true;
-    }
     try {
-      await shared._initDeviceAuth(cfg!);
-      final registered = shared._deviceAuthProvider != null;
-      if (registered) {
-        // Registration without a signed consent token leaves the ingest
-        // connector stuck with "ERR_AUTH: ingest requires non-empty
-        // X-Consent-Token" on every tick. Chain the consent-token flow so
-        // callers only need one entry point.
-        await _maybeEnsureCloudConsentReady();
-      }
-      return registered;
+      return await ensureDeviceAuthRegisteredOrThrow();
     } catch (e) {
       SynheartLogger.log(
         '[Synheart] ensureDeviceAuthRegistered failed: $e',
@@ -1143,30 +1142,66 @@ class Synheart {
     }
   }
 
-  /// Explicitly re-register this device with the auth server.
-  ///
-  /// Unlike [ensureDeviceAuthRegistered], this bypasses the locally restored
-  /// `registered` state. It is intended as a user-initiated repair when the
-  /// local secure identity still exists but the server has lost or revoked its
-  /// device record (for example, a `401 device not registered` response).
-  /// Local health, baseline, consent, and sync-space data are not deleted.
-  static Future<bool> reregisterDeviceAuth() async {
+  /// Typed variant of [ensureDeviceAuthRegistered]. Native registration
+  /// failures (including `DEVICE_ACCOUNT_MISMATCH`) are allowed to propagate
+  /// as [SyncNativeException] so a host can route them correctly.
+  static Future<bool> ensureDeviceAuthRegisteredOrThrow() async {
     final cfg = shared._config;
     if (cfg?.deviceAuthConfig == null) return false;
-    try {
-      shared._deviceAuthProvider = null;
-      _deviceAuthViaCoreRuntime = false;
-      await shared._initDeviceAuth(cfg!, forceRegistration: true);
-      final registered = shared._deviceAuthProvider != null;
-      if (registered) await _maybeEnsureCloudConsentReady();
-      return registered;
-    } catch (e) {
-      SynheartLogger.log(
-        '[Synheart] reregisterDeviceAuth failed: $e',
-        error: e,
-      );
-      return false;
+    final status = coreDeviceAuthStatus();
+    final expectedSubject = subjectId ?? cfg!.subjectId;
+    if (shared._deviceAuthProvider != null &&
+        status?['status']?.toString() == 'registered' &&
+        _deviceAuthStatusMatchesSubject(status, expectedSubject)) {
+      // Provider wired — make sure the consent JWT is also ready so the
+      // ingest connector can actually flush. Cheap: ensureCloudConsentReady
+      // short-circuits when the runtime reports granted+fresh.
+      await _maybeEnsureCloudConsentReady();
+      return true;
     }
+    await shared._initDeviceAuth(cfg!);
+    final registered = shared._deviceAuthProvider != null;
+    if (registered) {
+      // Registration without a signed consent token leaves the ingest
+      // connector stuck with "ERR_AUTH: ingest requires non-empty
+      // X-Consent-Token" on every tick. Chain the consent-token flow so
+      // callers only need one entry point.
+      await _maybeEnsureCloudConsentReady();
+    }
+    return registered;
+  }
+
+  /// Refresh this device's server attestation without rotating its identity.
+  ///
+  /// Core v0.24 preserves the existing `device_id`, hardware-backed key, and
+  /// Device Sync membership. Native failures surface as [SyncNativeException]
+  /// so the host can distinguish expired credentials, revoked registration,
+  /// and account mismatch instead of treating them as a generic `false`.
+  static Future<bool> reattestDeviceAuth() async {
+    final cfg = shared._config;
+    if (cfg?.deviceAuthConfig == null) return false;
+    final runtime = _coreRuntime;
+    if (runtime == null || !runtime.sdkDeviceReattestAvailable) return false;
+
+    final result = await runtime.sdkReattestDevice();
+    final deviceId =
+        result?['device_id'] as String? ?? result?['deviceId'] as String?;
+    if (deviceId == null || deviceId.isEmpty) return false;
+
+    shared._deviceAuthProvider ??= DeviceAuthProvider(
+      coreRuntime: runtime,
+      baseUrl: cfg!.deviceAuthConfig!.authBaseUrl,
+    );
+    _deviceAuthViaCoreRuntime = true;
+    await _maybeEnsureCloudConsentReady();
+    return true;
+  }
+
+  /// Deprecated compatibility alias. Since Core v0.24, repair means
+  /// re-attesting the existing identity rather than registering a new one.
+  @Deprecated('Use reattestDeviceAuth; registration is first-run only.')
+  static Future<bool> reregisterDeviceAuth() {
+    return reattestDeviceAuth();
   }
 
   /// Best-effort consent-token issuance used to chain off device-auth
@@ -5324,43 +5359,24 @@ class Synheart {
   }
 
   /// Configure device authentication, register device, and fetch capabilities.
-  Future<void> _initDeviceAuth(
-    SynheartConfig resolvedConfig, {
-    bool forceRegistration = false,
-  }) async {
+  Future<void> _initDeviceAuth(SynheartConfig resolvedConfig) async {
     final current = _deviceAuthInitInFlight;
     if (current != null) {
-      if (!forceRegistration || _deviceAuthInitForcesRegistration) {
-        return current;
-      }
-
-      // A repair must not race a normal registration that is already using
-      // the same native runtime handle. Wait for it, then force exactly one
-      // follow-up registration. Other force callers will join that attempt.
-      await current;
-      return _initDeviceAuth(resolvedConfig, forceRegistration: true);
+      return current;
     }
 
-    _deviceAuthInitForcesRegistration = forceRegistration;
-    final attempt = _initDeviceAuthOnce(
-      resolvedConfig,
-      forceRegistration: forceRegistration,
-    );
+    final attempt = _initDeviceAuthOnce(resolvedConfig);
     _deviceAuthInitInFlight = attempt;
     try {
       await attempt;
     } finally {
       if (identical(_deviceAuthInitInFlight, attempt)) {
         _deviceAuthInitInFlight = null;
-        _deviceAuthInitForcesRegistration = false;
       }
     }
   }
 
-  Future<void> _initDeviceAuthOnce(
-    SynheartConfig resolvedConfig, {
-    required bool forceRegistration,
-  }) async {
+  Future<void> _initDeviceAuthOnce(SynheartConfig resolvedConfig) async {
     final dac = resolvedConfig.deviceAuthConfig!;
     SynheartLogger.log('[Synheart] Configuring device authentication..');
 
@@ -5401,7 +5417,9 @@ class Synheart {
       // registered — the keychain/state is the source of truth.
       final preSnap = runtime.sdkDeviceAuthStatus();
       final preStatus = preSnap?['status']?.toString();
-      if (preStatus == 'registered' && !forceRegistration) {
+      final expectedSubject = Synheart.subjectId ?? resolvedConfig.subjectId;
+      if (preStatus == 'registered' &&
+          _deviceAuthStatusMatchesSubject(preSnap, expectedSubject)) {
         final restoredId = preSnap?['device_id']?.toString();
         _deviceAuthViaCoreRuntime = true;
         final idPreview = (restoredId == null || restoredId.length <= 8)
@@ -5433,7 +5451,11 @@ class Synheart {
       }
     } catch (e) {
       SynheartLogger.log('[Synheart] Device registration failed: $e', error: e);
-      if (resolvedConfig.allowUnsignedCapabilities) {
+      // Native identity decisions are part of the public contract. Never hide
+      // account mismatch/revocation/etc. behind a dev capability fallback;
+      // the host must be able to route the typed code safely.
+      if (e is! SyncNativeException &&
+          resolvedConfig.allowUnsignedCapabilities) {
         SynheartLogger.log(
           '[Synheart] WARNING: Device registration failed, falling back to unsigned capabilities.',
         );
@@ -5467,6 +5489,21 @@ class Synheart {
       coreRuntime: runtime,
       baseUrl: dac.authBaseUrl,
     );
+  }
+
+  /// v0.24 status includes the restored identity's canonical subject. Compare
+  /// it with the canonical subject read back from Core after configuration,
+  /// not the raw client id in [SynheartConfig.subjectId]. Comparing canonical
+  /// `sub_<hash>` with that raw value made every restored identity look like a
+  /// different account and incorrectly invoked first-run registration.
+  ///
+  /// A missing subject keeps compatibility with older runtime snapshots.
+  static bool _deviceAuthStatusMatchesSubject(
+    Map<String, dynamic>? status,
+    String expectedSubject,
+  ) {
+    final actual = status?['subject_id']?.toString().trim();
+    return actual == null || actual.isEmpty || actual == expectedSubject;
   }
 
   /// Check whether the CapabilityModule allows a given feature.

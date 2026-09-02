@@ -689,10 +689,9 @@ class SynheartController extends ChangeNotifier {
     return ok;
   }
 
-  /// Re-attest from scratch, bypassing a locally restored `registered` state.
-  /// Use when the server has lost or revoked the device record.
-  Future<bool> reregisterDevice() async {
-    final ok = await Synheart.reregisterDeviceAuth();
+  /// Refresh the current identity's server attestation without rotating it.
+  Future<bool> reattestDevice() async {
+    final ok = await Synheart.reattestDeviceAuth();
     notifyListeners();
     return ok;
   }

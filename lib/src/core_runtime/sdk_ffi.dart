@@ -82,6 +82,10 @@ class SynheartSdkFfi {
   Pointer<Utf8> Function(Pointer<Void> handle, Pointer<Utf8> clientId)?
   registerDevice;
 
+  Pointer<Utf8> Function(Pointer<Void> handle)? reattestDevice;
+
+  Pointer<Utf8> Function(Pointer<Void> handle)? logout;
+
   Pointer<Utf8> Function(Pointer<Void> handle)? deviceAuthStatus;
 
   Pointer<Utf8> Function(
@@ -144,6 +148,22 @@ class SynheartSdkFfi {
             Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>),
             Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>)
           >('synheart_core_sdk_register_device');
+    } catch (_) {}
+
+    try {
+      o.reattestDevice = lib
+          .lookupFunction<
+            Pointer<Utf8> Function(Pointer<Void>),
+            Pointer<Utf8> Function(Pointer<Void>)
+          >('synheart_core_sdk_reattest_device');
+    } catch (_) {}
+
+    try {
+      o.logout = lib
+          .lookupFunction<
+            Pointer<Utf8> Function(Pointer<Void>),
+            Pointer<Utf8> Function(Pointer<Void>)
+          >('synheart_core_sdk_logout');
     } catch (_) {}
 
     try {

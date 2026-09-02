@@ -53,6 +53,9 @@ String? _readFfiStringAndFree(
 }
 
 enum _SyncFfiOperation {
+  registerDevice,
+  reattestDevice,
+  logoutDevice,
   syncNow,
   createSpace,
   generatePairing,
@@ -118,6 +121,16 @@ Map<String, dynamic>? _executeSyncFfiOperation({
   final handle = Pointer<Void>.fromAddress(handleAddr);
   try {
     final output = switch (operation) {
+      _SyncFfiOperation.registerDevice => _withWorkerCString(
+        firstArg,
+        (clientId) => ffi.sdkFfi.registerDevice == null
+            ? nullptr.cast<Utf8>()
+            : ffi.sdkFfi.registerDevice!(handle, clientId.cast()),
+      ),
+      _SyncFfiOperation.reattestDevice =>
+        ffi.sdkFfi.reattestDevice?.call(handle) ?? nullptr.cast<Utf8>(),
+      _SyncFfiOperation.logoutDevice =>
+        ffi.sdkFfi.logout?.call(handle) ?? nullptr.cast<Utf8>(),
       _SyncFfiOperation.syncNow => ffi.syncNow(handle),
       _SyncFfiOperation.createSpace => _withWorkerCString(
         firstArg,
@@ -265,9 +278,9 @@ class CoreRuntimeBridge {
   /// subject re-key tears Core down on auth changes.
   final Set<Future<Object?>> _inflightFfi = <Future<Object?>>{};
 
-  /// The native sync engine owns mutable space/device state. Keep every
-  /// background sync call ordered so a manual sync cannot overlap a roster or
-  /// lifecycle mutation on the same handle.
+  /// The native runtime owns mutable device identity and sync-space state.
+  /// Keep both families ordered so registration/reattest/logout cannot overlap
+  /// a roster, transfer, or lifecycle mutation on the same handle.
   final SerialOperationQueue _syncOperationQueue = SerialOperationQueue();
 
   /// Trampolines retired by [clearHsiCallback] / [clearStreamCallback] but not
@@ -677,6 +690,13 @@ class CoreRuntimeBridge {
   /// True when this native build exports the full `synheart_core_sdk_*` device-auth ABI.
   bool get sdkDeviceAuthAvailable => !_disposed && _ffi.sdkFfi.isAvailable;
 
+  /// Whether this runtime supports the v0.24 identity-preserving refresh verb.
+  bool get sdkDeviceReattestAvailable =>
+      !_disposed && _ffi.sdkFfi.reattestDevice != null;
+
+  /// Whether this runtime supports the v0.24 destructive identity logout verb.
+  bool get sdkDeviceLogoutAvailable => !_disposed && _ffi.sdkFfi.logout != null;
+
   /// Register host crypto callbacks (§2). Must be called before [sdkRegisterDevice] / proof APIs.
   ///
   /// [table] must point at a caller-owned [SynheartSdkCryptoCallbacks] populated with
@@ -725,29 +745,34 @@ class CoreRuntimeBridge {
 
   /// §3 — device registration (attestation). [clientId] is the app user id for this session.
   /// Runs on a background isolate so the blocking FFI call doesn't ANR the UI thread.
-  Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) async {
-    if (_disposed || _ffi.sdkFfi.registerDevice == null) return null;
-    final handleAddr = _handle.address;
-    // Decode on the background isolate; unwrap the envelope in this isolate so
-    // a [SyncNativeException] keeps its type (see [syncNow]).
-    final raw = await _runFfi(() {
-      final ffi = SynheartCoreFFI.load();
-      if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
-      final handle = Pointer<Void>.fromAddress(handleAddr);
-      final p = clientId.toNativeUtf8();
-      try {
-        final resPtr = ffi.sdkFfi.registerDevice!(handle, p.cast());
-        if (resPtr == nullptr) return null;
-        final str = resPtr.toDartString();
-        ffi.coreFreeString(resPtr);
-        return jsonDecode(str) as Map<String, dynamic>;
-      } catch (_) {
-        return null;
-      } finally {
-        malloc.free(p);
-      }
-    });
-    return unwrapSyncEnvelope(raw);
+  Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) {
+    if (_ffi.sdkFfi.registerDevice == null) return Future.value(null);
+    return _runBackgroundSyncEnvelope(
+      _SyncFfiOperation.registerDevice,
+      firstArg: clientId,
+      throwOnWorkerFailure: true,
+    );
+  }
+
+  /// Refresh the current device's attestation without changing its device ID.
+  /// Runs off the UI isolate because the native v0.24 call is blocking.
+  Future<Map<String, dynamic>?> sdkReattestDevice() {
+    if (_ffi.sdkFfi.reattestDevice == null) return Future.value(null);
+    return _runBackgroundSyncEnvelope(
+      _SyncFfiOperation.reattestDevice,
+      throwOnWorkerFailure: true,
+    );
+  }
+
+  /// End the installed device identity and clear its native sync membership.
+  /// The runtime defines logout as idempotent, but still returns an envelope so
+  /// the allocation can be released consistently. The call is blocking in C.
+  Future<Map<String, dynamic>?> sdkLogout() {
+    if (_ffi.sdkFfi.logout == null) return Future.value(null);
+    return _runBackgroundSyncEnvelope(
+      _SyncFfiOperation.logoutDevice,
+      throwOnWorkerFailure: true,
+    );
   }
 
   /// §3 / §5 — JSON snapshot from `synheart_core_sdk_device_auth_status`.
@@ -1734,6 +1759,7 @@ class CoreRuntimeBridge {
     _SyncFfiOperation operation, {
     String firstArg = '',
     String secondArg = '',
+    bool throwOnWorkerFailure = false,
   }) {
     return _syncOperationQueue.run(() async {
       if (_disposed) return null;
@@ -1765,6 +1791,23 @@ class CoreRuntimeBridge {
           'message=${raw?['error_message']}',
           name: 'synheart.sync.ffi',
         );
+        if (throwOnWorkerFailure) {
+          throw SyncNativeException(
+            SyncNativeError(
+              code: 'SDK_FFI_WORKER_FAILURE',
+              message: 'The native Device Sync worker could not run.',
+              reason: 'misconfigured',
+              detail: <String, dynamic>{
+                'operation': operation.name,
+                'worker_failure': workerFailure,
+                if (raw?['error_type'] != null)
+                  'error_type': raw?['error_type'],
+                if (raw?['error_message'] != null)
+                  'error_message': raw?['error_message'],
+              },
+            ),
+          );
+        }
         return null;
       }
       return unwrapSyncEnvelope(raw);
