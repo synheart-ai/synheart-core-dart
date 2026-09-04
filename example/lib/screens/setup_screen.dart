@@ -200,7 +200,7 @@ class _SetupScreenState extends State<SetupScreen> {
                       child: const Text('Register now'),
                     ),
                     OutlinedButton(
-                      onPressed: c.isInitialized ? c.reregisterDevice : null,
+                      onPressed: c.isInitialized ? c.reattestDevice : null,
                       child: const Text('Re-attest'),
                     ),
                   ],

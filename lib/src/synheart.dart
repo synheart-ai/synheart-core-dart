@@ -191,6 +191,7 @@ class Synheart {
   PhoneModule? _phoneModule;
   BehaviorModule? _behaviorModule;
   DeviceAuthProvider? _deviceAuthProvider;
+  Future<void>? _deviceAuthInitInFlight;
 
   /// True when [sdkRegisterDevice] succeeded for this process (core-runtime auth path).
   static bool _deviceAuthViaCoreRuntime = false;
@@ -647,16 +648,34 @@ class Synheart {
 
   // --- Auth ---
 
-  /// Log out — revoke consent.
+  /// Log out of the installed Core device identity, then clear local SDK data
+  /// and revoke consent.
+  ///
+  /// Hosts must await this before deleting their own account credentials. Core
+  /// v0.24 uses the still-authenticated session for a best-effort remote space
+  /// leave, then removes the local device record and hardware-backed key.
   static Future<void> logout() async {
-    if (_coreRuntime != null) {
-      _coreRuntime!.wipeLocalData();
-    }
+    await logoutDeviceAuth();
+    _coreRuntime?.wipeLocalData();
     Baselines.reset();
     _baselineSnapshots.reset();
     try {
       await shared._consentModule?.revokeConsent();
     } catch (_) {}
+  }
+
+  /// Clear Core's installed device identity and Device Sync membership.
+  ///
+  /// This is idempotent. Older runtimes that do not export the v0.24 logout
+  /// symbol fall back to clearing the Dart request-signing provider; the
+  /// surrounding [logout] still performs the legacy local-data wipe.
+  static Future<void> logoutDeviceAuth() async {
+    final runtime = _coreRuntime;
+    if (runtime != null && runtime.sdkDeviceLogoutAvailable) {
+      await runtime.sdkLogout();
+    }
+    shared._deviceAuthProvider = null;
+    _deviceAuthViaCoreRuntime = false;
   }
 
   // --- Sync API ---
@@ -695,26 +714,39 @@ class Synheart {
   /// Create a sync-space on this device and return
   /// `{sync_space_id, recovery_key}`. The recovery_key is the only
   /// way to rejoin if the device is lost — surface it to the user.
-  /// Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncCreateSpace({String? deviceName}) =>
-      _coreRuntime?.syncCreateSpace(deviceName: deviceName);
+  /// Runs off the UI isolate. Null when the runtime bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncCreateSpace({
+    String? deviceName,
+  }) async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncCreateSpace(deviceName: deviceName);
+  }
 
   /// Mint a short-lived pairing token for another device to join the
-  /// current sync-space. Returns `{token, expires_in}`. Null when
-  /// the runtime bridge or sync engine isn't ready.
-  static Map<String, dynamic>? syncGeneratePairing() =>
-      _coreRuntime?.syncGeneratePairing();
+  /// current sync-space. Returns `{token, expires_in}`. Runs off the UI
+  /// isolate. Null when the runtime bridge or sync engine isn't ready.
+  static Future<Map<String, dynamic>?> syncGeneratePairing() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncGeneratePairing();
+  }
 
   /// Join an existing sync-space using a token from
   /// [syncGeneratePairing]. Returns `{sync_space_id, status}` on
-  /// success. Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncJoinSpace({
+  /// success. Runs off the UI isolate. Null when the runtime bridge isn't
+  /// ready.
+  static Future<Map<String, dynamic>?> syncJoinSpace({
     required String pairingToken,
     String? deviceName,
-  }) => _coreRuntime?.syncJoinSpace(
-    pairingToken: pairingToken,
-    deviceName: deviceName,
-  );
+  }) async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncJoinSpace(
+      pairingToken: pairingToken,
+      deviceName: deviceName,
+    );
+  }
 
   /// Snapshot of the sync-engine state.
   static Map<String, dynamic>? syncStatusSnapshot() =>
@@ -764,41 +796,61 @@ class Synheart {
   /// Recover access to a sync-space on a fresh device using the
   /// recovery key issued at creation plus the target space id.
   /// Returns `{sync_space_id, owner_user_id, status}` on success.
-  /// Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncRecoverSpace({
+  /// Runs off the UI isolate. Null when the runtime bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncRecoverSpace({
     required String recoveryKey,
     required String spaceId,
-  }) => _coreRuntime?.syncRecoverSpace(
-    recoveryKey: recoveryKey,
-    spaceId: spaceId,
-  );
+  }) async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncRecoverSpace(recoveryKey: recoveryKey, spaceId: spaceId);
+  }
 
   /// Leave the current sync-space for this device only. Returns
-  /// `{ok: true}` on success. Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncLeaveSpace() =>
-      _coreRuntime?.syncLeaveSpace();
+  /// `{ok: true}` on success. Runs off the UI isolate. Null when the runtime
+  /// bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncLeaveSpace() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncLeaveSpace();
+  }
 
   /// List the devices paired into the current sync-space. Returns
-  /// `{devices: [...]}`. Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncListDevices() =>
-      _coreRuntime?.syncListDevices();
+  /// `{devices: [...]}`. Runs off the UI isolate. Null when the runtime bridge
+  /// isn't ready.
+  static Future<Map<String, dynamic>?> syncListDevices() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncListDevices();
+  }
 
   /// Revoke a specific device from the current sync-space by its
-  /// `device_id`. Returns `{ok: true}` on success. Null when the
-  /// runtime bridge isn't ready.
-  static Map<String, dynamic>? syncRevokeDevice({required String deviceId}) =>
-      _coreRuntime?.syncRevokeDevice(deviceId: deviceId);
+  /// `device_id`. Returns `{ok: true}` on success. Runs off the UI isolate.
+  /// Null when the runtime bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncRevokeDevice({
+    required String deviceId,
+  }) async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncRevokeDevice(deviceId: deviceId);
+  }
 
-  /// Delete the current sync-space entirely. Returns `{ok: true}` on
-  /// success. Null when the runtime bridge isn't ready.
-  static Map<String, dynamic>? syncDeleteSpace() =>
-      _coreRuntime?.syncDeleteSpace();
+  /// Delete the current sync-space entirely. Runs off the UI isolate. Returns
+  /// `{ok: true}` on success or null when the runtime bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncDeleteSpace() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncDeleteSpace();
+  }
 
   /// Clear only local sync-space state ("start over on this device") without
-  /// touching the server. Returns `{ok: true}` on success. Null when the
-  /// runtime bridge isn't ready.
-  static Map<String, dynamic>? syncClearLocalSpace() =>
-      _coreRuntime?.syncClearLocalSpace();
+  /// touching the server. Runs off the UI isolate. Returns `{ok: true}` on
+  /// success or null when the runtime bridge isn't ready.
+  static Future<Map<String, dynamic>?> syncClearLocalSpace() async {
+    final runtime = _coreRuntime;
+    if (runtime == null) return null;
+    return runtime.syncClearLocalSpace();
+  }
 
   /// Encode every locally-cached baseline envelope into a
   /// passphrase-encrypted `.srm.synheart` blob the user can share
@@ -1079,26 +1131,8 @@ class Synheart {
   /// `false` if device auth is not configured or registration failed.
   /// No-ops if already registered in this process.
   static Future<bool> ensureDeviceAuthRegistered() async {
-    final cfg = shared._config;
-    if (cfg?.deviceAuthConfig == null) return false;
-    if (shared._deviceAuthProvider != null) {
-      // Provider wired — make sure the consent JWT is also ready so the
-      // ingest connector can actually flush. Cheap: ensureCloudConsentReady
-      // short-circuits when the runtime reports granted+fresh.
-      await _maybeEnsureCloudConsentReady();
-      return true;
-    }
     try {
-      await shared._initDeviceAuth(cfg!);
-      final registered = shared._deviceAuthProvider != null;
-      if (registered) {
-        // Registration without a signed consent token leaves the ingest
-        // connector stuck with "ERR_AUTH: ingest requires non-empty
-        // X-Consent-Token" on every tick. Chain the consent-token flow so
-        // callers only need one entry point.
-        await _maybeEnsureCloudConsentReady();
-      }
-      return registered;
+      return await ensureDeviceAuthRegisteredOrThrow();
     } catch (e) {
       SynheartLogger.log(
         '[Synheart] ensureDeviceAuthRegistered failed: $e',
@@ -1108,30 +1142,66 @@ class Synheart {
     }
   }
 
-  /// Explicitly re-register this device with the auth server.
-  ///
-  /// Unlike [ensureDeviceAuthRegistered], this bypasses the locally restored
-  /// `registered` state. It is intended as a user-initiated repair when the
-  /// local secure identity still exists but the server has lost or revoked its
-  /// device record (for example, a `401 device not registered` response).
-  /// Local health, baseline, consent, and sync-space data are not deleted.
-  static Future<bool> reregisterDeviceAuth() async {
+  /// Typed variant of [ensureDeviceAuthRegistered]. Native registration
+  /// failures (including `DEVICE_ACCOUNT_MISMATCH`) are allowed to propagate
+  /// as [SyncNativeException] so a host can route them correctly.
+  static Future<bool> ensureDeviceAuthRegisteredOrThrow() async {
     final cfg = shared._config;
     if (cfg?.deviceAuthConfig == null) return false;
-    try {
-      shared._deviceAuthProvider = null;
-      _deviceAuthViaCoreRuntime = false;
-      await shared._initDeviceAuth(cfg!, forceRegistration: true);
-      final registered = shared._deviceAuthProvider != null;
-      if (registered) await _maybeEnsureCloudConsentReady();
-      return registered;
-    } catch (e) {
-      SynheartLogger.log(
-        '[Synheart] reregisterDeviceAuth failed: $e',
-        error: e,
-      );
-      return false;
+    final status = coreDeviceAuthStatus();
+    final expectedSubject = subjectId ?? cfg!.subjectId;
+    if (shared._deviceAuthProvider != null &&
+        status?['status']?.toString() == 'registered' &&
+        _deviceAuthStatusMatchesSubject(status, expectedSubject)) {
+      // Provider wired — make sure the consent JWT is also ready so the
+      // ingest connector can actually flush. Cheap: ensureCloudConsentReady
+      // short-circuits when the runtime reports granted+fresh.
+      await _maybeEnsureCloudConsentReady();
+      return true;
     }
+    await shared._initDeviceAuth(cfg!);
+    final registered = shared._deviceAuthProvider != null;
+    if (registered) {
+      // Registration without a signed consent token leaves the ingest
+      // connector stuck with "ERR_AUTH: ingest requires non-empty
+      // X-Consent-Token" on every tick. Chain the consent-token flow so
+      // callers only need one entry point.
+      await _maybeEnsureCloudConsentReady();
+    }
+    return registered;
+  }
+
+  /// Refresh this device's server attestation without rotating its identity.
+  ///
+  /// Core v0.24 preserves the existing `device_id`, hardware-backed key, and
+  /// Device Sync membership. Native failures surface as [SyncNativeException]
+  /// so the host can distinguish expired credentials, revoked registration,
+  /// and account mismatch instead of treating them as a generic `false`.
+  static Future<bool> reattestDeviceAuth() async {
+    final cfg = shared._config;
+    if (cfg?.deviceAuthConfig == null) return false;
+    final runtime = _coreRuntime;
+    if (runtime == null || !runtime.sdkDeviceReattestAvailable) return false;
+
+    final result = await runtime.sdkReattestDevice();
+    final deviceId =
+        result?['device_id'] as String? ?? result?['deviceId'] as String?;
+    if (deviceId == null || deviceId.isEmpty) return false;
+
+    shared._deviceAuthProvider ??= DeviceAuthProvider(
+      coreRuntime: runtime,
+      baseUrl: cfg!.deviceAuthConfig!.authBaseUrl,
+    );
+    _deviceAuthViaCoreRuntime = true;
+    await _maybeEnsureCloudConsentReady();
+    return true;
+  }
+
+  /// Deprecated compatibility alias. Since Core v0.24, repair means
+  /// re-attesting the existing identity rather than registering a new one.
+  @Deprecated('Use reattestDeviceAuth; registration is first-run only.')
+  static Future<bool> reregisterDeviceAuth() {
+    return reattestDeviceAuth();
   }
 
   /// Best-effort consent-token issuance used to chain off device-auth
@@ -5289,10 +5359,24 @@ class Synheart {
   }
 
   /// Configure device authentication, register device, and fetch capabilities.
-  Future<void> _initDeviceAuth(
-    SynheartConfig resolvedConfig, {
-    bool forceRegistration = false,
-  }) async {
+  Future<void> _initDeviceAuth(SynheartConfig resolvedConfig) async {
+    final current = _deviceAuthInitInFlight;
+    if (current != null) {
+      return current;
+    }
+
+    final attempt = _initDeviceAuthOnce(resolvedConfig);
+    _deviceAuthInitInFlight = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (identical(_deviceAuthInitInFlight, attempt)) {
+        _deviceAuthInitInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _initDeviceAuthOnce(SynheartConfig resolvedConfig) async {
     final dac = resolvedConfig.deviceAuthConfig!;
     SynheartLogger.log('[Synheart] Configuring device authentication..');
 
@@ -5333,7 +5417,9 @@ class Synheart {
       // registered — the keychain/state is the source of truth.
       final preSnap = runtime.sdkDeviceAuthStatus();
       final preStatus = preSnap?['status']?.toString();
-      if (preStatus == 'registered' && !forceRegistration) {
+      final expectedSubject = Synheart.subjectId ?? resolvedConfig.subjectId;
+      if (preStatus == 'registered' &&
+          _deviceAuthStatusMatchesSubject(preSnap, expectedSubject)) {
         final restoredId = preSnap?['device_id']?.toString();
         _deviceAuthViaCoreRuntime = true;
         final idPreview = (restoredId == null || restoredId.length <= 8)
@@ -5365,7 +5451,11 @@ class Synheart {
       }
     } catch (e) {
       SynheartLogger.log('[Synheart] Device registration failed: $e', error: e);
-      if (resolvedConfig.allowUnsignedCapabilities) {
+      // Native identity decisions are part of the public contract. Never hide
+      // account mismatch/revocation/etc. behind a dev capability fallback;
+      // the host must be able to route the typed code safely.
+      if (e is! SyncNativeException &&
+          resolvedConfig.allowUnsignedCapabilities) {
         SynheartLogger.log(
           '[Synheart] WARNING: Device registration failed, falling back to unsigned capabilities.',
         );
@@ -5399,6 +5489,21 @@ class Synheart {
       coreRuntime: runtime,
       baseUrl: dac.authBaseUrl,
     );
+  }
+
+  /// v0.24 status includes the restored identity's canonical subject. Compare
+  /// it with the canonical subject read back from Core after configuration,
+  /// not the raw client id in [SynheartConfig.subjectId]. Comparing canonical
+  /// `sub_<hash>` with that raw value made every restored identity look like a
+  /// different account and incorrectly invoked first-run registration.
+  ///
+  /// A missing subject keeps compatibility with older runtime snapshots.
+  static bool _deviceAuthStatusMatchesSubject(
+    Map<String, dynamic>? status,
+    String expectedSubject,
+  ) {
+    final actual = status?['subject_id']?.toString().trim();
+    return actual == null || actual.isEmpty || actual == expectedSubject;
   }
 
   /// Check whether the CapabilityModule allows a given feature.

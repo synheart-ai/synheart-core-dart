@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart';
 
 import '../config/synheart_errors.dart';
 import '../core/logger.dart';
+import '../core/serial_operation_queue.dart';
 
 import '../models/sleep_score.dart';
 import 'ffi_bindings.dart';
@@ -48,6 +49,152 @@ String? _readFfiStringAndFree(
     return utf8.decode(raw.asTypedList(len), allowMalformed: true);
   } finally {
     freeFn(ptr);
+  }
+}
+
+enum _SyncFfiOperation {
+  registerDevice,
+  reattestDevice,
+  logoutDevice,
+  syncNow,
+  createSpace,
+  generatePairing,
+  joinSpace,
+  recoverSpace,
+  leaveSpace,
+  listDevices,
+  revokeDevice,
+  deleteSpace,
+  clearLocalSpace,
+}
+
+const _syncFfiWorkerFailureKey = '_synheart_sync_ffi_worker_failure';
+
+/// Sendable entrypoint for one sync operation.
+///
+/// Passing a closure created inside [CoreRuntimeBridge] to [Isolate.run]
+/// over-captures `this` on the Dart VM. That pulls the bridge's
+/// [DynamicLibrary] into the isolate message and fails before the worker can
+/// start. A bound tear-off of this value object carries only primitives and
+/// the enum, so the native library is resolved inside the worker instead.
+final class _SyncFfiInvocation {
+  const _SyncFfiInvocation({
+    required this.handleAddr,
+    required this.operation,
+    required this.firstArg,
+    required this.secondArg,
+  });
+
+  final int handleAddr;
+  final _SyncFfiOperation operation;
+  final String firstArg;
+  final String secondArg;
+
+  Map<String, dynamic>? call() => _executeSyncFfiOperation(
+    handleAddr: handleAddr,
+    operation: operation,
+    firstArg: firstArg,
+    secondArg: secondArg,
+  );
+}
+
+/// Execute one sync ABI call entirely inside the worker isolate.
+///
+/// Only sendable values cross the isolate boundary: a handle address, an enum,
+/// and strings. Keeping the bridge and its FFI wrapper out of the callback
+/// avoids accidental closure over-capture of native-backed Dart objects.
+Map<String, dynamic>? _executeSyncFfiOperation({
+  required int handleAddr,
+  required _SyncFfiOperation operation,
+  String firstArg = '',
+  String secondArg = '',
+}) {
+  final ffi = SynheartCoreFFI.load();
+  if (ffi == null) {
+    SynheartLogger.log(
+      '[Synheart Sync FFI] Worker could not load the native runtime for '
+      '${operation.name}.',
+      name: 'synheart.sync.ffi',
+    );
+    return <String, dynamic>{_syncFfiWorkerFailureKey: 'runtime_load_failed'};
+  }
+  final handle = Pointer<Void>.fromAddress(handleAddr);
+  try {
+    final output = switch (operation) {
+      _SyncFfiOperation.registerDevice => _withWorkerCString(
+        firstArg,
+        (clientId) => ffi.sdkFfi.registerDevice == null
+            ? nullptr.cast<Utf8>()
+            : ffi.sdkFfi.registerDevice!(handle, clientId.cast()),
+      ),
+      _SyncFfiOperation.reattestDevice =>
+        ffi.sdkFfi.reattestDevice?.call(handle) ?? nullptr.cast<Utf8>(),
+      _SyncFfiOperation.logoutDevice =>
+        ffi.sdkFfi.logout?.call(handle) ?? nullptr.cast<Utf8>(),
+      _SyncFfiOperation.syncNow => ffi.syncNow(handle),
+      _SyncFfiOperation.createSpace => _withWorkerCString(
+        firstArg,
+        (name) => ffi.syncCreateSpace(handle, name.cast()),
+      ),
+      _SyncFfiOperation.generatePairing => ffi.syncGeneratePairing(handle),
+      _SyncFfiOperation.joinSpace => _withWorkerCString(
+        firstArg,
+        (token) => _withWorkerCString(
+          secondArg,
+          (name) => ffi.syncJoinSpace(handle, token.cast(), name.cast()),
+        ),
+      ),
+      _SyncFfiOperation.recoverSpace => _withWorkerCString(
+        firstArg,
+        (key) => _withWorkerCString(
+          secondArg,
+          (spaceId) => ffi.syncRecoverSpace(handle, key.cast(), spaceId.cast()),
+        ),
+      ),
+      _SyncFfiOperation.leaveSpace => ffi.syncLeaveSpace(handle),
+      _SyncFfiOperation.listDevices => ffi.syncListDevices(handle),
+      _SyncFfiOperation.revokeDevice => _withWorkerCString(
+        firstArg,
+        (deviceId) => ffi.syncRevokeDevice(handle, deviceId.cast()),
+      ),
+      _SyncFfiOperation.deleteSpace => ffi.syncDeleteSpace(handle),
+      _SyncFfiOperation.clearLocalSpace => ffi.syncClearLocalSpace(handle),
+    };
+    if (output == nullptr) {
+      SynheartLogger.log(
+        '[Synheart Sync FFI] Native call returned a null pointer for '
+        '${operation.name}.',
+        name: 'synheart.sync.ffi',
+      );
+      return <String, dynamic>{_syncFfiWorkerFailureKey: 'native_null_pointer'};
+    }
+    final json = _readFfiStringAndFree(output, ffi.coreFreeString);
+    if (json == null) return null;
+    return jsonDecode(json) as Map<String, dynamic>;
+  } catch (error, stackTrace) {
+    SynheartLogger.log(
+      '[Synheart Sync FFI] Worker call failed for ${operation.name}.',
+      name: 'synheart.sync.ffi',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    return <String, dynamic>{
+      _syncFfiWorkerFailureKey: 'exception',
+      'error_type': error.runtimeType.toString(),
+      'error_message': error.toString(),
+    };
+  }
+}
+
+Pointer<Utf8> _withWorkerCString(
+  String value,
+  Pointer<Utf8> Function(Pointer<Utf8> value) call,
+) {
+  final pointer = value.toNativeUtf8();
+  try {
+    return call(pointer);
+  } finally {
+    malloc.free(pointer);
   }
 }
 
@@ -130,6 +277,11 @@ class CoreRuntimeBridge {
   /// dereferences a freed pointer (use-after-free). Reachable now that the
   /// subject re-key tears Core down on auth changes.
   final Set<Future<Object?>> _inflightFfi = <Future<Object?>>{};
+
+  /// The native runtime owns mutable device identity and sync-space state.
+  /// Keep both families ordered so registration/reattest/logout cannot overlap
+  /// a roster, transfer, or lifecycle mutation on the same handle.
+  final SerialOperationQueue _syncOperationQueue = SerialOperationQueue();
 
   /// Trampolines retired by [clearHsiCallback] / [clearStreamCallback] but not
   /// yet closed.
@@ -538,6 +690,13 @@ class CoreRuntimeBridge {
   /// True when this native build exports the full `synheart_core_sdk_*` device-auth ABI.
   bool get sdkDeviceAuthAvailable => !_disposed && _ffi.sdkFfi.isAvailable;
 
+  /// Whether this runtime supports the v0.24 identity-preserving refresh verb.
+  bool get sdkDeviceReattestAvailable =>
+      !_disposed && _ffi.sdkFfi.reattestDevice != null;
+
+  /// Whether this runtime supports the v0.24 destructive identity logout verb.
+  bool get sdkDeviceLogoutAvailable => !_disposed && _ffi.sdkFfi.logout != null;
+
   /// Register host crypto callbacks (§2). Must be called before [sdkRegisterDevice] / proof APIs.
   ///
   /// [table] must point at a caller-owned [SynheartSdkCryptoCallbacks] populated with
@@ -586,29 +745,34 @@ class CoreRuntimeBridge {
 
   /// §3 — device registration (attestation). [clientId] is the app user id for this session.
   /// Runs on a background isolate so the blocking FFI call doesn't ANR the UI thread.
-  Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) async {
-    if (_disposed || _ffi.sdkFfi.registerDevice == null) return null;
-    final handleAddr = _handle.address;
-    // Decode on the background isolate; unwrap the envelope in this isolate so
-    // a [SyncNativeException] keeps its type (see [syncNow]).
-    final raw = await _runFfi(() {
-      final ffi = SynheartCoreFFI.load();
-      if (ffi == null || ffi.sdkFfi.registerDevice == null) return null;
-      final handle = Pointer<Void>.fromAddress(handleAddr);
-      final p = clientId.toNativeUtf8();
-      try {
-        final resPtr = ffi.sdkFfi.registerDevice!(handle, p.cast());
-        if (resPtr == nullptr) return null;
-        final str = resPtr.toDartString();
-        ffi.coreFreeString(resPtr);
-        return jsonDecode(str) as Map<String, dynamic>;
-      } catch (_) {
-        return null;
-      } finally {
-        malloc.free(p);
-      }
-    });
-    return unwrapSyncEnvelope(raw);
+  Future<Map<String, dynamic>?> sdkRegisterDevice(String clientId) {
+    if (_ffi.sdkFfi.registerDevice == null) return Future.value(null);
+    return _runBackgroundSyncEnvelope(
+      _SyncFfiOperation.registerDevice,
+      firstArg: clientId,
+      throwOnWorkerFailure: true,
+    );
+  }
+
+  /// Refresh the current device's attestation without changing its device ID.
+  /// Runs off the UI isolate because the native v0.24 call is blocking.
+  Future<Map<String, dynamic>?> sdkReattestDevice() {
+    if (_ffi.sdkFfi.reattestDevice == null) return Future.value(null);
+    return _runBackgroundSyncEnvelope(
+      _SyncFfiOperation.reattestDevice,
+      throwOnWorkerFailure: true,
+    );
+  }
+
+  /// End the installed device identity and clear its native sync membership.
+  /// The runtime defines logout as idempotent, but still returns an envelope so
+  /// the allocation can be released consistently. The call is blocking in C.
+  Future<Map<String, dynamic>?> sdkLogout() {
+    if (_ffi.sdkFfi.logout == null) return Future.value(null);
+    return _runBackgroundSyncEnvelope(
+      _SyncFfiOperation.logoutDevice,
+      throwOnWorkerFailure: true,
+    );
   }
 
   /// §3 / §5 — JSON snapshot from `synheart_core_sdk_device_auth_status`.
@@ -1585,6 +1749,71 @@ class CoreRuntimeBridge {
   void setSyncEnabled(bool enabled) =>
       _ffi.setSyncEnabled(_handle, enabled ? 1 : 0);
 
+  /// Run one envelope-returning sync FFI call away from the UI isolate.
+  ///
+  /// The raw envelope is decoded in the worker isolate, then unwrapped here so
+  /// [SyncNativeException] retains its concrete type. All calls share
+  /// [_syncOperationQueue] because the native sync engine is stateful and a
+  /// roster read must not race a sync or space mutation on the same handle.
+  Future<Map<String, dynamic>?> _runBackgroundSyncEnvelope(
+    _SyncFfiOperation operation, {
+    String firstArg = '',
+    String secondArg = '',
+    bool throwOnWorkerFailure = false,
+  }) {
+    return _syncOperationQueue.run(() async {
+      if (_disposed) return null;
+      final handleAddr = _handle.address;
+      final invocation = _SyncFfiInvocation(
+        handleAddr: handleAddr,
+        operation: operation,
+        firstArg: firstArg,
+        secondArg: secondArg,
+      );
+      final Map<String, dynamic>? raw;
+      try {
+        raw = await _runFfi(invocation.call);
+      } catch (error, stackTrace) {
+        SynheartLogger.log(
+          '[Synheart Sync FFI] Could not start/receive worker for '
+          '${operation.name}.',
+          name: 'synheart.sync.ffi',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        rethrow;
+      }
+      final workerFailure = raw?[_syncFfiWorkerFailureKey];
+      if (workerFailure != null) {
+        SynheartLogger.log(
+          '[Synheart Sync FFI] ${operation.name} failed in worker: '
+          '$workerFailure; type=${raw?['error_type']}; '
+          'message=${raw?['error_message']}',
+          name: 'synheart.sync.ffi',
+        );
+        if (throwOnWorkerFailure) {
+          throw SyncNativeException(
+            SyncNativeError(
+              code: 'SDK_FFI_WORKER_FAILURE',
+              message: 'The native Device Sync worker could not run.',
+              reason: 'misconfigured',
+              detail: <String, dynamic>{
+                'operation': operation.name,
+                'worker_failure': workerFailure,
+                if (raw?['error_type'] != null)
+                  'error_type': raw?['error_type'],
+                if (raw?['error_message'] != null)
+                  'error_message': raw?['error_message'],
+              },
+            ),
+          );
+        }
+        return null;
+      }
+      return unwrapSyncEnvelope(raw);
+    });
+  }
+
   // ── Ambient capture ─────────────────────────────────────────────────
 
   /// Toggle the runtime's out-of-session HSI emission gate. When off
@@ -1607,64 +1836,40 @@ class CoreRuntimeBridge {
   /// froze the main thread until the request completed/timed out (a
   /// user-triggered ANR on the manual-sync path, and a stall on the periodic
   /// path). Returns null when the bridge is disposed or the engine isn't wired.
-  Future<Map<String, dynamic>?> syncNow() async {
-    if (_disposed) return null;
-    final handleAddr = _handle.address;
-    // Decode on the background isolate but DON'T unwrap there — a
-    // [SyncNativeException] thrown across the `Isolate.run` boundary would be
-    // rethrown as a generic error and lose its type. Unwrap in this isolate.
-    final raw = await _runFfi(() {
-      final ffi = SynheartCoreFFI.load();
-      if (ffi == null) return null;
-      final handle = Pointer<Void>.fromAddress(handleAddr);
-      try {
-        final ptr = ffi.syncNow(handle);
-        if (ptr == nullptr) return null;
-        final raw = ptr.toDartString();
-        ffi.coreFreeString(ptr);
-        return jsonDecode(raw) as Map<String, dynamic>;
-      } catch (_) {
-        return null;
-      }
-    });
-    return unwrapSyncEnvelope(raw);
-  }
+  Future<Map<String, dynamic>?> syncNow() =>
+      _runBackgroundSyncEnvelope(_SyncFfiOperation.syncNow);
 
   /// Create a new sync-space on the cloud and become its first
   /// device. Returns `{sync_space_id, recovery_key}` — the recovery
   /// key is the SRK fragment the user must store; without it a lost
   /// device cannot rejoin. Returns null when the engine isn't wired.
-  Map<String, dynamic>? syncCreateSpace({String? deviceName}) {
-    final name = deviceName ?? '';
-    return _withCString(name, (p) {
-      return _callSyncEnvelope(() => _ffi.syncCreateSpace(_handle, p.cast()));
-    });
+  Future<Map<String, dynamic>?> syncCreateSpace({String? deviceName}) {
+    return _runBackgroundSyncEnvelope(
+      _SyncFfiOperation.createSpace,
+      firstArg: deviceName ?? '',
+    );
   }
 
   /// Generate a short-lived pairing token on the current sync-space.
   /// Returns `{token, expires_in}` — show the token to the user so a
   /// second device can call [syncJoinSpace] with it.
-  Map<String, dynamic>? syncGeneratePairing() {
-    return _callSyncEnvelope(() => _ffi.syncGeneratePairing(_handle));
-  }
+  Future<Map<String, dynamic>?> syncGeneratePairing() =>
+      _runBackgroundSyncEnvelope(_SyncFfiOperation.generatePairing);
 
   /// Join an existing sync-space using a pairing token from
   /// [syncGeneratePairing]. Returns `{sync_space_id, status}` on
   /// success. The new device becomes the second member of the space
   /// and the next [syncNow] will pull every artifact the originator
   /// has pushed.
-  Map<String, dynamic>? syncJoinSpace({
+  Future<Map<String, dynamic>?> syncJoinSpace({
     required String pairingToken,
     String? deviceName,
   }) {
-    final name = deviceName ?? '';
-    return _withCString(pairingToken, (tokenPtr) {
-      return _withCString(name, (namePtr) {
-        return _callSyncEnvelope(
-          () => _ffi.syncJoinSpace(_handle, tokenPtr.cast(), namePtr.cast()),
-        );
-      });
-    });
+    return _runBackgroundSyncEnvelope(
+      _SyncFfiOperation.joinSpace,
+      firstArg: pairingToken,
+      secondArg: deviceName ?? '',
+    );
   }
 
   /// Snapshot of the sync-engine state: `{enabled, sync_space_id,
@@ -1690,56 +1895,51 @@ class CoreRuntimeBridge {
   /// recovery key (SRK fragment) issued at creation plus the target
   /// space id. Returns `{sync_space_id, owner_user_id, status}` on
   /// success. Returns null when the engine isn't wired.
-  Map<String, dynamic>? syncRecoverSpace({
+  Future<Map<String, dynamic>?> syncRecoverSpace({
     required String recoveryKey,
     required String spaceId,
   }) {
-    return _withCString(recoveryKey, (keyPtr) {
-      return _withCString(spaceId, (idPtr) {
-        return _callSyncEnvelope(
-          () => _ffi.syncRecoverSpace(_handle, keyPtr.cast(), idPtr.cast()),
-        );
-      });
-    });
+    return _runBackgroundSyncEnvelope(
+      _SyncFfiOperation.recoverSpace,
+      firstArg: recoveryKey,
+      secondArg: spaceId,
+    );
   }
 
   /// Leave the current sync-space for this device only. Returns
   /// `{ok: true}` on success. Returns null when the engine isn't wired.
-  Map<String, dynamic>? syncLeaveSpace() {
-    return _callSyncEnvelope(() => _ffi.syncLeaveSpace(_handle));
-  }
+  Future<Map<String, dynamic>?> syncLeaveSpace() =>
+      _runBackgroundSyncEnvelope(_SyncFfiOperation.leaveSpace);
 
   /// List the devices paired into the current sync-space. Returns
   /// `{devices: [{device_id, device_name, is_primary, trusted_at,
   /// last_seen_at, revoked}, …]}`. Returns null when the engine
   /// isn't wired.
-  Map<String, dynamic>? syncListDevices() {
-    return _callSyncEnvelope(() => _ffi.syncListDevices(_handle));
-  }
+  Future<Map<String, dynamic>?> syncListDevices() =>
+      _runBackgroundSyncEnvelope(_SyncFfiOperation.listDevices);
 
   /// Revoke a specific device from the current sync-space by its
   /// `device_id`. Returns `{ok: true}` on success. Returns null when
   /// the engine isn't wired.
-  Map<String, dynamic>? syncRevokeDevice({required String deviceId}) {
-    return _withCString(deviceId, (p) {
-      return _callSyncEnvelope(() => _ffi.syncRevokeDevice(_handle, p.cast()));
-    });
+  Future<Map<String, dynamic>?> syncRevokeDevice({required String deviceId}) {
+    return _runBackgroundSyncEnvelope(
+      _SyncFfiOperation.revokeDevice,
+      firstArg: deviceId,
+    );
   }
 
   /// Delete the current sync-space entirely (all devices, cloud
   /// state). Returns `{ok: true}` on success. Returns null when the
   /// engine isn't wired.
-  Map<String, dynamic>? syncDeleteSpace() {
-    return _callSyncEnvelope(() => _ffi.syncDeleteSpace(_handle));
-  }
+  Future<Map<String, dynamic>?> syncDeleteSpace() =>
+      _runBackgroundSyncEnvelope(_SyncFfiOperation.deleteSpace);
 
   /// Clear only LOCAL sync-space state — the "start over on this device"
   /// path. Does NOT touch the server (this device stays a member remotely);
   /// use [syncLeaveSpace] to also remove it server-side. Returns `{ok: true}`
   /// on success, null when the engine isn't wired.
-  Map<String, dynamic>? syncClearLocalSpace() {
-    return _callSyncEnvelope(() => _ffi.syncClearLocalSpace(_handle));
-  }
+  Future<Map<String, dynamic>?> syncClearLocalSpace() =>
+      _runBackgroundSyncEnvelope(_SyncFfiOperation.clearLocalSpace);
 
   // ── Vendor Events ────────────────────────────────────────────────────
 

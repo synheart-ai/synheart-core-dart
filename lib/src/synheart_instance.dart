@@ -133,8 +133,37 @@ class SynheartInstance {
   /// Register (attest) this instance's device identity under [clientId]. For a
   /// research instance, pass the pseudonymous research client id so the derived
   /// subject is research-scoped and unlinkable to the personal identity.
-  Future<Map<String, dynamic>?> registerDevice(String clientId) =>
-      _bridge.sdkRegisterDevice(clientId);
+  Future<Map<String, dynamic>?> registerDevice(String clientId) async {
+    final result = await _bridge.sdkRegisterDevice(clientId);
+    _restoreDeviceAuthProviderAfterSuccess(result);
+    return result;
+  }
+
+  /// Refresh this identity's attestation while preserving its device ID.
+  Future<Map<String, dynamic>?> reattestDevice() async {
+    final result = await _bridge.sdkReattestDevice();
+    _restoreDeviceAuthProviderAfterSuccess(result);
+    return result;
+  }
+
+  /// Clear this instance's installed device identity and sync membership.
+  Future<void> logoutDevice() async {
+    await _bridge.sdkLogout();
+    _deviceAuth = null;
+  }
+
+  void _restoreDeviceAuthProviderAfterSuccess(Map<String, dynamic>? result) {
+    if ((result?['device_id'] == null && result?['deviceId'] == null) ||
+        _deviceAuth != null) {
+      return;
+    }
+    final auth = config.deviceAuthConfig;
+    if (auth == null) return;
+    _deviceAuth = DeviceAuthProvider(
+      coreRuntime: _bridge,
+      baseUrl: auth.authBaseUrl,
+    );
+  }
 
   Map<String, dynamic>? deviceAuthStatus() => _bridge.sdkDeviceAuthStatus();
 
