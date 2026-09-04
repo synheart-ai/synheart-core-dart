@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-04
+
 ### Changed — BREAKING
 
 - Potentially blocking Device Sync APIs now return
@@ -18,6 +20,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   must `await` these methods. Sync operations are serialized per runtime
   handle so lifecycle mutations, roster reads, and `syncNow` cannot race.
   Fast local status and readiness snapshots remain synchronous.
+
+### Added
+
+- Core v0.24 device identity lifecycle support: `Synheart.reattestDeviceAuth()`
+  refreshes attestation without rotating the installed device identity, and
+  `Synheart.logoutDeviceAuth()` clears that identity and its sync membership.
+  Instance-based hosts can use `reattestDevice()` and `logoutDevice()`.
+  The new native operations require Core v0.24 ABI support.
+- `Synheart.ensureDeviceAuthRegisteredOrThrow()` preserves typed native
+  failures, including account mismatch, so hosts can route recovery correctly.
+
+### Changed
+
+- `Synheart.logout()` now awaits native device logout before wiping local SDK
+  data and revoking consent. Hosts must await it before removing their own
+  account credentials. Older runtimes retain the legacy local-wipe fallback.
+- `reregisterDeviceAuth()` is deprecated in favor of `reattestDeviceAuth()`.
+  Registration is for first-time setup; repair preserves the existing identity.
+
+### Fixed
+
+- Coalesce concurrent device-auth initialization and serialize native
+  registration, re-attestation, logout, and sync operations per runtime handle.
+- Compare restored and configured canonical subjects to avoid treating a
+  restored identity as a different account and registering it again.
+- Preserve typed native identity errors instead of masking them with the
+  unsigned development fallback; surface device-auth worker failures explicitly.
+- Keep native handles alive until tracked background FFI calls finish during
+  disposal, preventing use-after-free while sync work is in flight.
 
 ## [0.12.0] - 2026-08-24
 
