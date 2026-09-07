@@ -22,6 +22,8 @@ import 'modules/consent/consent_module.dart';
 import 'modules/interfaces/capability_provider.dart';
 import 'modules/interfaces/consent_provider.dart';
 import 'modules/wear/wear_module.dart';
+import 'models/accel_placement.dart';
+import 'models/behavior_event_input.dart';
 import 'models/data_deletion.dart';
 import 'models/task_type.dart';
 import 'models/focus_kind.dart';
@@ -1527,6 +1529,13 @@ class Synheart {
             (int tsMs, int eventType, double value) {
               _coreRuntime?.pushBehavior(tsMs, eventType, value);
             };
+        // The rich path, tried first. Returns null when the vendored runtime
+        // predates `synheart_core_push_behavior_event`, which is the module's
+        // signal to fall back to the int-coded call above. Passing the null
+        // through unchanged is load-bearing — swallowing it would drop every
+        // event on an older runtime instead of degrading to the legacy path.
+        _behaviorModule!.pushBehaviorEventToRuntime = (event) =>
+            _coreRuntime?.pushBehaviorEventJson(jsonEncode(event.toJson()));
         // Push raw 50 Hz accel batches to the Synheart Runtime so it can
         // derive features and the on-device motion classifier can run.
         _behaviorModule!.pushAccelToRuntime =
@@ -2927,6 +2936,12 @@ class Synheart {
   /// Push a notification-received behavior event into the runtime for the given timestamp (ms since epoch).
   /// Call when the app displays or receives a notification so behavioral_metrics include notification counts.
   /// No-op if runtime or bridge is unavailable.
+  ///
+  /// This is the **payload-less** path: it reaches the engine as
+  /// `NotificationReceived { action: None, source_app_id: None }`, so the
+  /// interruption is counted but its cost is not measurable. Prefer
+  /// [pushBehaviorEvent] with a `BehaviorEventInput.notification(...)` carrying
+  /// the action and source app wherever the platform can supply them.
   static void pushBehaviorNotificationReceived(int tsMs) {
     _coreRuntime?.pushBehavior(
       tsMs,
@@ -2934,6 +2949,123 @@ class Synheart {
       1.0,
     );
   }
+
+  // ── Rich behavior / context events ──────────────────────────────────
+  //
+  // The typed path. Unlike `pushBehavior(ts, code, value)` these carry the
+  // variant payload the engine's behavioural feature group actually reads.
+
+  /// Whether the loaded runtime can take rich behavior events.
+  ///
+  /// Check this before choosing between the windowed-summary path and the
+  /// per-keystroke legacy path — the two must never both run for the same
+  /// keystrokes, and deciding after a failed push means a window is already
+  /// buffered with nowhere to go.
+  static bool get supportsRichBehaviorEvents =>
+      _coreRuntime?.supportsRichBehaviorEvents ?? false;
+
+  /// Push a typed behavior event carrying its full payload.
+  ///
+  /// Returns the runtime's status (`0` = accepted), or `null` when the loaded
+  /// runtime does not export `synheart_core_push_behavior_event` — a `null`
+  /// means "this build cannot take rich events", not "the event was bad".
+  ///
+  /// **Do not double-count.** If you send a windowed `Typing` summary, do not
+  /// also push the raw keystrokes that produced it: the engine counts both and
+  /// every rate feature roughly doubles.
+  static int? pushBehaviorEvent(BehaviorEventInput event) =>
+      _coreRuntime?.pushBehaviorEventJson(jsonEncode(event.toJson()));
+
+  /// Push a foreground-app context event.
+  ///
+  /// Send the app **category**, never a context label — the engine derives the
+  /// 12-class `ContextLabel` itself, and two-letter app codes collide with
+  /// live label codes (`BR` is `BreakRecovery`, not "browsing/reading").
+  /// Android keys are package names (`com.google.android.gm`), matched
+  /// case-insensitively.
+  ///
+  /// An unmapped package resolves to `UNKNOWN`, whose interpretation-mask row
+  /// is all zeros — a missing table row silently blinds every behavioural
+  /// stream while that app is in front. File additions upstream rather than
+  /// shipping a local map.
+  ///
+  /// Returns `null` when the symbol is absent. A non-zero status most often
+  /// means the runtime was built without the `app-context` cargo feature, in
+  /// which case the symbol is an inert stub.
+  static int? pushContextEvent(Map<String, dynamic> event) =>
+      _coreRuntime?.pushContextEventJson(jsonEncode(event));
+
+  /// Push a GPS-derived ground speed sample in **m/s**.
+  ///
+  /// The high-confidence input for `locomotion_state`, which otherwise runs
+  /// permanently on its low-confidence accel-only fallback. Ordering does not
+  /// matter — speed is drained by window range and reduced to a median.
+  static void pushSpeed(int tsMs, double speedMps) =>
+      _coreRuntime?.pushSpeed(tsMs, speedMps);
+
+  /// Declare where the accelerometer physically sits.
+  ///
+  /// The four kinematic heads withhold entirely under
+  /// [AccelPlacement.unknown], and only [AccelPlacement.pocket] and
+  /// [AccelPlacement.waist] are inside the validated envelope. Placement on a
+  /// phone is dynamic — re-declare it as it changes rather than setting it
+  /// once at startup.
+  static void setAccelPlacement(AccelPlacement placement) =>
+      _coreRuntime?.setAccelPlacement(placement.code);
+
+  /// Declare the window containing [tsMs] to be a rest window.
+  ///
+  /// Composite definition: screen off for ≥ 2 min **and** no interaction
+  /// **and** low motion, with a wall-clock sleep window as an override.
+  /// Screen-off alone is not rest — someone watching a video is screen-on and
+  /// resting; someone in a meeting is screen-off and working.
+  ///
+  /// One-shot: call it once per rest *window*, not once when a break begins.
+  /// Without it Focus is never zeroed on a break and Capacity never takes the
+  /// recovery path, so break windows score as engaged.
+  static void declareRestWindow(int tsMs) =>
+      _coreRuntime?.declareRestWindow(tsMs);
+
+  /// Drain every completed window as a JSON array, oldest first.
+  ///
+  /// Prefer this to [tick] after any gap — `tick` polls a single window, so a
+  /// backgrounded stretch silently skips the windows it spanned. Returns
+  /// `null` when the runtime predates `synheart_core_tick_all`; fall back to
+  /// [tick] in that case rather than assuming there were no windows.
+  static String? tickAll(int nowMs) => _coreRuntime?.tickAll(nowMs);
+
+  /// Emit every window still held by the lateness budget.
+  ///
+  /// Call on backgrounding and at session end, or up to one budget's worth of
+  /// windows is stranded forever. Returns the same JSON array shape [tickAll]
+  /// does, or `null` when the symbol is absent.
+  static String? flushPending(int nowMs) => _coreRuntime?.flushPending(nowMs);
+
+  /// Advance the daily accumulator. [dayIndex] is days since epoch in the
+  /// host's **local** zone and must strictly advance.
+  ///
+  /// Skip it and the engine adopts a provisional UTC day, which is wrong for
+  /// most of the world. Returns `null` when the symbol is absent.
+  static int? rollDay(int dayIndex) => _coreRuntime?.rollDay(dayIndex);
+
+  /// Export per-head session state — Capacity, Mental Fatigue, Stress, Valence
+  /// and the context engine. Persist once per emitted window and on
+  /// background/terminate.
+  static String? exportSessionState() => _coreRuntime?.exportSessionState();
+
+  /// Restore session state. **Must run before the first tick** — window 1
+  /// writes each head's state slot, so a later restore is overwritten by a
+  /// cold window.
+  static int? loadSessionState(String json) =>
+      _coreRuntime?.loadSessionState(json);
+
+  /// The comparability key. Persist it beside any cached score: a score
+  /// computed under a different `config_id` is not comparable to a new one.
+  static String? configId() => _coreRuntime?.configId();
+
+  /// Most recent human-state vector as JSON, or `null` before the first window
+  /// has closed.
+  static String? lastHsv() => _coreRuntime?.lastHsv();
 
   /// Push a heart-rate sample into the runtime with provider attribution.
   ///

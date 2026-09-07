@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart'
 import '../modules/capabilities/capability_token.dart';
 import '../modules/interfaces/auth_provider.dart';
 import 'api_endpoints.dart';
+import 'host_declarations.dart';
 import 'synheart_mode.dart';
 import 'synheart_errors.dart';
 
@@ -177,6 +178,27 @@ class SynheartConfig {
   /// When non-empty, overrides the bridge default filter during SDK initialization.
   final String? runtimeLogEnvFilter;
 
+  /// Host declarations that change engine output — `sensing`, `device_class`,
+  /// `mask_profile`, `cfi_structural_components`.
+  ///
+  /// Defaults to a `const HostDeclarations()`: nothing is sent, and the runtime
+  /// reproduces pre-0.16.0 behaviour exactly. Declaring any of them is a
+  /// deliberate act with consequences documented on [HostDeclarations] — most
+  /// sharply, declaring `device_class` invalidates every persisted SRM
+  /// baseline and costs the person a 30-observation re-warm across 3 days.
+  final HostDeclarations hostDeclarations;
+
+  /// Opt-in kinematic heads. Empty by default; they also require a body-worn
+  /// accelerometer placement before they produce anything.
+  final List<ExtraHead> extraHeads;
+
+  /// Inference window length in ms. Null leaves the runtime default (60 000).
+  ///
+  /// Note `step_ms` is **not** settable through this family — the full
+  /// `synheart_core_*` runtime derives it from [mode]. Only the bare
+  /// `synheart_core_edge_*` handle takes an explicit `step_ms`.
+  final int? windowMs;
+
   SynheartConfig({
     this.appId = '',
     this.subjectId = '',
@@ -212,6 +234,9 @@ class SynheartConfig {
     this.allowUnsignedCapabilities = false,
     this.batchIngestOnStop = false,
     this.runtimeLogEnvFilter,
+    this.hostDeclarations = const HostDeclarations(),
+    this.extraHeads = const <ExtraHead>[],
+    this.windowMs,
   }) : platform = platform ?? _defaultPlatformId();
 
   /// Create default configuration

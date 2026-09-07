@@ -6,10 +6,12 @@ import '../base/synheart_module.dart';
 import '../interfaces/consent_provider.dart';
 import '../interfaces/feature_providers.dart';
 import '../interfaces/raw_data_provider.dart';
+import '../../models/behavior_event_input.dart';
 import 'behavior_code.dart';
 import 'behavior_events.dart';
 import 'behavior_event_stream.dart';
 import 'motion_state_snapshot.dart';
+import 'native_event_translator.dart';
 import 'window_aggregator.dart';
 
 /// Behavior Module
@@ -51,6 +53,17 @@ class BehaviorModule extends BaseSynheartModule
     void Function(int tsMs, int eventType, double value)? f,
   ) {
     _pushBehaviorToRuntime = f;
+  }
+
+  /// The rich behavior-event sink, preferred over [pushBehaviorToRuntime].
+  ///
+  /// Must return the runtime's status, or `null` when the loaded runtime does
+  /// not export `synheart_core_push_behavior_event` — that `null` is what
+  /// makes the module fall back to the legacy int-coded path, so a sink that
+  /// swallowed it would silently drop every event on an older runtime.
+  int? Function(BehaviorEventInput event)? _pushBehaviorEventToRuntime;
+  set pushBehaviorEventToRuntime(int? Function(BehaviorEventInput event)? f) {
+    _pushBehaviorEventToRuntime = f;
   }
 
   /// When set, every raw 50 Hz accel sample is pushed to the runtime so
@@ -161,11 +174,26 @@ class BehaviorModule extends BaseSynheartModule
     final behaviorEvent = _convertSynheartEvent(event);
     if (behaviorEvent != null) {
       _eventStream.addEvent(behaviorEvent);
-      // Push directly to runtime so app_switch, notification, etc. are never missed.
-      final mapped = _behaviorEventToRuntimeCode(behaviorEvent);
-      if (mapped != null) {
-        final tsMs = behaviorEvent.timestamp.millisecondsSinceEpoch;
-        _pushBehaviorToRuntime?.call(tsMs, mapped.$1.code, mapped.$2);
+      // Push directly to runtime so app_switch, notification, etc. are never
+      // missed.
+      //
+      // Two paths, and the rich one is tried first. It carries the payload the
+      // native collectors already captured — scroll direction and reversal,
+      // the notification's source app, tap duration — all of which the legacy
+      // int-coded call flattens to a single double. The legacy path is the
+      // fallback for a vendored runtime that predates
+      // `synheart_core_push_behavior_event`, and the two are mutually
+      // exclusive per event: pushing both would count every interaction twice.
+      final tsMs = behaviorEvent.timestamp.millisecondsSinceEpoch;
+      final rich = translateNativeBehaviorEvent(event);
+      final richStatus = rich == null
+          ? null
+          : _pushBehaviorEventToRuntime?.call(rich);
+      if (richStatus == null) {
+        final mapped = _behaviorEventToRuntimeCode(behaviorEvent);
+        if (mapped != null) {
+          _pushBehaviorToRuntime?.call(tsMs, mapped.$1.code, mapped.$2);
+        }
       }
     } else if (_synheartBehaviorEventLogCount <= 3) {
       SynheartLogger.log(
