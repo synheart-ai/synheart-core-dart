@@ -41,6 +41,56 @@ class BehaviorModule extends BaseSynheartModule
   StreamSubscription<ConsentSnapshot>? _consentSubscription;
   bool _isStarting = false;
 
+  /// The open `synheart_behavior` session, when raw motion is being collected.
+  ///
+  /// Only motion needs one. The input and gesture collectors attach to the
+  /// view at `initialize()` and emit without a session, which is why this was
+  /// never noticed: `emitRawMotionSamples: true` reached the native config and
+  /// still produced nothing, because `MotionSignalCollector.startSession` runs
+  /// only from `BehaviorSDK.startSession()` and nothing ever called it. Its
+  /// `updateConfig` cannot rescue that either — the start branch there is
+  /// guarded on `sessionStartTime > 0`, which only a session sets.
+  sb.BehaviorSession? _motionSession;
+
+  /// Open a session so the accelerometer listener is actually registered.
+  ///
+  /// Scoped to the motion case on purpose. A session also resets app-switch
+  /// counts and captures device context, so opening one unconditionally would
+  /// change behaviour for every host that never asked for motion; hosts that
+  /// leave `emitRawMotionSamples` off keep exactly the lifecycle they had.
+  Future<void> _startMotionSessionIfNeeded() async {
+    if (!_emitRawMotionSamples || _synheartBehavior == null) return;
+    if (_motionSession != null) return;
+    try {
+      _motionSession = await _synheartBehavior!.startSession();
+      SynheartLogger.log(
+        '[BehaviorModule] motion session started — raw accel sampling active',
+      );
+    } catch (e, st) {
+      // Non-fatal: everything else the module collects is session-independent.
+      SynheartLogger.log(
+        '[BehaviorModule] Failed to start motion session: $e',
+        error: e,
+        stackTrace: st,
+      );
+      _motionSession = null;
+    }
+  }
+
+  Future<void> _endMotionSession() async {
+    final session = _motionSession;
+    _motionSession = null;
+    if (session == null) return;
+    try {
+      await session.end();
+    } catch (e) {
+      SynheartLogger.log(
+        '[BehaviorModule] Error ending motion session: $e',
+        error: e,
+      );
+    }
+  }
+
   /// When set, all behavior events are pushed to the runtime via this callback
   /// (so the runtime receives events even if stream delivery is delayed).
   ///
@@ -310,6 +360,7 @@ class BehaviorModule extends BaseSynheartModule
             '[BehaviorModule] synheart_behavior initialized successfully '
             '(instance=${_synheartBehavior != null})',
           );
+          await _startMotionSessionIfNeeded();
         } catch (e, st) {
           SynheartLogger.log(
             '[BehaviorModule] Failed to initialize synheart_behavior: $e',
@@ -392,6 +443,11 @@ class BehaviorModule extends BaseSynheartModule
 
     _cleanupTimer?.cancel();
     _cleanupTimer = null;
+
+    // End the motion session before tearing the SDK down: `endSession` is
+    // what calls `motionSignalCollector.stopSession()`, so skipping it leaves
+    // the accelerometer listener registered against a disposed SDK.
+    await _endMotionSession();
 
     if (disposeSdk) {
       try {

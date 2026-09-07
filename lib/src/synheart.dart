@@ -3429,12 +3429,23 @@ class Synheart {
 
   /// Export the native runtime SRM snapshot as JSON for cross-session persistence.
   static String? exportRuntimeSRMSnapshot() {
+    // Symmetric with the load and with [longitudinalSnapshotJson]: a host that
+    // exports before the first session would otherwise get null and persist
+    // nothing, silently.
+    _coreRuntime?.ensurePipeline();
     return _coreRuntime?.exportSrmSnapshot();
   }
 
   /// Load a native runtime SRM snapshot from JSON.
   /// Returns true on success, false on failure.
   static bool loadRuntimeSRMSnapshot(String json) {
+    // Same cold-boot problem [loadLongitudinalSnapshot] documents, and it was
+    // missing here: a host restoring baselines at startup does so before any
+    // session has materialized the Pipeline, so the load failed and the
+    // person re-warmed 30 observations across 3 days that were already on
+    // disk. Symptom is a snapshot that saves cleanly every session end and is
+    // rejected on every launch. `ensurePipeline` is a no-op when one exists.
+    _coreRuntime?.ensurePipeline();
     return _coreRuntime?.loadSrmSnapshot(json) ?? false;
   }
 
