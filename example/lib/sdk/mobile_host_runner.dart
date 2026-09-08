@@ -8,6 +8,7 @@ import 'package:synheart_core/synheart_core.dart';
 
 import 'host_snapshot_store.dart';
 import 'rest_window_detector.dart';
+import 'sensing_foreground_service.dart';
 import 'synthetic_cardiac_source.dart';
 import 'typing_micro_windows.dart';
 
@@ -80,8 +81,7 @@ class MobileHostRunner {
   /// requires an actual live peripheral connection. This example has none, so
   /// turning this on is a way to *see* the two heads come back, not a way to
   /// earn them.
-  bool claimContinuousSensing =
-      defaultTargetPlatform == TargetPlatform.android;
+  bool claimContinuousSensing = false;
 
   /// How long the engine holds a completed window before emitting it.
   ///
@@ -110,12 +110,8 @@ class MobileHostRunner {
   HostDeclarations buildHostDeclarations() {
     if (!declareHostProfile) return const HostDeclarations();
     return HostDeclarations(
-      // A lateness budget matters even for a phone with no retroactive
-      // source: the typing aggregator is one, and so is any HealthKit read.
-      // The engine holds each completed window this long and emits it once,
-      // complete, just later — the frame's content is unchanged.
       // An explicit profile rather than `'auto'`, and the reason is the
-      // lateness budget below — not distrust of the platform table.
+      // lateness budget — not distrust of the platform table.
       //
       // The budget is **not optional** for this host. The engine's HSI window
       // is aligned to the first signal, not to a fixed grid, so a host that
@@ -126,20 +122,21 @@ class MobileHostRunner {
       // That is ~1/6 of the typing evidence lost every window,
       // deterministically, with no counter to show it. A declared budget is
       // the only mechanism that closes it — the engine holds each completed
-      // window that long and emits it once, complete, just later.
+      // window that long and emits it once, complete, just later, and the
+      // frame's content is unchanged. Any HealthKit read is retroactive the
+      // same way.
       //
       // And a budget cannot ride with `'auto'`: `parse_sensing` accepts
       // `"auto"` only as a top-level string, and an object without a literal
       // `"continuous"` / `"episodic"` mode is dropped whole. So declaring a
-      // budget means declaring a mode. That is a core-runtime gap worth
-      // closing (accept `mode: "auto"`, or read `lateness_budget_ms`
-      // alongside the string) — until then, the mode below mirrors what the
-      // toggle already asserts rather than duplicating the platform table.
+      // budget means declaring a mode *and* the stream roster by hand — which
+      // is why [_sensingMode] and [_observedStreams] exist rather than a
+      // one-word `'auto'`. That is a core-runtime gap worth closing (accept
+      // `mode: "auto"`, or read `lateness_budget_ms` alongside the string).
       sensing: SensingProfile(
-        mode: claimContinuousSensing
-            ? SensingMode.continuous
-            : SensingMode.episodic,
+        mode: _sensingMode,
         latenessBudgetMs: _latenessBudgetMs,
+        streams: _observedStreams,
       ),
       deviceClass: 'auto',
       maskProfile: 'auto',
@@ -149,6 +146,75 @@ class MobileHostRunner {
       cfiStructuralComponents: 4,
     );
   }
+
+  /// Continuous only where this host can actually stay alive to sense.
+  ///
+  /// Android earns it with the `dataSync` foreground service this runner
+  /// starts alongside the session. iOS does not: the mechanism there is
+  /// `bluetooth-central` plus a *connected peripheral*, and this example holds
+  /// none — so it gets whatever foreground slices the user grants, which is
+  /// episodic. That withholds Capacity and Mental Fatigue with reason
+  /// `episodic_sensing`, and the honest failure mode is the point: the
+  /// alternative is publishing a torn session clock as a trajectory.
+  ///
+  /// [claimContinuousSensing] forces it either way, for seeing what the two
+  /// heads look like when they come back. That is a demo affordance, not a
+  /// claim this host can support on iOS.
+  SensingMode get _sensingMode {
+    if (claimContinuousSensing) return SensingMode.continuous;
+    return defaultTargetPlatform == TargetPlatform.android
+        ? SensingMode.continuous
+        : SensingMode.episodic;
+  }
+
+  /// The streams this host **actually observes** — named explicitly rather
+  /// than taking the platform roster.
+  ///
+  /// Omitting the roster and letting `"auto"` resolve it was wrong here, and
+  /// wrong in a way worth spelling out. The Android platform roster declares
+  /// `app_focus`, `notification_arrivals`, `notification_responses` and
+  /// `screen_state` available, and this host feeds none of them: there is no
+  /// `UsageStatsManager` binding, the published behavior plugin ships no
+  /// notification `source_app`, and nothing reads real screen state — the rest
+  /// detector uses app lifecycle, which is a proxy, not a screen-state source.
+  /// So the declaration asserted four streams that never arrive.
+  ///
+  /// The roster is a closed, versioned set and a stream you do not name is
+  /// declared *unavailable*. That is a stronger statement than "absent", and
+  /// it is what lets a consumer separate a structural limit from a host that
+  /// simply has not wired something yet — so it has to describe this host, not
+  /// the platform's ceiling. Where the two differ, `platform` already carries
+  /// the ceiling.
+  ///
+  /// Flip an entry to `true` in step with the code that starts feeding it, not
+  /// ahead of it.
+  static const SensingStreams _observedStreams = SensingStreams(
+    // The wear module when a source is attached, or the simulator.
+    cardiac: true,
+    // BehaviorConfig.emitRawMotionSamples forwards raw samples via
+    // `push_accel`. Note the rate caveat: the published Android behavior
+    // plugin still samples at ~5 Hz against the ≥ 25 Hz the engine wants.
+    accelerometer: true,
+    // The typing probe's 10 s micro-windows, plus the behavior module's own
+    // typing tracking.
+    keystrokes: true,
+    // No mouse or stylus stream on a phone.
+    pointer: false,
+    // Needs `UsageStatsManager` (permission PACKAGE_USAGE_STATS). Unwired.
+    appFocus: false,
+    // The listener service is declared in this app's manifest and the
+    // collector exists, but it stays inert until the person grants
+    // notification access in system settings and this example never asks.
+    // Nothing arrives, so nothing is declared.
+    notificationArrivals: false,
+    // Needs the response action. Absent from the published Android plugin,
+    // and structurally unavailable on iOS — no API reports it.
+    notificationResponses: false,
+    // App lifecycle is not screen state: the app also pauses when the person
+    // switches away with the screen very much on. A real host reads the
+    // platform's screen-state broadcast.
+    screenState: false,
+  );
 
   // ── Runtime capability audit (§1) ─────────────────────────────────────
 
@@ -273,6 +339,19 @@ class MobileHostRunner {
     onChanged();
   }
 
+  /// Whether the Android keep-alive is up.
+  ///
+  /// Surfaced because its failure is otherwise invisible: without it the tick
+  /// loop dies the moment Android stops scheduling the process, and the UI
+  /// goes on saying "collecting".
+  bool get foregroundServiceRunning => _foregroundServiceRunning;
+  bool _foregroundServiceRunning = false;
+
+  /// True on a platform that has no foreground service to start — iOS, where
+  /// the keep-alive is a connected BLE peripheral instead. Not a failure.
+  bool get foregroundServiceUnsupported =>
+      !SensingForegroundService.isSupported;
+
   /// Start the loops. Call right after `Synheart.startSession()`.
   void start() {
     if (_tickTimer != null) return;
@@ -309,6 +388,23 @@ class MobileHostRunner {
     });
 
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
+
+    // §6.2 — keep the process alive for the whole session, not just while a
+    // keyboard is up. Deliberately not awaited and never fatal: a session that
+    // refused to start because the keep-alive failed would be worse than one
+    // that runs and stops collecting on background, which is at least what
+    // every pre-0.16.0 host already did.
+    SensingForegroundService.start().then((ok) {
+      _foregroundServiceRunning = ok;
+      if (!ok && SensingForegroundService.isSupported) {
+        lastError =
+            'The sensing foreground service did not start. The tick loop will '
+            'stop when Android stops scheduling this process, and no windows '
+            'will close until it returns to the foreground.';
+      }
+      onChanged();
+    });
+
     onChanged();
   }
 
@@ -324,6 +420,11 @@ class MobileHostRunner {
     stopCardiacStream();
     await _behaviorSub?.cancel();
     _behaviorSub = null;
+
+    // Down with the session. Leaving it up would hold an ongoing notification
+    // over a process that is no longer sensing.
+    await SensingForegroundService.stop();
+    _foregroundServiceRunning = false;
 
     // Drain the host's own buffer before the final flush, same §6.4 ordering
     // as every tick.

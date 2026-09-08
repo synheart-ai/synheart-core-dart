@@ -171,6 +171,34 @@ class _TickLoopCard extends StatelessWidget {
         KeyValueRow('ticks', '${host.ticks}'),
         KeyValueRow('windows drained', '${host.windowsDrained}'),
         KeyValueRow('symbol', usingTickAll ? 'tick_all' : 'tick (fallback)'),
+        KeyValueRow(
+          'keep-alive',
+          host.foregroundServiceUnsupported
+              ? 'n/a — iOS uses a connected BLE peripheral'
+              : host.foregroundServiceRunning
+              ? 'dataSync foreground service running'
+              : host.isRunning
+              ? 'NOT running — collection stops on background'
+              : 'stopped with the session',
+        ),
+        const SizedBox(height: 8),
+        Text(
+          host.foregroundServiceUnsupported
+              ? 'On iOS what keeps the runtime alive is bluetooth-central '
+                    'plus a CONNECTED peripheral — a strap holding the process '
+                    'up. This example holds none, which is exactly why it '
+                    'declares episodic sensing rather than pretending '
+                    'otherwise.'
+              : 'Without the foreground service the tick loop dies the moment '
+                    'Android stops scheduling this process: the session emits '
+                    'nothing from then on, silently, while the UI still says '
+                    '"collecting". Bound to the session here rather than '
+                    'started from an IME, so it covers the whole thing and '
+                    'not just typing.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 8),
         Text(
           usingTickAll
