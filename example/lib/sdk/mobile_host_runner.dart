@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/widgets.dart';
 import 'package:synheart_core/synheart_core.dart';
 
@@ -78,7 +80,21 @@ class MobileHostRunner {
   /// requires an actual live peripheral connection. This example has none, so
   /// turning this on is a way to *see* the two heads come back, not a way to
   /// earn them.
-  bool claimContinuousSensing = false;
+  bool claimContinuousSensing =
+      defaultTargetPlatform == TargetPlatform.android;
+
+  /// How long the engine holds a completed window before emitting it.
+  ///
+  /// 30 s covers the typing aggregator's 10 s micro-window straddling a
+  /// 60 s HSI boundary with room to spare, plus BLE jitter and cross-stream
+  /// skew. It does not cover an App Group container drained hours later — that
+  /// evidence belongs on a day-indexed call
+  /// (`srmPushWearableDaily`), which has no window cursor to miss.
+  ///
+  /// The cost is emission latency: a frame arrives up to this late. It is
+  /// visible and bounded, and it buys back evidence that was otherwise dropped
+  /// silently.
+  static const int _latenessBudgetMs = 30_000;
 
   /// Where the accelerometer currently sits (§4.3).
   ///
@@ -98,12 +114,33 @@ class MobileHostRunner {
       // source: the typing aggregator is one, and so is any HealthKit read.
       // The engine holds each completed window this long and emits it once,
       // complete, just later — the frame's content is unchanged.
-      sensing: claimContinuousSensing
-          ? const SensingProfile(
-              mode: SensingMode.continuous,
-              latenessBudgetMs: 30_000,
-            )
-          : 'auto',
+      // An explicit profile rather than `'auto'`, and the reason is the
+      // lateness budget below — not distrust of the platform table.
+      //
+      // The budget is **not optional** for this host. The engine's HSI window
+      // is aligned to the first signal, not to a fixed grid, so a host that
+      // aggregates into its own fixed-grid micro-windows (the 10 s typing
+      // summaries here) has exactly one micro-window straddle every HSI
+      // boundary: stamped before it, flushed after it, accepted by the ingest
+      // gate and then read by no window because the cursor has moved past.
+      // That is ~1/6 of the typing evidence lost every window,
+      // deterministically, with no counter to show it. A declared budget is
+      // the only mechanism that closes it — the engine holds each completed
+      // window that long and emits it once, complete, just later.
+      //
+      // And a budget cannot ride with `'auto'`: `parse_sensing` accepts
+      // `"auto"` only as a top-level string, and an object without a literal
+      // `"continuous"` / `"episodic"` mode is dropped whole. So declaring a
+      // budget means declaring a mode. That is a core-runtime gap worth
+      // closing (accept `mode: "auto"`, or read `lateness_budget_ms`
+      // alongside the string) — until then, the mode below mirrors what the
+      // toggle already asserts rather than duplicating the platform table.
+      sensing: SensingProfile(
+        mode: claimContinuousSensing
+            ? SensingMode.continuous
+            : SensingMode.episodic,
+        latenessBudgetMs: _latenessBudgetMs,
+      ),
       deviceClass: 'auto',
       maskProfile: 'auto',
       // 4 is the documented mobile value. It **lowers** conf_CFI for identical
@@ -156,6 +193,8 @@ class MobileHostRunner {
   int dailyPushes = 0;
   int contextEventsAccepted = 0;
   int contextEventsRejected = 0;
+  int appForegroundPushes = 0;
+  int strainScoresAttached = 0;
   String? lastError;
 
   /// Latest simulated reading, for the live display.
@@ -247,6 +286,8 @@ class MobileHostRunner {
     speedSamplesPushed = 0;
     sessionStateSaves = 0;
     dailyPushes = 0;
+    appForegroundPushes = 0;
+    strainScoresAttached = 0;
     lastError = null;
     rest.reset();
     typing.reset();
@@ -395,11 +436,43 @@ class MobileHostRunner {
   // ── Typing micro-windows (§5.3) ───────────────────────────────────────
 
   /// Feed a text change from the typing probe.
+  ///
+  /// Two pushes per change, on two channels, and both are needed:
+  ///
+  /// * the 10 s windowed `TypingSessionData` summary (below) → the behaviour
+  ///   channel → the typing feature group and `TypingFluency`;
+  /// * one `ContextEventInput` keyboard event per change → the context channel
+  ///   → `err_elevation`, which is CFI's correction sub-component.
+  ///
+  /// This is **not** a double count: separate runtime buffers, separate
+  /// consumers. What *would* be one is pushing the raw keystrokes onto the
+  /// behaviour channel as well as the summary, which is why the SDK's native
+  /// translator drops taps instead of forwarding them.
+  ///
+  /// The keyboard event has to come from here rather than from the SDK's
+  /// gesture layer: Android's input collector reports every keystroke as a
+  /// `tap`, so only the text field can tell an insertion from a deletion. And
+  /// **both directions must be sent** — `err_rate` is `N_corr / N_key`, so
+  /// deletions alone leave the denominator at zero and spike the error rate to
+  /// its ceiling on the first backspace.
   void onTypingChanged(String text) {
     final now = DateTime.now().millisecondsSinceEpoch;
     rest.noteInteraction(now);
+
+    final delta = text.length - typing.currentLength;
     final completed = typing.onTextChanged(text, now);
     if (completed != null) _pushTypingWindow(completed);
+
+    // A zero-length change (autocorrect swapping one word for another of the
+    // same length) is an edit but not a countable keystroke in either
+    // direction, and guessing which would corrupt the correction rate. The
+    // aggregator skips it for the same reason.
+    if (delta != 0) {
+      _pushContextEvent(
+        ContextEventInput.textChange(now, isDeletion: delta < 0),
+      );
+    }
+
     onChanged();
   }
 
@@ -464,23 +537,69 @@ class MobileHostRunner {
 
   // ── Foreground app context (§5.5) ─────────────────────────────────────
 
-  /// Push a foreground-app context event.
+  /// This app's package id — the identity reported to the engine.
+  static const String _selfAppId = 'ai.synheart.core.example';
+
+  /// Declare this app as the foreground app.
   ///
-  /// This example has no `UsageStatsManager` binding, so it cannot name the
-  /// app that is actually in front — it reports **itself**, which is true and
-  /// useless. A real Android host wires `UsageStatsManager` (permission
-  /// `PACKAGE_USAGE_STATS`) and sends the real foreground package; iOS has no
-  /// API for this at all.
+  /// **This is the call that gives the engine an app identity**, and it is not
+  /// the same channel as a context event — it rides the *behaviour* channel as
+  /// `kind: "app_foreground"`. Without any identity the runtime's
+  /// `current_app` stays `None`, `None` resolves to the `Unknown` app
+  /// category, and `Unknown`'s interpretation-mask row is all zeros: CFI /
+  /// Cognitive Load, Stress `B`, Mental Fatigue `B` and Focus's deviation
+  /// terms all read `0` for someone who was working the whole time.
   ///
-  /// The category, never a context label: the engine derives the 12-class
-  /// `ContextLabel` itself and two-letter app codes collide with live label
-  /// codes — `BR` is `BreakRecovery`, not "browsing/reading".
-  void pushSelfAsContext() {
-    final status = Synheart.pushContextEvent(<String, dynamic>{
-      'ts_ms': DateTime.now().millisecondsSinceEpoch,
-      'app_id': 'ai.synheart.core.example',
-      'category': 'productivity',
-    });
+  /// The SDK already runs a 30 s heartbeat of this for the whole session
+  /// (`BehaviorConfig.reportForegroundApp`); this is here so the effect is
+  /// observable on demand. Repeats are safe — the engine treats an unchanged
+  /// app as a steady-state observation, not a switch, so a heartbeat cannot
+  /// fabricate fragmentation.
+  ///
+  /// It reports **itself**, which is true while the person is in this app and
+  /// wrong the moment they leave — which is why the SDK stops reporting on
+  /// background rather than continuing to assert it. A real Android host
+  /// implements `ForegroundAppSource` over `UsageStatsManager` (permission
+  /// `PACKAGE_USAGE_STATS`) and passes it as
+  /// `BehaviorConfig.foregroundAppSource`; iOS has no API for this at all.
+  void declareSelfForeground() {
+    final status = Synheart.pushAppForeground(_selfAppId);
+    if (status == null) {
+      lastError =
+          'push_behavior_event is absent from this runtime, so app_foreground '
+          'cannot be delivered and every window is typed against the Unknown '
+          'app category. Re-vendor with `synheart install runtime`.';
+    } else {
+      appForegroundPushes++;
+    }
+    onChanged();
+  }
+
+  /// Push one synthetic **context** event so the channel is observable.
+  ///
+  /// A different channel from [declareSelfForeground] with a different
+  /// consumer: this feeds the person-relative context window, the only source
+  /// of `context.deviation.*` and therefore the only source of CFI. It takes
+  /// privacy-preserving keyboard / pointer / shortcut events — there is no
+  /// app-category variant, and a `{ts_ms, app_id, category}` object (what this
+  /// example used to send) does not parse at all.
+  ///
+  /// In normal operation a host does not call this by hand: the SDK derives
+  /// context events from native scroll and swipe gestures, and the typing
+  /// probe below supplies the keyboard half. This is a demo affordance.
+  void pushSampleContextEvent() {
+    _pushContextEvent(
+      ContextEventInput.shortcut(
+        DateTime.now().millisecondsSinceEpoch,
+        ShortcutType.paste,
+      ),
+    );
+    onChanged();
+  }
+
+  /// Push a context event, counting the outcome.
+  void _pushContextEvent(ContextEventInput event) {
+    final status = Synheart.pushContextEvent(event);
     if (status == null) {
       lastError =
           'push_context_event is absent from this runtime. On Android there '
@@ -490,14 +609,14 @@ class MobileHostRunner {
     } else {
       // Far more likely to mean "built without the app-context cargo feature"
       // than "your JSON was wrong" — without it the symbol is an inert stub
-      // that always returns 1.
+      // that always returns 1, and the payload shape is pinned by
+      // `test/context_event_input_test.dart` in the SDK.
       contextEventsRejected++;
       lastError =
           'push_context_event returned $status. The runtime was probably '
           'built without the `app-context` cargo feature, which compiles the '
-          'symbol as an inert stub.';
+          'symbol as an inert stub that always returns 1.';
     }
-    onChanged();
   }
 
   // ── The simulated cardiac stream ──────────────────────────────────────
@@ -610,6 +729,19 @@ class MobileHostRunner {
 
     final last = store?.readLastDayIndex();
     if (last != null && dayIndex <= last) return;
+
+    // §8.4 — score BEFORE rolling. `roll_day` does not do this for you: it
+    // validates the index and folds the day into the longitudinal baselines,
+    // and that fold *clears the very values Strain is computed from*. A host
+    // that rolls first gets null from the attach every single day and never
+    // emits a Strain score at all, while the load itself still reaches the
+    // baselines — so nothing looks broken except a score that is always
+    // absent.
+    //
+    // A null here on the first roll of a fresh install is normal: nothing has
+    // been accumulated yet, so there is no component to score.
+    final strain = Synheart.attachStrainScore();
+    if (strain != null) strainScoresAttached++;
 
     final status = Synheart.rollDay(dayIndex);
     if (status == null) {

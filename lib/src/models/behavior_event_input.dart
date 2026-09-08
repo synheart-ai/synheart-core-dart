@@ -64,9 +64,15 @@ enum InterruptionAction {
 /// would count both and every rate feature roughly doubles.
 ///
 /// Highest-value fields, in order: [typingTapCount]; [numberOfBackspace] and
-/// [numberOfDelete] (these two produce `typing.correction_rate`, which Focus
-/// and CFI both read — without them the friction index has nothing);
-/// [typingSpeedCpm] and [durationSec]; then cadence and pauses.
+/// [numberOfDelete] (these two produce `typing.correction_rate`, which feeds
+/// the `TypingFluency` reading); [typingSpeedCpm] and [durationSec]; then
+/// cadence and pauses.
+///
+/// **This is not the channel that feeds CFI.** Cognitive Load's friction index
+/// reads `context.deviation.err_elevation`, computed from `ContextEventInput`
+/// keyboard events — a separate push on a separate buffer. A rich typing
+/// summary with no context events leaves CFI with nothing, however complete the
+/// summary is. See `ContextEventInput` for why both channels exist.
 class TypingSessionData {
   /// Measured first-tap→last-tap span, **not** the window length. A window
   /// with two taps 1.2 s apart has `durationSec: 1.2`, not `10.0`.
@@ -256,6 +262,37 @@ class BehaviorEventInput {
       if (toApp != null) 'to_app': toApp,
     },
   );
+
+  /// `app_foreground` — the host's foreground **resolve**, as opposed to the
+  /// [appSwitch] *edge*.
+  ///
+  /// This is the call that gives the engine an app identity at all, and without
+  /// it a whole class of readings is silently zeroed. [appSwitch] only fires on
+  /// a transition, so a session where the person opened one app and stayed in
+  /// it produces no edge — the runtime's `current_app` stays `None`, `None`
+  /// resolves to the `Unknown` app category, and `Unknown`'s interpretation-mask
+  /// row is **all zeros**. Every behavioural evidence term (CFI / Cognitive
+  /// Load, Stress `B`, Mental Fatigue `B`, Focus's deviation sub-terms) then
+  /// reads `0` for someone who was working the whole time.
+  ///
+  /// Send it at session start and on every foreground resume, and re-send it
+  /// periodically. Re-sending is cheap and safe: the runtime treats an
+  /// unchanged app as a steady-state observation and deliberately does **not**
+  /// bump the app-switch count, because switch count is itself a fragmentation
+  /// feature. A resolve that reveals a *different* app does count as a switch —
+  /// the engine infers the transition your edge detector missed.
+  ///
+  /// [app] is a platform application identifier: an Android package name
+  /// (`com.google.android.gm`), an iOS bundle id. Matched case-insensitively
+  /// against the app taxonomy, which is keyed by platform. An id the taxonomy
+  /// does not know still counts as *an* identity — it holds the switch and
+  /// same-app clocks — it just resolves to the `Unknown` category.
+  factory BehaviorEventInput.appForeground(int tsMs, String app) =>
+      BehaviorEventInput._(
+        tsMs: tsMs,
+        kind: 'app_foreground',
+        data: <String, dynamic>{'app': app},
+      );
 
   /// `NotificationReceived { action, source_app_id }` — wire key `source_app`.
   factory BehaviorEventInput.notification(

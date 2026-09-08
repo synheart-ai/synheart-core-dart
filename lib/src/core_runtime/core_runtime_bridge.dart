@@ -1039,6 +1039,7 @@ class CoreRuntimeBridge {
     'loadSessionState': _ffi.loadSessionState != null,
     'configId': _ffi.configId != null,
     'lastHsv': _ffi.lastHsv != null,
+    'attachStrainScoreJson': _ffi.attachStrainScoreJson != null,
   };
 
   /// Push one rich behavior event as JSON. Returns the runtime's status
@@ -1143,6 +1144,27 @@ class CoreRuntimeBridge {
   /// Valence and the context engine.
   ///
   /// Persist once per emitted window and on background/terminate.
+  /// Score today's accumulated Strain and queue it onto the next HSI frame.
+  ///
+  /// Returns the score JSON, `null` when the symbol is absent, and also `null`
+  /// when the day has no scorable component yet — nothing was accumulated, so
+  /// there is nothing to attach. That second case is normal, not an error.
+  ///
+  /// **Call this BEFORE `rollDay`.** Rolling finalises the day and clears the
+  /// very values the Strain computation reads, so a host that rolls first gets
+  /// `null` here every single day and never emits a Strain score at all.
+  /// `rollDay` does not do this for you.
+  ///
+  /// Takes no input: the engine accumulated Strain's inputs itself over the
+  /// day (heart-rate load, workout events), and asking the host to supply them
+  /// would invite a second, disagreeing copy of numbers the engine already
+  /// holds.
+  String? attachStrainScoreJson() {
+    final fn = _ffi.attachStrainScoreJson;
+    if (fn == null) return null;
+    return _readAndFree(fn(_handle));
+  }
+
   String? exportSessionState() {
     final fn = _ffi.exportSessionState;
     if (fn == null) return null;

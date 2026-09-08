@@ -7,12 +7,21 @@ import '../interfaces/consent_provider.dart';
 import '../interfaces/feature_providers.dart';
 import '../interfaces/raw_data_provider.dart';
 import '../../models/behavior_event_input.dart';
+import '../../models/context_event_input.dart';
 import 'behavior_code.dart';
 import 'behavior_events.dart';
 import 'behavior_event_stream.dart';
 import 'motion_state_snapshot.dart';
+import 'context_event_translator.dart';
 import 'native_event_translator.dart';
 import 'window_aggregator.dart';
+
+/// Standard gravity in m/s².
+///
+/// `synheart_behavior` reports accelerometer samples in m/s² (gravity
+/// included); the engine's `push_accel` takes **g**. This is the conversion
+/// between them, and it must not be "simplified away" — see the call site.
+const double _standardGravityMs2 = 9.80665;
 
 /// Behavior Module
 ///
@@ -115,6 +124,34 @@ class BehaviorModule extends BaseSynheartModule
   set pushBehaviorEventToRuntime(int? Function(BehaviorEventInput event)? f) {
     _pushBehaviorEventToRuntime = f;
   }
+
+  /// The context-evidence sink — a *second*, independent channel, not an
+  /// alternative to [pushBehaviorEventToRuntime].
+  ///
+  /// The two land in different runtime buffers with different consumers: the
+  /// behaviour channel feeds the interaction adapter and session-runtime's
+  /// behavioural features, while this one feeds the person-relative context
+  /// window, which is the only source of `context.deviation.*` — and therefore
+  /// the only source of Cognitive Load's friction index. Pushing one event on
+  /// each channel for one user action is correct and is **not** a double count;
+  /// pushing the same event twice on the *same* channel is.
+  ///
+  /// Returns the runtime status (`0` = accepted), or `null` when the symbol is
+  /// absent. A non-zero status most often means the runtime was built without
+  /// the `app-context` cargo feature, which compiles the call as an inert stub.
+  int? Function(ContextEventInput event)? _pushContextEventToRuntime;
+  set pushContextEventToRuntime(int? Function(ContextEventInput event)? f) {
+    _pushContextEventToRuntime = f;
+  }
+
+  /// Context events accepted / rejected by the runtime this session.
+  int get contextEventsAccepted => _contextEventsAccepted;
+  int _contextEventsAccepted = 0;
+
+  int get contextEventsRejected => _contextEventsRejected;
+  int _contextEventsRejected = 0;
+
+  bool _contextRejectionLogged = false;
 
   /// When set, every raw 50 Hz accel sample is pushed to the runtime so
   /// the Synheart Runtime can derive motion features and the on-device
@@ -245,6 +282,13 @@ class BehaviorModule extends BaseSynheartModule
           _pushBehaviorToRuntime?.call(tsMs, mapped.$1.code, mapped.$2);
         }
       }
+
+      // The context channel, in addition to whichever behaviour path ran
+      // above. Independent buffer, independent consumer — see
+      // [pushContextEventToRuntime]. Without this the context window sees no
+      // events, so `pause_elevation` / `err_elevation` / `scroll_deviation`
+      // are structurally zero and CFI has no inputs.
+      _pushContextEvent(translateNativeContextEvent(event));
     } else if (_synheartBehaviorEventLogCount <= 3) {
       SynheartLogger.log(
         '[BehaviorModule] _onSynheartBehaviorEvent: DROPPED '
@@ -252,6 +296,43 @@ class BehaviorModule extends BaseSynheartModule
       );
     }
   }
+
+  /// Push one context event, counting the outcome. A `null` event is a
+  /// deliberate no-representation case and is not an error.
+  void _pushContextEvent(ContextEventInput? event) {
+    if (event == null) return;
+    final status = _pushContextEventToRuntime?.call(event);
+    if (status == null) return;
+    if (status == 0) {
+      _contextEventsAccepted++;
+      return;
+    }
+    _contextEventsRejected++;
+    if (!_contextRejectionLogged) {
+      _contextRejectionLogged = true;
+      SynheartLogger.log(
+        '[BehaviorModule] push_context_event returned $status. Far more likely '
+        'to mean the runtime was built without the `app-context` cargo feature '
+        '(which compiles the symbol as an inert stub that always returns 1) '
+        'than that the payload was malformed — the payload shape is pinned by '
+        'test/context_event_input_test.dart. Without a context layer, CFI and '
+        'the context deviation terms stay at zero.',
+      );
+    }
+  }
+
+  /// Push a context event the host derived itself.
+  ///
+  /// This is how **keyboard** evidence reaches the engine. Native taps are
+  /// keystroke-ambiguous on Android (the input collector emits every keystroke
+  /// as a `tap`), so the translator drops them and text-entry classification
+  /// has to come from the layer that can actually see it — a `TextField`
+  /// listener, an IME, or a keyboard extension. Send
+  /// [ContextEventInput.textChange] for every insertion *and* every deletion:
+  /// `err_rate` is `N_corr / N_key`, so corrections without keystrokes leave
+  /// the denominator at zero.
+  void pushHostContextEvent(ContextEventInput event) =>
+      _pushContextEvent(event);
 
   /// Maps internal [BehaviorEvent] → ([RuntimeBehaviorEvent], value).
   /// Returns null when the event has no runtime representation.
@@ -397,8 +478,8 @@ class BehaviorModule extends BaseSynheartModule
           ),
         );
 
-        // Forward raw 50 Hz accel batches into the runtime so
-        // `MotionStateHead` can classify posture.
+        // Forward raw 50 Hz accel batches into the runtime so the kinematic
+        // heads can classify posture, activity and locomotion.
         // Only subscribed when both `emitRawMotionSamples` is enabled and
         // the host has wired a runtime push callback — otherwise we'd
         // accumulate batches with nowhere to send them.
@@ -408,7 +489,29 @@ class BehaviorModule extends BaseSynheartModule
               final push = _pushAccelToRuntime;
               if (push == null) return;
               for (final s in samples) {
-                push(s.tsMs, s.ax, s.ay, s.az);
+                // Unit conversion, and it is not cosmetic. `MotionSample` is
+                // documented as m/s² with gravity included (Android's raw
+                // `TYPE_ACCELEROMETER`), whereas the engine's `push_accel`
+                // takes **g** and multiplies by `G` internally to store m/s².
+                // Forwarded raw, a phone at rest reported ~9.81 and the engine
+                // stored ~96 m/s² — every magnitude-based cut-point in
+                // `activity_state` and `locomotion_state` was ~9.8x off, the
+                // RulePack still-gate never saw stillness (so no personal
+                // physiological baseline could ever accumulate), and any host
+                // reading `meta.synheart.motion.accel_rms` back out for its own
+                // rest detection never satisfied a low-motion clause.
+                //
+                // It cleared the runtime's own ±50 sanity gate because that
+                // gate runs on the pre-multiply value. `synheart-wear-rust`
+                // converts explicitly for the same reason (Polar reports
+                // milli-g, it divides by 1000) — g is the engine's contract
+                // across the whole ecosystem, not a Flutter-side choice.
+                push(
+                  s.tsMs,
+                  s.ax / _standardGravityMs2,
+                  s.ay / _standardGravityMs2,
+                  s.az / _standardGravityMs2,
+                );
               }
             },
             onError: (e, st) => SynheartLogger.log(

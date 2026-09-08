@@ -458,44 +458,68 @@ class _ContextCard extends StatelessWidget {
     final c = context.watch<SynheartController>();
     final host = c.host;
     final supported = host.abiSupport['pushContextEvent'] == true;
+    final richSupported = host.abiSupport['pushBehaviorEvent'] == true;
 
     return SectionCard(
       title: 'App context',
       subtitle:
-          'On Android, app identity is what gives the engine a context layer '
-          'at all. Without it there is none.',
+          'Two separate channels. App identity types the window; context '
+          'events supply the friction evidence CFI reads.',
       trailing: StatusPill(
         supported ? 'bound' : 'absent',
         tone: supported ? PillTone.neutral : PillTone.warn,
       ),
       children: [
-        KeyValueRow('accepted', '${host.contextEventsAccepted}'),
-        KeyValueRow('rejected', '${host.contextEventsRejected}'),
+        KeyValueRow('app_foreground pushes', '${host.appForegroundPushes}'),
+        KeyValueRow('context accepted', '${host.contextEventsAccepted}'),
+        KeyValueRow('context rejected', '${host.contextEventsRejected}'),
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: supported && c.isSessionRunning
-                ? host.pushSelfAsContext
+            onPressed: richSupported && c.isSessionRunning
+                ? host.declareSelfForeground
                 : null,
             icon: const Icon(Icons.apps_outlined),
-            label: const Text('Push this app as context'),
+            label: const Text('Declare this app as foreground'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: supported && c.isSessionRunning
+                ? host.pushSampleContextEvent
+                : null,
+            icon: const Icon(Icons.keyboard_outlined),
+            label: const Text('Push a sample context event'),
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'This example has no UsageStatsManager binding, so it cannot name '
-          'the app that is actually in front — it reports itself, which is '
-          'true and useless. A real Android host adds the permission '
-          'PACKAGE_USAGE_STATS and sends the real foreground package; iOS has '
-          'no API for this at all.\n\n'
-          'Send the app CATEGORY, never a context label: the engine derives '
-          'the 12-class ContextLabel itself, and two-letter app codes collide '
-          'with live label codes — BR is BreakRecovery, not '
-          '"browsing/reading". An unmapped package resolves to UNKNOWN, whose '
-          'interpretation-mask row is all zeros, which silently blinds every '
-          'behavioural stream while that app is in front. File additions '
-          'upstream rather than shipping a local map.',
+          'APP IDENTITY rides the behaviour channel as app_foreground, and it '
+          'is what gives the engine an app to type each window against. With '
+          'none, current_app stays None, None resolves to the UNKNOWN '
+          'category, and UNKNOWN\'s interpretation-mask row is all zeros — so '
+          'CFI / Cognitive Load, Stress B, Mental Fatigue B and Focus '
+          'deviation terms all read 0 for someone who was working the whole '
+          'time. The SDK now runs a 30 s heartbeat of this for the session; '
+          'the button is here to make it observable.\n\n'
+          'CONTEXT EVENTS are a different channel with a different consumer: '
+          'privacy-preserving keyboard / pointer / shortcut events feeding the '
+          'context window, which is the only source of context.deviation.* '
+          'and so the only source of CFI. There is NO app-category variant on '
+          'this channel — the {ts_ms, app_id, category} payload this example '
+          'used to send never parsed. The SDK derives these from native '
+          'scroll and swipe gestures; the keyboard half comes from the typing '
+          'probe, because Android reports every keystroke as a tap and only '
+          'the text field can tell an insertion from a deletion.\n\n'
+          'Both are honest but limited here: this app reports ITSELF, true '
+          'while the person is in it and wrong the moment they leave (which '
+          'is why the SDK stops on background). A real Android host '
+          'implements ForegroundAppSource over UsageStatsManager (permission '
+          'PACKAGE_USAGE_STATS) and passes it as '
+          'BehaviorConfig.foregroundAppSource; iOS has no API for this.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
             height: 1.4,

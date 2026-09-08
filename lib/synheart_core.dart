@@ -73,6 +73,9 @@ export 'src/models/metric_event.dart';
 
 // Rich behavior events (the typed payload path) + accelerometer placement.
 export 'src/models/behavior_event_input.dart';
+export 'src/models/context_event_input.dart';
+export 'src/modules/behavior/foreground_app_reporter.dart'
+    show ForegroundAppSource, SelfForegroundAppSource;
 export 'src/models/accel_placement.dart';
 
 // Personalization task tags .

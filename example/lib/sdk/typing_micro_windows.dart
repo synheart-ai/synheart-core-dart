@@ -85,6 +85,15 @@ class TypingMicroWindowAggregator {
   /// 40 characters reads as 40 taps.
   void syncLength(int length) => _previousLength = length;
 
+  /// The text length this aggregator last saw.
+  ///
+  /// Exposed so a caller can classify the *next* change as an insertion or a
+  /// deletion before handing it over — which is what the context channel needs
+  /// (`ContextEventInput.textChange`) and what this aggregator otherwise keeps
+  /// to itself. Reading it after [onTextChanged] gives the post-change length,
+  /// so read it first.
+  int get currentLength => _previousLength;
+
   /// Record a text change. Returns a completed [TypingSessionData] with its
   /// window start when this change closed a window, otherwise null.
   ///

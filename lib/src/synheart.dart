@@ -64,6 +64,8 @@ import 'models/sleep_score.dart';
 import 'modules/baselines/baselines.dart';
 import 'modules/wear/wearable_event_processor.dart';
 import 'modules/session/watch_session_module.dart';
+import 'modules/behavior/foreground_app_reporter.dart';
+import 'models/context_event_input.dart';
 import 'package:synheart_session/synheart_session.dart';
 
 /// Synheart Core SDK - Main Entry Point
@@ -1536,8 +1538,21 @@ class Synheart {
         // event on an older runtime instead of degrading to the legacy path.
         _behaviorModule!.pushBehaviorEventToRuntime = (event) =>
             _coreRuntime?.pushBehaviorEventJson(jsonEncode(event.toJson()));
+        // The context-evidence channel, additional to the behaviour channel
+        // above rather than an alternative to it. Different runtime buffer,
+        // different consumer: this one feeds the person-relative context
+        // window, which is the only source of `context.deviation.*` and so the
+        // only source of Cognitive Load's friction index. With it unwired,
+        // pause / error / scroll deviation are structurally zero on every
+        // window no matter how much interaction the person produces.
+        _behaviorModule!.pushContextEventToRuntime = (event) =>
+            _coreRuntime?.pushContextEventJson(jsonEncode(event.toJson()));
         // Push raw 50 Hz accel batches to the Synheart Runtime so it can
         // derive features and the on-device motion classifier can run.
+        //
+        // NOTE: the module converts m/s² → g at this boundary. The engine's
+        // `push_accel` takes g; `synheart_behavior` reports m/s². See
+        // `BehaviorModule`'s call site.
         _behaviorModule!.pushAccelToRuntime =
             (int tsMs, double ax, double ay, double az) {
               _coreRuntime?.pushAccel(tsMs, ax, ay, az);
@@ -2988,24 +3003,81 @@ class Synheart {
   static int? pushBehaviorEvent(BehaviorEventInput event) =>
       _coreRuntime?.pushBehaviorEventJson(jsonEncode(event.toJson()));
 
-  /// Push a foreground-app context event.
+  /// Push one privacy-preserving context event — keyboard, pointer or
+  /// shortcut.
   ///
-  /// Send the app **category**, never a context label — the engine derives the
-  /// 12-class `ContextLabel` itself, and two-letter app codes collide with
-  /// live label codes (`BR` is `BreakRecovery`, not "browsing/reading").
-  /// Android keys are package names (`com.google.android.gm`), matched
-  /// case-insensitively.
+  /// This is the **only** source of `context.deviation.*`, and therefore the
+  /// only source of Cognitive Load's friction index (CFI). A host that pushes
+  /// rich behaviour events but no context events leaves `pause_elevation`,
+  /// `err_elevation` and `scroll_deviation` structurally zero on every window.
   ///
-  /// An unmapped package resolves to `UNKNOWN`, whose interpretation-mask row
-  /// is all zeros — a missing table row silently blinds every behavioural
-  /// stream while that app is in front. File additions upstream rather than
-  /// shipping a local map.
+  /// It is a *second* channel, not an alternative to [pushBehaviorEvent]: the
+  /// two write to different runtime buffers with different consumers, so one
+  /// event on each per user action is correct and is not a double count.
+  /// Pushing the same event twice on this channel is — feed each event once.
   ///
-  /// Returns `null` when the symbol is absent. A non-zero status most often
-  /// means the runtime was built without the `app-context` cargo feature, in
-  /// which case the symbol is an inert stub.
-  static int? pushContextEvent(Map<String, dynamic> event) =>
+  /// **Keyboard events must come from the host's text layer.** Native taps are
+  /// keystroke-ambiguous on Android, so the SDK's translator drops them; a
+  /// `TextField` listener, IME or keyboard extension is what can actually tell
+  /// an insertion from a deletion. Send [ContextEventInput.textChange] for
+  /// both directions: `err_rate` is `N_corr / N_key`, so corrections without
+  /// the keystrokes they corrected spike the error rate to its ceiling.
+  ///
+  /// Returns `0` on acceptance, or `null` when the symbol is absent. A
+  /// non-zero status most often means the runtime was built without the
+  /// `app-context` cargo feature, which compiles the call as an inert stub
+  /// that always returns `1` — not that the payload was wrong.
+  static int? pushContextEvent(ContextEventInput event) =>
+      _coreRuntime?.pushContextEventJson(jsonEncode(event.toJson()));
+
+  /// Push a raw context-event payload.
+  ///
+  /// Escape hatch for a host that needs a shape this SDK's version of
+  /// [ContextEventInput] does not model yet. Prefer the typed call: the wire
+  /// form is an externally-tagged Rust enum, a payload that does not parse
+  /// buffers nothing, and the failure is indistinguishable from a runtime
+  /// built without the context feature.
+  static int? pushContextEventJson(Map<String, dynamic> event) =>
       _coreRuntime?.pushContextEventJson(jsonEncode(event));
+
+  /// Declare which application is in the foreground.
+  ///
+  /// The call that gives the engine an app identity at all. Without it the
+  /// runtime's `current_app` stays `None`, `None` resolves to the `Unknown`
+  /// app category, and `Unknown`'s interpretation-mask row is **all zeros** —
+  /// so CFI / Cognitive Load, Stress `B`, Mental Fatigue `B` and Focus's
+  /// deviation sub-terms all read `0` for a person who was working the whole
+  /// time.
+  ///
+  /// [app] is an Android package name or iOS bundle id. Send it at session
+  /// start, on every foreground resume, and periodically — repeats are cheap
+  /// and are treated as steady-state observations rather than app switches, so
+  /// a heartbeat does not fabricate fragmentation. The SDK runs that heartbeat
+  /// for you; call this directly only for a source the SDK does not have.
+  ///
+  /// Returns the runtime status (`0` = accepted), or `null` when the runtime
+  /// does not export `push_behavior_event` — the legacy int-coded call carries
+  /// no payload and so cannot name an app.
+  static int? pushAppForeground(String app, {int? tsMs}) => pushBehaviorEvent(
+    BehaviorEventInput.appForeground(
+      tsMs ?? DateTime.now().millisecondsSinceEpoch,
+      app,
+    ),
+  );
+
+  /// Score today's accumulated Strain and attach it to the next HSI frame.
+  ///
+  /// Returns the score JSON, or `null` when the symbol is absent **or** when
+  /// the day has nothing scorable accumulated yet. The second case is normal.
+  ///
+  /// **Call this before [rollDay].** Rolling finalises the day and clears the
+  /// values Strain is computed from, so a host that rolls first gets `null`
+  /// every day and never emits a Strain score. `rollDay` does not score for
+  /// you — it validates the index and folds the day into the longitudinal
+  /// baselines, nothing more.
+  ///
+  /// Takes no input: the engine accumulated the inputs itself over the day.
+  static String? attachStrainScore() => _coreRuntime?.attachStrainScoreJson();
 
   /// Push a GPS-derived ground speed sample in **m/s**.
   ///
@@ -3696,15 +3768,139 @@ class Synheart {
     }
   }
 
+  /// Resolves the foreground app for the life of the session. See
+  /// [BehaviorConfig.reportForegroundApp] for why an app identity is
+  /// load-bearing rather than decorative.
+  ForegroundAppReporter? _foregroundAppReporter;
+
+  /// Gates the reporter on app lifecycle.
+  ///
+  /// The default [SelfForegroundAppSource] reports *this* app's id, which is
+  /// the truth while the person is here and a lie the moment they leave. A
+  /// heartbeat that keeps asserting it from the background is worse than
+  /// silence: the engine would attribute another app's window to this one. So
+  /// the heartbeat runs only while the app is visible, and resumes with an
+  /// immediate resolve so the window the person came back into is typed.
+  ///
+  /// A host that supplies a real [ForegroundAppSource] (Android
+  /// `UsageStatsManager`) does not need this gate — but it costs nothing there,
+  /// because a backgrounded host has no windows of its own to type either.
+  AppLifecycleListener? _foregroundLifecycleListener;
+
+  /// The foreground-app reporter, for host diagnostics (how many resolves
+  /// landed, and which id). `null` when reporting is off or no usable id was
+  /// found.
+  ForegroundAppReporter? get foregroundAppReporter => _foregroundAppReporter;
+
+  /// Pick a foreground-app identity.
+  ///
+  /// Resolution order, most explicit first. `appId` comes last and is filtered:
+  /// it is documented as "developer-provided app identifier" and hosts legitimately
+  /// set it to a Synheart-issued `app_…` id, which is not a package name and
+  /// would never match the taxonomy. A dot and no `app_` prefix is the
+  /// cheap test for "this looks like a package name / bundle id".
+  String? _resolveForegroundAppId() {
+    final config = _config;
+    if (config == null) return null;
+
+    final explicit = config.behaviorConfig?.foregroundAppId;
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+
+    final packageName = config.deviceAuthConfig?.packageName;
+    if (packageName != null && packageName.isNotEmpty) return packageName;
+
+    final appId = config.appId;
+    if (appId.contains('.') && !appId.startsWith('app_')) return appId;
+
+    return null;
+  }
+
+  Future<void> _startForegroundAppReporter() async {
+    final config = _config;
+    if (config == null) return;
+    // A host that passes no `BehaviorConfig` at all still gets the reporter:
+    // the field defaults to `true`, and an absent config is "I did not think
+    // about this", not "do not report". Opting out means passing
+    // `BehaviorConfig(reportForegroundApp: false)` deliberately.
+    final behavior = config.behaviorConfig ?? const BehaviorConfig();
+    if (!behavior.reportForegroundApp) return;
+    if (_foregroundAppReporter != null) return;
+
+    final source = behavior.foregroundAppSource ?? _selfForegroundAppSource();
+    if (source == null) {
+      SynheartLogger.log(
+        '[Synheart] reportForegroundApp is on but no usable application id was '
+        'found — set BehaviorConfig.foregroundAppId (an Android package name / '
+        'iOS bundle id). Until then the engine types every window against the '
+        'Unknown app category, whose interpretation-mask row is all zeros, so '
+        'CFI / Cognitive Load, Stress B, Mental Fatigue B and Focus deviation '
+        'terms will read 0.',
+      );
+      return;
+    }
+
+    _foregroundAppReporter = ForegroundAppReporter(
+      source: source,
+      push: Synheart.pushBehaviorEvent,
+    );
+    await _foregroundAppReporter!.start();
+    _attachForegroundLifecycleGate();
+  }
+
+  void _attachForegroundLifecycleGate() {
+    if (_foregroundLifecycleListener != null) return;
+    try {
+      _foregroundLifecycleListener = AppLifecycleListener(
+        onStateChange: (state) {
+          final reporter = _foregroundAppReporter;
+          if (reporter == null) return;
+          switch (state) {
+            case AppLifecycleState.resumed:
+              // `start()` is idempotent and resolves once immediately.
+              reporter.start();
+            case AppLifecycleState.inactive:
+              // A transient overlay (a call banner, the app switcher) is not
+              // leaving. Stopping here would drop resolves on every
+              // notification shade pull.
+              break;
+            case AppLifecycleState.hidden:
+            case AppLifecycleState.paused:
+            case AppLifecycleState.detached:
+              reporter.stop();
+          }
+        },
+      );
+    } on Object catch (e) {
+      // Needs a bound WidgetsBinding. A headless host (a background isolate,
+      // a plain Dart test) has none — the reporter still runs, it just is not
+      // lifecycle-gated, which for a headless host is the correct behaviour
+      // anyway since there is no foreground to leave.
+      SynheartLogger.log(
+        '[Synheart] foreground-app lifecycle gate unavailable ($e); the '
+        'resolve heartbeat will run unconditionally for this session.',
+      );
+    }
+  }
+
+  SelfForegroundAppSource? _selfForegroundAppSource() {
+    final id = _resolveForegroundAppId();
+    return id == null ? null : SelfForegroundAppSource(id);
+  }
+
   Future<void> _startRuntimeLinkedCollection() async {
     if (_isRunning) return;
     await _moduleManager.startAll();
     _wireSessionBuffers();
     _isRunning = true;
     _reevaluateAllFeatures();
+    await _startForegroundAppReporter();
   }
 
   Future<void> _stopRuntimeLinkedCollection() async {
+    _foregroundLifecycleListener?.dispose();
+    _foregroundLifecycleListener = null;
+    _foregroundAppReporter?.dispose();
+    _foregroundAppReporter = null;
     await _sessionHsiSubscription?.cancel();
     _sessionHsiSubscription = null;
     await _sessionWearSubscription?.cancel();

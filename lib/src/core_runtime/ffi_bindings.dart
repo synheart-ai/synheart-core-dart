@@ -1068,6 +1068,13 @@ class SynheartCoreFFI {
       'synheart_core_last_hsv',
     ),
   );
+  late final Pointer<Utf8> Function(Pointer<Void>)? attachStrainScoreJson =
+      _optional(
+        'synheart_core_attach_strain_score_json',
+        () => _lib.lookupFunction<_ReadStringC, _ReadStringDart>(
+          'synheart_core_attach_strain_score_json',
+        ),
+      );
 
   late final pushSleepStages = _lib.lookupFunction<_PushSleepC, _PushSleepDart>(
     'synheart_core_push_sleep_stages',
