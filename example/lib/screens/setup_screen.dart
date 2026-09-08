@@ -145,8 +145,10 @@ class _SetupScreenState extends State<SetupScreen> {
             ),
             children: [
               ConsentToggle(
-                title: 'Declare sensing, device_class, mask_profile, CFI = 4',
+                title: 'Declare host profile',
                 description:
+                    'Sends sensing, device_class, mask_profile and '
+                    'cfi_structural_components: 4. '
                     'Declaring device_class folds into the SRM config_hash '
                     'and INVALIDATES every persisted baseline — the person '
                     're-warms 30 observations across 3 distinct days. Declare '

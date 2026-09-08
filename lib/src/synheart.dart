@@ -3210,11 +3210,15 @@ class Synheart {
   /// drop. HSI windows produced by the batch are delivered through
   /// [onHsi] — the primary HSI path on iOS, where the native
   /// `setHsiCallback` doesn't fire.
-  static void pushWearHr(
-    int tsMs,
-    double bpm, {
-    String provider = 'default_sensor',
-  }) {
+  ///
+  /// The default [provider] is `sdk_wear`, not `default_sensor`. Both are
+  /// Tier 3 in core-runtime's `provider_tier`, but only `sdk_wear` has a row in
+  /// `signals_for` — the table that registers the source behind
+  /// `meta.provenance.sources[*].signals`. Tagged `default_sensor`, the sample
+  /// moves the axes and registers nothing, so every modality chip reads absent
+  /// while the rate is visibly grounded. Pass `ble_hrm` only for a real strap:
+  /// it is Tier 1 and routes into the breathing detector's Tier-1 series.
+  static void pushWearHr(int tsMs, double bpm, {String provider = 'sdk_wear'}) {
     _ingestSingleEvent({
       'type': 'hr',
       'ts_ms': tsMs,

@@ -194,11 +194,16 @@ class SynheartController extends ChangeNotifier {
 
   /// True when an enabled feature ALSO has its matching consent granted.
   ///
-  /// Both halves are required. This example enables wear, phone and behavior in
-  /// [buildConfig], so any one of the three consents pairs with something — but
-  /// an app that enables only `wearConfig` and is granted only `behavior` has
-  /// no working pair: wear is enabled but not permitted, behavior is permitted
-  /// but not enabled. Nothing would collect.
+  /// Both halves are required. An app that enables only `wearConfig` and is
+  /// granted only `behavior` has no working pair: wear is enabled but not
+  /// permitted, behavior is permitted but not enabled. Nothing would collect.
+  ///
+  /// This example enables wear and behavior, so either of those two consents
+  /// pairs with something. Phone context is a live demonstration of the
+  /// unpaired case: the consent exists and can be granted, but [buildConfig]
+  /// declares no `phoneConfig`, so granting it alone still collects nothing.
+  /// The phone clause below is kept rather than deleted for exactly that
+  /// reason — it is the half of the pair that is present.
   ///
   /// Deliberately NOT `hasAnyGrant`, which also counts cloudUpload, vendorSync,
   /// research and syni. Those govern what happens to data once collected; none
@@ -268,7 +273,27 @@ class SynheartController extends ChangeNotifier {
       // Declaring a module config both activates the feature and tells the SDK
       // which collectors to wire. Omit one and that module never starts.
       wearConfig: const WearConfig(),
-      phoneConfig: const PhoneConfig(),
+
+      // phoneConfig is deliberately NOT declared.
+      //
+      // Declaring it starts PhoneModule, whose four collectors are `Random()`
+      // generators: motion at 10 Hz, a 30% chance of flipping screen state
+      // every 30 s, a 40% chance of switching to a mock app every 15 s, and a
+      // 30% chance of inventing a notification every 20 s
+      // (`lib/src/modules/phone/phone_collectors.dart`). Cardiac is the only
+      // thing this example is allowed to simulate, and those four are not
+      // cardiac.
+      //
+      // It also contradicted the sensing roster: `MobileHostRunner` declares
+      // `screen_state: false` and `app_focus: false` because nothing real
+      // observes them, while the phone module was busy inventing exactly
+      // those two.
+      //
+      // The data never reached the runtime — `phone_module.dart` holds no
+      // bridge reference, so it wrote to an in-memory cache nothing reads —
+      // so nothing of value is lost by leaving it off. The module needs
+      // replacing with real platform collectors or deleting; until then, off
+      // is the honest setting.
       behaviorConfig: const BehaviorConfig(
         // §4.2 — without this the accel subscription is never created and
         // `push_accel` is never called, so the kinematic modality has no
@@ -723,6 +748,14 @@ class SynheartController extends ChangeNotifier {
   /// probe every one of those symbols would go unexamined.
   Map<String, dynamic> get diagnostics =>
       Synheart.runtimeDiagnostics(probeAll: true);
+
+  /// Compile-time facts about the vendored runtime — crate versions, profile,
+  /// and the cargo features it was built with.
+  ///
+  /// The features list is the one to read when a context event is rejected:
+  /// without `app-context`, push_context_event is compiled as an inert stub
+  /// that returns 1, which is byte-identical to a rejected payload.
+  Map<String, dynamic>? get buildInfo => Synheart.buildInfo;
 
   /// SDK version constant, kept in sync with pubspec.
   String get sdkVersion => synheartCoreVersion;

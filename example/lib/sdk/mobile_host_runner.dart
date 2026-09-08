@@ -18,11 +18,14 @@ import 'typing_micro_windows.dart';
 /// [SynheartController] owns configuration, consent and the session. This owns
 /// what has to keep happening once a session is live, in the order §6 requires:
 ///
-/// * **§6.1 — tick for the whole session.** There is no internal ticker.
-///   `ingest_batch` advances the clock, but `push_behavior` does not, so a
-///   session with interaction and no cardiac input emits *zero* HSI windows
-///   unless the host ticks. This runs a 1 Hz loop for the life of the session,
-///   not only while a keyboard is up.
+/// * **§6.1 — tick for the whole session.** The engine *does* run its own 1 Hz
+///   ticker from `start_session` (the guide's earlier "there is no internal
+///   ticker" was wrong and has been corrected upstream), but it uses `tick`,
+///   not `tick_all`, so after any gap it drains one window and skips the rest.
+///   This loop calls `tick_all` for the life of the session so no completed
+///   window is left behind. Two consequences: `windowsDrained` **undercounts**
+///   (windows the engine's own loop drains never pass through this counter),
+///   and "frames are flowing" does not prove this loop is running.
 /// * **§6.4 — drain before the tick that closes the window.** Retroactive
 ///   buffers (here, the typing micro-window aggregator) are flushed *first*,
 ///   then the tick runs. Reverse that order and the window closes without the
@@ -254,7 +257,6 @@ class MobileHostRunner {
   int typingTapsPushed = 0;
   int rrPacketsPushed = 0;
   int beatsPushed = 0;
-  int speedSamplesPushed = 0;
   int sessionStateSaves = 0;
   int dailyPushes = 0;
   int contextEventsAccepted = 0;
@@ -362,7 +364,6 @@ class MobileHostRunner {
     typingTapsPushed = 0;
     rrPacketsPushed = 0;
     beatsPushed = 0;
-    speedSamplesPushed = 0;
     sessionStateSaves = 0;
     dailyPushes = 0;
     appForegroundPushes = 0;
@@ -676,27 +677,13 @@ class MobileHostRunner {
     onChanged();
   }
 
-  /// Push one synthetic **context** event so the channel is observable.
-  ///
-  /// A different channel from [declareSelfForeground] with a different
-  /// consumer: this feeds the person-relative context window, the only source
-  /// of `context.deviation.*` and therefore the only source of CFI. It takes
-  /// privacy-preserving keyboard / pointer / shortcut events — there is no
-  /// app-category variant, and a `{ts_ms, app_id, category}` object (what this
-  /// example used to send) does not parse at all.
-  ///
-  /// In normal operation a host does not call this by hand: the SDK derives
-  /// context events from native scroll and swipe gestures, and the typing
-  /// probe below supplies the keyboard half. This is a demo affordance.
-  void pushSampleContextEvent() {
-    _pushContextEvent(
-      ContextEventInput.shortcut(
-        DateTime.now().millisecondsSinceEpoch,
-        ShortcutType.paste,
-      ),
-    );
-    onChanged();
-  }
+  // There is deliberately NO button that pushes a hand-made context event.
+  // The pulled version had one — a `Shortcut/Paste` invented on tap "so the
+  // channel is observable". That is fabricated non-cardiac evidence, and
+  // cardiac is the only thing this example is allowed to simulate. The channel
+  // is observable anyway: the SDK derives Mouse events from real scroll and
+  // swipe gestures, and the typing probe pushes a Keyboard event per real
+  // keystroke. Watch "context accepted" while typing or scrolling.
 
   /// Push a context event, counting the outcome.
   void _pushContextEvent(ContextEventInput event) {
@@ -775,13 +762,12 @@ class MobileHostRunner {
         provider: _simProvider,
       );
 
-      // §4.4 — speed is the high-confidence input for `locomotion_state`,
-      // which otherwise runs permanently on its accel-only fallback. Simulated
-      // here from the same activity episode that produced the beats, so the
-      // two agree; a real host wires the platform's location stream.
-      Synheart.pushSpeed(packet.anchorTsMs, packet.speedMps);
-      speedSamplesPushed++;
-
+      // §4.4's `push_speed` is deliberately NOT called here. It is bound and
+      // it is the high-confidence input `locomotion_state` wants — but the
+      // only speed this example could supply is one the simulator invented,
+      // and cardiac is the only thing allowed to be simulated. So
+      // `locomotion_state` stays on its low-confidence accel-only fallback,
+      // which is its honest state until a real location stream is wired.
       rrPacketsPushed++;
       beatsPushed += packet.rrMs.length;
       latestSimBpm = packet.bpm;

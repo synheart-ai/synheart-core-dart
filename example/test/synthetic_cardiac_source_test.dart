@@ -237,21 +237,13 @@ void main() {
     });
   });
 
-  group('speed agrees with the episode', () {
-    test('is zero at rest and positive when moving', () {
-      final source = SyntheticCardiacSource(seed: 47);
-      final packets = run(source, minutes: 40);
-
-      final resting = packets.where((p) => p.activityLabel == 'rest');
-      expect(resting.every((p) => p.speedMps == 0.0), isTrue);
-
-      final moving = packets.where((p) => p.activityLabel != 'rest');
-      if (moving.isNotEmpty) {
-        expect(moving.every((p) => p.speedMps > 0.0), isTrue);
-        // Walking-to-jogging, not a car.
-        expect(moving.every((p) => p.speedMps < 4.0), isTrue);
-      }
-    });
+  test('the packet carries cardiac and an episode label, nothing else', () {
+    final packets = run(SyntheticCardiacSource(seed: 47), minutes: 2);
+    expect(packets, isNotEmpty);
+    final p = packets.first;
+    expect(p.rrMs, isNotEmpty);
+    expect(p.bpm, greaterThan(0));
+    expect(p.activityLabel, isNotEmpty);
   });
 
   test('a zero or negative advance produces nothing', () {

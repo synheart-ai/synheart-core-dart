@@ -68,7 +68,8 @@ class _AbiSupportCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final host = context.watch<SynheartController>().host;
+    final c = context.watch<SynheartController>();
+    final host = c.host;
     final support = host.abiSupport;
     final missing = host.unsupportedCalls;
 
@@ -122,6 +123,17 @@ class _AbiSupportCard extends StatelessWidget {
                 ],
               ),
             ),
+          const Divider(height: 20),
+          // Which cargo features the runtime was built with. Without
+          // `app-context`, push_context_event is an inert stub that returns 1
+          // — indistinguishable from a rejected payload unless this is read.
+          Text('runtime build', style: theme.textTheme.labelMedium),
+          const SizedBox(height: 6),
+          if (c.buildInfo == null)
+            Text('build_info unavailable', style: theme.textTheme.bodySmall)
+          else
+            for (final entry in c.buildInfo!.entries)
+              KeyValueRow(entry.key, '${entry.value}'),
           if (missing.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
@@ -160,16 +172,19 @@ class _TickLoopCard extends StatelessWidget {
     return SectionCard(
       title: 'Tick loop',
       subtitle:
-          'There is no internal ticker. ingest_batch advances the pipeline '
-          'clock but push_behavior does not, so a session with interaction '
-          'and no cardiac input emits zero HSI windows unless the host ticks.',
+          'The engine runs its own 1 Hz ticker from start_session — but with '
+          'tick, not tick_all, so after any gap it drains one window and '
+          'skips the rest. This loop calls tick_all so nothing is left behind.',
       trailing: StatusPill(
         host.isRunning ? '1 Hz' : 'stopped',
         tone: host.isRunning ? PillTone.good : PillTone.neutral,
       ),
       children: [
         KeyValueRow('ticks', '${host.ticks}'),
-        KeyValueRow('windows drained', '${host.windowsDrained}'),
+        // Undercounts by design: windows the engine's own loop drains never
+        // pass through this counter. A low number is not evidence that
+        // emission is broken — watch the Live HSI window count instead.
+        KeyValueRow('windows drained here', '${host.windowsDrained}'),
         KeyValueRow('symbol', usingTickAll ? 'tick_all' : 'tick (fallback)'),
         KeyValueRow(
           'keep-alive',
@@ -513,17 +528,6 @@ class _ContextCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: supported && c.isSessionRunning
-                ? host.pushSampleContextEvent
-                : null,
-            icon: const Icon(Icons.keyboard_outlined),
-            label: const Text('Push a sample context event'),
-          ),
-        ),
-        const SizedBox(height: 8),
         Text(
           'APP IDENTITY rides the behaviour channel as app_foreground, and it '
           'is what gives the engine an app to type each window against. With '
@@ -538,10 +542,12 @@ class _ContextCard extends StatelessWidget {
           'context window, which is the only source of context.deviation.* '
           'and so the only source of CFI. There is NO app-category variant on '
           'this channel — the {ts_ms, app_id, category} payload this example '
-          'used to send never parsed. The SDK derives these from native '
+          'used to send never parsed. The SDK derives these from REAL native '
           'scroll and swipe gestures; the keyboard half comes from the typing '
-          'probe, because Android reports every keystroke as a tap and only '
-          'the text field can tell an insertion from a deletion.\n\n'
+          'probe, one event per real keystroke. There is no button to push a '
+          'hand-made one: cardiac is the only thing this example simulates, '
+          'and an invented Paste would be fabricated evidence. Type or scroll '
+          'and watch "context accepted".\n\n'
           'Both are honest but limited here: this app reports ITSELF, true '
           'while the person is in it and wrong the moment they leave (which '
           'is why the SDK stops on background). A real Android host '
@@ -727,18 +733,33 @@ class _NotWiredCard extends StatelessWidget {
           ),
           (
             'Real GPS speed',
-            'push_speed is called, but from the simulator’s activity episode '
-                'rather than a location stream. A real host wires the '
-                'platform’s location updates — a phone has GPS and this is '
-                'the cheap win that gets locomotion_state off its '
-                'accel-only fallback.',
+            'push_speed is bound and never called. It is the '
+                'high-confidence input for locomotion_state, which therefore '
+                'runs permanently on its low-confidence accel-only fallback. '
+                'The only speed this example could supply is one the '
+                'simulator invented, and cardiac is the only thing it is '
+                'allowed to simulate — so a real host wires the platform’s '
+                'location updates instead. A phone has GPS; this is the cheap '
+                'win.',
+          ),
+          (
+            'Foreground app context',
+            'push_context_event is bound and never called. Without a '
+                'UsageStatsManager binding this app cannot name the app '
+                'actually in front — it could only report itself with a '
+                'category it made up, and unlike a simulated heart rate, a '
+                'fabricated context claim is indistinguishable from a real '
+                'one downstream. On Android this means no context layer at '
+                'all; iOS has no API for it.',
           ),
           (
             'PhoneModule’s collectors',
-            'Still emitting Random() for motion, screen state, app focus and '
-                'notifications into a cache nothing reads. Mock data reaching '
-                'the engine is worse than no data, because withholding stops '
-                'working — so it must be replaced or deleted, not wired up.',
+            'Not enabled here — buildConfig declares no phoneConfig. The four '
+                'collectors are Random() generators for motion, screen state, '
+                'app focus and notifications, which is why. They never '
+                'reached the runtime either (no bridge reference), so they '
+                'wrote to a cache with no reader. The module needs replacing '
+                'with real platform collectors or deleting.',
           ),
         ])
           Padding(

@@ -53,10 +53,7 @@ void main() {
         final e = translateNativeContextEvent(
           _event(
             sb.BehaviorEventType.scroll,
-            metrics: <String, dynamic>{
-              'direction': 'up',
-              'velocity': velocity,
-            },
+            metrics: <String, dynamic>{'direction': 'up', 'velocity': velocity},
           ),
         )!;
         return (e.toJson()['Mouse'] as Map<String, dynamic>)['scroll_magnitude']

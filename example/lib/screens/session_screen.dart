@@ -210,10 +210,13 @@ class SessionScreen extends StatelessWidget {
               ),
               _SourceRow(
                 label: 'Phone',
-                // Collected into an in-memory PhoneCache that nothing reads.
-                // Unlike wear and behavior, PhoneModule has no runtime wiring,
-                // so this data does not influence HSI.
-                detail: 'Motion and device context — cached locally only',
+                // Not enabled, on purpose. PhoneModule's four collectors are
+                // `Random()` generators — motion, screen state, app focus,
+                // notifications — and cardiac is the only thing this example
+                // simulates. They also never reached the runtime: PhoneModule
+                // holds no bridge reference, so it wrote to an in-memory cache
+                // with no reader.
+                detail: 'Not enabled — its collectors emit Random() values',
                 active: c.isPhoneCollecting,
                 reachesRuntime: false,
               ),
@@ -708,9 +711,9 @@ class _CardiacSimulatorCard extends StatelessWidget {
       title: 'Simulated cardiac source',
       subtitle:
           'Fabricated beats through the real ingest path — push_rr_batch for '
-          'the intervals, push_wear_hr for the rate, push_speed for the '
-          'episode. For exercising the integration when no wearable is '
-          'attached.',
+          'the intervals, push_wear_hr for the rate. The only simulated '
+          'source in this example; for exercising the integration when no '
+          'wearable is attached.',
       trailing: StatusPill(
         streaming ? 'streaming' : 'off',
         tone: streaming ? PillTone.warn : PillTone.neutral,
@@ -777,7 +780,6 @@ class _CardiacSimulatorCard extends StatelessWidget {
           const Divider(height: 24),
           KeyValueRow('RR packets pushed', '${host.rrPacketsPushed}'),
           KeyValueRow('beats in those packets', '${host.beatsPushed}'),
-          KeyValueRow('speed samples', '${host.speedSamplesPushed}'),
           const SizedBox(height: 8),
           Text(
             'One packet per notification, several intervals under a single '
@@ -822,6 +824,9 @@ class _CardiacSimulatorCard extends StatelessWidget {
                 'longitudinal reference ranges on this device — so run the '
                 'simulator under a throwaway subject_id and wipe local data '
                 'afterwards (Setup tab).\n\n'
+                'Cardiac is the only thing simulated here — no motion, '
+                'speed, screen state, app focus or notifications is '
+                'fabricated alongside it.\n\n'
                 'Pushed as provider "sdk_wear" (Tier-3), never "ble_hrm": '
                 'that label routes into the breathing detector’s Tier-1 '
                 'series and marks a true-RR source in research exports. '
@@ -870,16 +875,22 @@ class _SimMetric extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(
-              value,
-              style:
-                  (emphasis
-                          ? theme.textTheme.headlineSmall
-                          : theme.textTheme.titleMedium)
-                      ?.copyWith(
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                        fontWeight: FontWeight.w600,
-                      ),
+            // Flexible for the same reason ConsentToggle needs it: the
+            // episode metric carries values like "moderate activity", which
+            // at this text size is far wider than a third of the card. A bare
+            // Text sizes to its natural width and overflows the row.
+            Flexible(
+              child: Text(
+                value,
+                style:
+                    (emphasis
+                            ? theme.textTheme.headlineSmall
+                            : theme.textTheme.titleMedium)
+                        ?.copyWith(
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                          fontWeight: FontWeight.w600,
+                        ),
+              ),
             ),
             if (unit != null) ...[
               const SizedBox(width: 3),

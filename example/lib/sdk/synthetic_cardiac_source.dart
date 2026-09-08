@@ -12,12 +12,28 @@ import 'dart:math';
 /// throwaway subject id for it, and wipe local data afterwards. That is why
 /// nothing here is wired to start on its own: the host has to ask.
 ///
-/// It is also tagged honestly on the way in. Every push carries
-/// `provider: 'synthetic_sim'` rather than `'ble_hrm'`, so it lands in the
-/// runtime's lowest fidelity tier and never claims the Tier-1 routing a real
-/// chest strap earns. Claiming Tier-1 for invented data would put it into the
-/// breathing detector's Tier-1 series, and withholding stops working the
+/// It is also tagged honestly on the way in. Every push carries a Tier-3
+/// provider rather than `'ble_hrm'`, so it never claims the Tier-1 routing a
+/// real chest strap earns. Claiming Tier-1 for invented data would put it into
+/// the breathing detector's Tier-1 series, and withholding stops working the
 /// moment a host lies about where a number came from.
+///
+/// ## Cardiac and nothing else
+///
+/// This is the **only** simulated source in the example, and it stays that
+/// way. It models beats — RR intervals and the rate derived from them — and
+/// deliberately emits no motion, no speed, no screen state, no app focus and
+/// no notifications, even though the activity episodes below would make all of
+/// those easy to invent alongside.
+///
+/// The reason is that a fabricated non-cardiac stream is not a smaller version
+/// of the same compromise, it is a worse one. A simulated heart rate is
+/// visibly a stand-in for hardware the device does not have; a simulated
+/// screen-state or GPS trace is indistinguishable from a real one the phone
+/// could genuinely have produced, so nothing downstream — and nobody reading a
+/// screenshot — can tell it apart. `activityLabel` is exposed for the UI to
+/// explain a rate that just climbed 30 bpm; it is not a locomotion claim and
+/// must not be pushed as one.
 ///
 /// ## What makes it physiologically shaped rather than random
 ///
@@ -126,21 +142,6 @@ class SyntheticCardiacSource {
     _Episode.light => 'light activity',
     _Episode.moderate => 'moderate activity',
     _Episode.recovery => 'recovery',
-  };
-
-  /// Ground speed for this episode, in m/s — the input `push_speed` wants.
-  ///
-  /// Simulated alongside the beats because the two are not independent: a
-  /// person at 105 bpm who is also stationary is a different physiological
-  /// claim than one who is walking, and `locomotion_state` reads exactly that
-  /// pairing. A host with real GPS wires the platform's location stream here
-  /// instead.
-  double get speedMps => switch (_episode) {
-    _Episode.rest => 0.0,
-    _Episode.light => 1.25 + _rng.nextDouble() * 0.25,
-    _Episode.moderate => 2.1 + _rng.nextDouble() * 0.4,
-    // Still moving, but slowing: recovery is the walk back, not a dead stop.
-    _Episode.recovery => 0.6 + _rng.nextDouble() * 0.3,
   };
 
   /// The rate a monitor would currently display, averaged over recent beats.
@@ -324,7 +325,6 @@ class SyntheticCardiacSource {
       rrMs: List<double>.unmodifiable(_pendingRr),
       bpm: displayBpm ?? 60000.0 / _instantBpm,
       rmssdMs: rmssdMs,
-      speedMps: speedMps,
       activityLabel: activityLabel,
     );
     _pendingRr.clear();
@@ -351,7 +351,6 @@ class CardiacPacket {
     required this.anchorTsMs,
     required this.rrMs,
     required this.bpm,
-    required this.speedMps,
     required this.activityLabel,
     this.rmssdMs,
   });
@@ -367,9 +366,6 @@ class CardiacPacket {
 
   /// RMSSD over the trailing window, or null before enough beats exist.
   final double? rmssdMs;
-
-  /// Simulated ground speed for the current episode, m/s.
-  final double speedMps;
 
   /// Which activity episode produced this packet.
   final String activityLabel;

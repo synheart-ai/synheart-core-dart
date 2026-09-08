@@ -80,7 +80,10 @@ void main() {
       ]) {
         final json = event.toJson();
         expect(json.keys, hasLength(1));
-        expect(json.keys.single, isIn(<String>['Keyboard', 'Mouse', 'Shortcut']));
+        expect(
+          json.keys.single,
+          isIn(<String>['Keyboard', 'Mouse', 'Shortcut']),
+        );
         expect(json.values.single, isA<Map<String, dynamic>>());
       }
     });
@@ -93,13 +96,16 @@ void main() {
       final event = ContextEventInput.mouse(10, MouseEventType.leftClick);
       final fields = event.toJson()['Mouse'] as Map<String, dynamic>;
 
-      expect(fields.keys, containsAll(<String>[
-        'timestamp_ms',
-        'event_type',
-        'delta_magnitude',
-        'scroll_direction',
-        'scroll_magnitude',
-      ]));
+      expect(
+        fields.keys,
+        containsAll(<String>[
+          'timestamp_ms',
+          'event_type',
+          'delta_magnitude',
+          'scroll_direction',
+          'scroll_magnitude',
+        ]),
+      );
       expect(fields['delta_magnitude'], isNull);
       expect(fields['scroll_direction'], isNull);
       expect(fields['scroll_magnitude'], isNull);
@@ -158,10 +164,7 @@ void main() {
         (insertion.toJson()['Keyboard'] as Map)['event_type'],
         'TypingTap',
       );
-      expect(
-        (deletion.toJson()['Keyboard'] as Map)['event_type'],
-        'Backspace',
-      );
+      expect((deletion.toJson()['Keyboard'] as Map)['event_type'], 'Backspace');
     });
   });
 
