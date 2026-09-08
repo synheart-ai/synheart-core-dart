@@ -2955,6 +2955,18 @@ class Synheart {
   // The typed path. Unlike `pushBehavior(ts, code, value)` these carry the
   // variant payload the engine's behavioural feature group actually reads.
 
+  /// Which mobile-host ABI calls the loaded native runtime exports.
+  ///
+  /// A binding existing in this SDK is not the same as the call working on the
+  /// device: the vendored runtime is a pinned artifact and lags the source
+  /// tree. Every `false` entry is a call that silently no-ops (or returns
+  /// `null`) — drive a capability table off this rather than assuming, and
+  /// re-vendor with `synheart install runtime` to close a gap.
+  ///
+  /// Empty when the native runtime is not loaded at all.
+  static Map<String, bool> get mobileHostAbiSupport =>
+      _coreRuntime?.mobileHostAbiSupport ?? const <String, bool>{};
+
   /// Whether the loaded runtime can take rich behavior events.
   ///
   /// Check this before choosing between the windowed-summary path and the
@@ -3032,14 +3044,65 @@ class Synheart {
   /// backgrounded stretch silently skips the windows it spanned. Returns
   /// `null` when the runtime predates `synheart_core_tick_all`; fall back to
   /// [tick] in that case rather than assuming there were no windows.
-  static String? tickAll(int nowMs) => _coreRuntime?.tickAll(nowMs);
+  ///
+  /// Every window it drains is also delivered through [onHSIUpdate] /
+  /// [onStateUpdate], so a host running its own tick loop does not have to
+  /// parse the return value to keep the documented streams alive.
+  static String? tickAll(int nowMs) {
+    final json = _coreRuntime?.tickAll(nowMs);
+    _deliverHsiArray(json);
+    return json;
+  }
 
   /// Emit every window still held by the lateness budget.
   ///
   /// Call on backgrounding and at session end, or up to one budget's worth of
   /// windows is stranded forever. Returns the same JSON array shape [tickAll]
   /// does, or `null` when the symbol is absent.
-  static String? flushPending(int nowMs) => _coreRuntime?.flushPending(nowMs);
+  ///
+  /// Like [tickAll], the drained windows also reach [onHSIUpdate] /
+  /// [onStateUpdate].
+  static String? flushPending(int nowMs) {
+    final json = _coreRuntime?.flushPending(nowMs);
+    _deliverHsiArray(json);
+    return json;
+  }
+
+  /// Fan a `tick_all` / `flush_pending` JSON array out to the HSI streams.
+  ///
+  /// Both symbols return an array of HSI documents rather than the single
+  /// document `tick` returns, and neither goes through the native HSI
+  /// callback. Without this a host that ticks explicitly — which §6.1 of the
+  /// mobile host guide requires for the whole session, since `push_behavior`
+  /// does not advance the clock — would see `onStateUpdate` stay silent for
+  /// every window its own loop drained, and the session buffer behind
+  /// `getSessionHsiWindows()` stay empty with it.
+  ///
+  /// Delivery is deduplicated by `meta.ids.hsi_id`, so a window that also
+  /// arrives via the native callback is not published twice.
+  static void _deliverHsiArray(String? arrayJson) {
+    if (arrayJson == null || arrayJson.isEmpty) return;
+    final List<dynamic> windows;
+    try {
+      final decoded = jsonDecode(arrayJson);
+      if (decoded is! List) return;
+      windows = decoded;
+    } catch (e) {
+      SynheartLogger.log(
+        '[Synheart] tick_all/flush_pending returned unparseable JSON: $e',
+        error: e,
+      );
+      return;
+    }
+    for (final window in windows) {
+      // Re-encode rather than passing the decoded map: the delivery path is
+      // string-based end to end (the deduper reads `meta.ids.hsi_id` off the
+      // raw text and `HSIState` keeps it as `rawJson`).
+      final hsiJson = jsonEncode(window);
+      shared._deliverHsiWindow(hsiJson);
+      onHsi?.call(hsiJson);
+    }
+  }
 
   /// Advance the daily accumulator. [dayIndex] is days since epoch in the
   /// host's **local** zone and must strictly advance.
@@ -3399,7 +3462,16 @@ class Synheart {
   /// Advance the engine pipeline clock directly. Prefer the ingest buffer
   /// pattern for mobile — this is exposed for watch engine / advanced use.
   static String? tick(int nowMs) {
-    return _coreRuntime?.tick(nowMs);
+    final hsi = _coreRuntime?.tick(nowMs);
+    // Same reason [tickAll] delivers: a host-driven tick is the only clock a
+    // behavior-only session has, and its window would otherwise never reach
+    // the documented streams. Deduplicated by `hsi_id`, so this is safe
+    // alongside the native callback.
+    if (hsi != null && hsi.isNotEmpty) {
+      shared._deliverHsiWindow(hsi);
+      onHsi?.call(hsi);
+    }
+    return hsi;
   }
 
   /// Ingest a pre-built event batch. Prefer [pushWearHr]/[pushRr] +

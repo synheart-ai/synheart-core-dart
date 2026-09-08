@@ -1015,6 +1015,32 @@ class CoreRuntimeBridge {
   /// through the legacy call would double-count everything already summarized.
   bool get supportsRichBehaviorEvents => _ffi.pushBehaviorEvent != null;
 
+  /// Which of the mobile-host ABI calls the *loaded* runtime actually exports.
+  ///
+  /// The vendored `.so` / xcframework a host ships is a pinned artifact, not
+  /// this source tree, so a binding being present here says nothing about
+  /// whether the call does anything on the device in front of you. Every entry
+  /// below degrades to a no-op (or a `null` return) when false.
+  ///
+  /// Keys are the Dart-facing names, not the C symbols, so a host can drive a
+  /// capability table off this map without hard-coding `synheart_core_…`
+  /// strings. Reading it resolves each optional lookup, so it doubles as the
+  /// audit `runtimeDiagnostics(probeAll: true)` performs.
+  Map<String, bool> get mobileHostAbiSupport => <String, bool>{
+    'pushBehaviorEvent': _ffi.pushBehaviorEvent != null,
+    'pushContextEvent': _ffi.pushContextEvent != null,
+    'pushSpeed': _ffi.pushSpeed != null,
+    'setAccelPlacement': _ffi.setAccelPlacement != null,
+    'declareRestWindow': _ffi.declareRestWindow != null,
+    'tickAll': _ffi.tickAll != null,
+    'flushPending': _ffi.flushPending != null,
+    'rollDay': _ffi.rollDay != null,
+    'exportSessionState': _ffi.exportSessionState != null,
+    'loadSessionState': _ffi.loadSessionState != null,
+    'configId': _ffi.configId != null,
+    'lastHsv': _ffi.lastHsv != null,
+  };
+
   /// Push one rich behavior event as JSON. Returns the runtime's status
   /// (`0` = accepted), or `null` when the runtime does not export the symbol.
   ///
